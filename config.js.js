@@ -25,8 +25,8 @@ const CONFIG = {
   // SUPABASE CONFIGURATION - UPDATE THESE!
   // ============================================================
   SUPABASE: {
-    URL: 'https://your-project.supabase.co',      // <-- CHANGE THIS
-    ANON_KEY: 'your-anon-key',                    // <-- CHANGE THIS
+    URL: 'https://vybzpzlklgrgwzlmtqmj.supabase.co',      // <-- CHANGE THIS
+    ANON_KEY: 'sb_publishable_6Vebs1lIOrcsY_Q52m92ZQ_EOsOAyyV',                    // <-- CHANGE THIS
     STORAGE_BUCKET: 'files',
     TABLES: {
       CHANNELS: 'channels',
