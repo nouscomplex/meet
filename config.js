@@ -156,5 +156,3 @@ validateConfig();
 if (typeof window !== 'undefined') {
   window.CONFIG = CONFIG;
 }
-
-export default CONFIG;
