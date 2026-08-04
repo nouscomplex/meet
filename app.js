@@ -18,6 +18,7 @@
   }
 
   console.log(`🏫 ${CONFIG.BRANDING.NAME} v${CONFIG.BRANDING.VERSION}`);
+  console.log("[APP] Script loaded successfully");
   console.log(`🔧 Environment: ${CONFIG.ENV}`);
 
   // ============================================================
@@ -289,33 +290,69 @@
     const email = generateEmail(username);
     const password = CONFIG.AUTH.DEFAULT_PASSWORD;
 
+    console.log('[AUTH] Attempting login for:', username);
+    console.log('[AUTH] Email:', email);
+    console.log('[AUTH] Supabase URL:', CONFIG.SUPABASE.URL);
+    console.log('[AUTH] Key prefix:', CONFIG.SUPABASE.ANON_KEY.substring(0, 20) + '...');
+
     try {
-      const { error: signUpError } = await supabase.auth.signUp({
+      console.log('[AUTH] Step 1: signUp...');
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
+        options: { data: { username } }
       });
+
+      console.log('[AUTH] signUp result:', { user: !!signUpData?.user, session: !!signUpData?.session, error: signUpError?.message || 'none' });
 
       const isAlreadyRegistered =
         signUpError &&
         (signUpError.status === 400 ||
           signUpError.status === 409 ||
           signUpError.status === 422 ||
-          /already registered|already exists/i.test(signUpError.message || ''));
+          /already registered|already exists|user already registered/i.test(signUpError.message || ''));
 
       if (signUpError && !isAlreadyRegistered) {
-        throw signUpError;
+        console.error('[AUTH] signUp failed with unexpected error:', signUpError);
+        throw new Error(`Sign up failed: ${signUpError.message}`);
       }
 
+      if (signUpError && isAlreadyRegistered) {
+        console.log('[AUTH] User already registered, proceeding to sign in...');
+      }
+
+      console.log('[AUTH] Step 2: signInWithPassword...');
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
-      if (error) throw error;
+      console.log('[AUTH] signIn result:', { user: !!data?.user, session: !!data?.session, error: error?.message || 'none' });
+
+      if (error) {
+        if (error.message?.includes('Email not confirmed') || error.message?.includes('not confirmed')) {
+          console.error('[AUTH] Email not confirmed. Disable "Confirm email" in Supabase Auth settings.');
+          throw new Error('Account pending email confirmation. Ask your admin to disable "Confirm email" in Supabase Auth settings.');
+        }
+        throw error;
+      }
+
+      if (!data.user) {
+        throw new Error('No user returned from sign in');
+      }
+
+      console.log('[AUTH] Login successful! User ID:', data.user.id);
       return data.user;
     } catch (e) {
-      console.error('Auth error:', e);
-      throw new Error('Login failed. Please check your School ID.');
+      console.error('[AUTH] Fatal auth error:', e);
+      const msg = e.message || '';
+      if (msg.includes('Email signups are disabled') || msg.includes('Email logins are disabled')) {
+        throw new Error('Email authentication is disabled in Supabase. Go to Authentication → Providers → Email and turn it ON.');
+      }
+      if (msg.includes('not confirmed')) {
+        throw new Error('Email confirmation is required. Turn OFF "Confirm email" in Supabase Auth settings.');
+      }
+      throw new Error(e.message || 'Login failed. Please check your School ID and Supabase configuration.');
     }
   }
 
@@ -356,7 +393,6 @@
       div.innerHTML = `
         <span style="flex:1;">${escapeHtml(ch.name)}</span>
         <span class="channel-badge hidden" data-channel-id="${ch.id}">0</span>
-      `;
       div.dataset.id = ch.id;
       div.addEventListener('click', () => selectChannel(ch));
       DOM.channelList.appendChild(div);
@@ -548,7 +584,6 @@
               <div class="reply-preview-author">${escapeHtml(parent.username)}</div>
               <div>${escapeHtml(truncate(parent.content, 60))}</div>
             </div>
-          `;
         }
       }
 
@@ -561,7 +596,6 @@
           <a href="${msg.file_url}" target="_blank" rel="noopener" class="msg-file">
             <i class="fas fa-paperclip"></i> Attached file
           </a>
-        `;
       }
 
       wrap.innerHTML = `
@@ -574,7 +608,6 @@
           ${bubbleHtml}
           ${getSeenTimeHtml(msg)}
         </div>
-      `;
 
       // Context menu events
       wrap.addEventListener('contextmenu', (e) => {
@@ -713,7 +746,6 @@
         item.innerHTML = `
           ${avatarHtml(st.username)}
           <span class="status-name">${escapeHtml(truncate(st.username || 'User', 10))}</span>
-        `;
         item.addEventListener('click', () => showStatusModal(st));
         DOM.statusTray.appendChild(item);
       });
@@ -825,7 +857,6 @@
     }
 
     let csv = 'Username,Password
-';
     students.forEach(s => csv += `${s.username},${s.password}
 `);
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -847,7 +878,6 @@
       return;
     }
     let csv = 'Student,Channel,Join Time,Status
-';
     data.forEach(r => csv += `${r.student_name},${r.channel_id},${r.join_time},${r.status}
 `);
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -1147,7 +1177,6 @@
             Got it
           </button>
         </div>
-      `;
       document.body.appendChild(modal);
     }
   }
@@ -1157,11 +1186,14 @@
   // ============================================================
   async function handleLogin() {
     const username = DOM.usernameInput.value.trim();
+    console.log('[LOGIN] Button clicked, username:', username);
     if (!username) {
       showError('Please enter your School ID.');
       return;
     }
     hideError();
+    DOM.loginBtn.disabled = true;
+    DOM.loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
 
     try {
       const user = await loginWithUsername(username);
@@ -1196,7 +1228,11 @@
       DOM.liveBtnText.textContent = state.isTeacher ? 'Start live classroom' : 'Join live class';
 
     } catch (e) {
+      console.error('[LOGIN] Login failed:', e);
       showError(e.message || 'Login error. Please try again.');
+    } finally {
+      DOM.loginBtn.disabled = false;
+      DOM.loginBtn.innerHTML = '<i class="fas fa-arrow-right-to-bracket"></i> Enter Hub';
     }
   }
 
