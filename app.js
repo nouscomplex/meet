@@ -1,5 +1,5 @@
 // ============================================================
-// SCHOOL HUB — Application Logic
+// Nous Complex Orbit — Application Logic
 // ============================================================
 
 (function() {
@@ -77,6 +77,9 @@
     statusProgress: $('statusProgress'),
     closeStatusModal: $('closeStatusModal'),
     fileUploadStatus: $('fileUploadStatus'),
+    filePreview: $('filePreview'),
+    filePreviewName: $('filePreviewName'),
+    filePreviewRemove: $('filePreviewRemove'),
     createChannelBtn: $('createChannelBtn'),
     rosterGenBtn: $('rosterGenBtn'),
     exportAttendanceBtn: $('exportAttendanceBtn'),
@@ -398,24 +401,27 @@
       }
 
       const path = generateStoragePath(state.currentChannel.id, file.name);
-      const { data, error } = await supabase.storage
-        .from(CONFIG.SUPABASE.STORAGE_BUCKET)
-        .upload(path, file);
 
-      if (error) {
-        console.error('Upload error:', error);
-        alert('File upload failed.');
+      try {
+        const { data, error } = await supabase.storage
+          .from(CONFIG.SUPABASE.STORAGE_BUCKET)
+          .upload(path, file);
+
+        if (error) throw error;
+
+        const { data: urlData } = supabase.storage
+          .from(CONFIG.SUPABASE.STORAGE_BUCKET)
+          .getPublicUrl(path);
+        fileUrl = urlData.publicUrl;
+
+        DOM.fileUploadStatus.textContent = `📎 ${file.name} uploaded`;
+        DOM.fileUploadStatus.classList.remove('hidden');
+        setTimeout(() => DOM.fileUploadStatus.classList.add('hidden'), 4000);
+      } catch (e) {
+        console.error('Upload error:', e);
+        alert(`File upload failed: ${e.message || 'unknown error — check console for details.'}`);
         return;
       }
-
-      const { data: urlData } = supabase.storage
-        .from(CONFIG.SUPABASE.STORAGE_BUCKET)
-        .getPublicUrl(path);
-      fileUrl = urlData.publicUrl;
-
-      DOM.fileUploadStatus.textContent = `📎 ${file.name} uploaded`;
-      DOM.fileUploadStatus.classList.remove('hidden');
-      setTimeout(() => DOM.fileUploadStatus.classList.add('hidden'), 4000);
     }
 
     const { error } = await supabase
@@ -742,6 +748,7 @@
     await sendMessage(content, file);
     DOM.messageInput.value = '';
     DOM.fileInput.value = '';
+    DOM.filePreview.classList.add('hidden');
   });
 
   DOM.messageInput.addEventListener('keypress', (e) => {
@@ -775,10 +782,24 @@
   });
 
   DOM.fileInput.addEventListener('change', function() {
-    if (this.files[0] && this.files[0].size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
+    const file = this.files[0];
+    if (!file) {
+      DOM.filePreview.classList.add('hidden');
+      return;
+    }
+    if (file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
       alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
       this.value = '';
+      DOM.filePreview.classList.add('hidden');
+      return;
     }
+    DOM.filePreviewName.textContent = file.name;
+    DOM.filePreview.classList.remove('hidden');
+  });
+
+  DOM.filePreviewRemove.addEventListener('click', () => {
+    DOM.fileInput.value = '';
+    DOM.filePreview.classList.add('hidden');
   });
 
   DOM.createChannelBtn.addEventListener('click', async () => {
