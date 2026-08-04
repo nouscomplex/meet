@@ -42,6 +42,7 @@
     messagesSubscription: null,
     replyingTo: null,
     unreadByChannel: {},
+    roleCache: {},
   };
 
   // ============================================================
@@ -93,6 +94,12 @@
     assignStudentInput: $('assignStudentInput'),
     assignRoleSelect: $('assignRoleSelect'),
     channelMembersList: $('channelMembersList'),
+    scheduleTeacherInput: $('scheduleTeacherInput'),
+    scheduleTimeInput: $('scheduleTimeInput'),
+    scheduleDurationInput: $('scheduleDurationInput'),
+    setScheduleBtn: $('setScheduleBtn'),
+    scheduleBanner: $('scheduleBanner'),
+    scheduleBannerText: $('scheduleBannerText'),
     authLogo: $('authLogo'),
     sidebarLogo: $('sidebarLogo'),
   };
@@ -149,14 +156,83 @@
   }
 
   // ============================================================
+  // 5c. PUSH NOTIFICATIONS (works even when phone is locked)
+  // ============================================================
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = atob(base64);
+    return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+  }
+
+  async function subscribeToPush() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      console.warn('Push notifications not supported on this browser/device.');
+      return;
+    }
+    if (!CONFIG.PUSH || !CONFIG.PUSH.VAPID_PUBLIC_KEY) {
+      console.warn('No VAPID public key configured — push notifications disabled.');
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        console.warn('Notification permission not granted.');
+        return;
+      }
+
+      const registration = await navigator.serviceWorker.ready;
+      let subscription = await registration.pushManager.getSubscription();
+
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(CONFIG.PUSH.VAPID_PUBLIC_KEY),
+        });
+      }
+
+      const json = subscription.toJSON();
+      await supabase.from('push_subscriptions').upsert(
+        {
+          username: state.currentUser.username,
+          endpoint: json.endpoint,
+          p256dh: json.keys.p256dh,
+          auth: json.keys.auth,
+        },
+        { onConflict: 'endpoint' }
+      );
+    } catch (e) {
+      console.warn('Push subscription failed:', e);
+    }
+  }
+
+  // ============================================================
   // 6. UTILITY FUNCTIONS
   // ============================================================
   function getRoleFromUsername(username) {
     if (!username) return CONFIG.AUTH.ROLES.STUDENT;
-    const lower = username.toLowerCase();
-    if (lower.includes(CONFIG.AUTH.ROLES.ADMIN)) return CONFIG.AUTH.ROLES.ADMIN;
-    if (lower.includes(CONFIG.AUTH.ROLES.TEACHER)) return CONFIG.AUTH.ROLES.TEACHER;
+    const key = username.toLowerCase();
+
+    // Authoritative: a role an admin explicitly assigned via "Add to group"
+    if (state.roleCache[key]) return state.roleCache[key];
+
+    // Fallback heuristic for accounts never explicitly assigned a role
+    // (e.g. admin accounts, or before roles existed)
+    if (key.includes(CONFIG.AUTH.ROLES.ADMIN)) return CONFIG.AUTH.ROLES.ADMIN;
+    if (key.includes(CONFIG.AUTH.ROLES.TEACHER)) return CONFIG.AUTH.ROLES.TEACHER;
     return CONFIG.AUTH.ROLES.STUDENT;
+  }
+
+  async function loadRoleCache() {
+    const { data, error } = await supabase.from('user_roles').select('username, role');
+    if (error) {
+      console.warn('Role cache unavailable, using username-based fallback:', error);
+      return;
+    }
+    (data || []).forEach((row) => {
+      state.roleCache[row.username.toLowerCase()] = row.role;
+    });
   }
 
   // Role → identity system helpers (the app's signature visual device)
@@ -256,20 +332,49 @@
   async function loadChannels() {
     if (!state.currentUser) return [];
 
-    const { data, error } = await supabase
+    // Admins see everything. Teachers/students only see channels
+    // they've been explicitly assigned to.
+    if (state.isAdmin) {
+      const { data, error } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.CHANNELS)
+        .select('*')
+        .order('name');
+
+      if (error) {
+        console.warn('Channels fallback:', error);
+        return [
+          { id: '1', name: 'Math 101' },
+          { id: '2', name: 'Science' },
+          { id: '3', name: 'History' }
+        ];
+      }
+      return data || [];
+    }
+
+    const { data: memberships, error: memberError } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.MEMBERS)
+      .select('channel_id')
+      .eq('username', state.currentUser.username);
+
+    if (memberError) {
+      console.warn('Membership lookup failed:', memberError);
+      return [];
+    }
+
+    const channelIds = (memberships || []).map((m) => m.channel_id);
+    if (!channelIds.length) return [];
+
+    const { data: channels, error: channelError } = await supabase
       .from(CONFIG.SUPABASE.TABLES.CHANNELS)
       .select('*')
+      .in('id', channelIds)
       .order('name');
 
-    if (error) {
-      console.warn('Channels fallback:', error);
-      return [
-        { id: '1', name: 'Math 101' },
-        { id: '2', name: 'Science' },
-        { id: '3', name: 'History' }
-      ];
+    if (channelError) {
+      console.warn('Channels fallback:', channelError);
+      return [];
     }
-    return data || [];
+    return channels || [];
   }
 
   async function renderChannels() {
@@ -277,7 +382,9 @@
     DOM.channelList.innerHTML = '';
 
     if (!channels || channels.length === 0) {
-      DOM.channelList.innerHTML = '<div class="empty-note">No channels yet</div>';
+      DOM.channelList.innerHTML = state.isAdmin
+        ? '<div class="empty-note">No channels yet</div>'
+        : '<div class="empty-note">You haven\'t been added to a group yet — ask your admin.</div>';
       return;
     }
 
@@ -434,6 +541,80 @@
     await markDelivered(channel.id);
     await markSeen(channel.id);
     if (state.isAdmin) await loadMembers(channel.id);
+    await loadSchedule(channel.id);
+    subscribeToSchedule(channel.id);
+  }
+
+  // ============================================================
+  // 8e. CLASS SCHEDULING (admin sets teacher's class time)
+  // ============================================================
+  let scheduleSubscription = null;
+
+  async function loadSchedule(channelId) {
+    const { data, error } = await supabase
+      .from('class_schedule')
+      .select('*')
+      .eq('channel_id', channelId)
+      .gte('scheduled_time', new Date(Date.now() - 60 * 60 * 1000).toISOString())
+      .order('scheduled_time', { ascending: true })
+      .limit(1);
+
+    if (error || !data || !data.length) {
+      DOM.scheduleBanner.classList.add('hidden');
+      return;
+    }
+    renderScheduleBanner(data[0]);
+  }
+
+  function renderScheduleBanner(schedule) {
+    const when = new Date(schedule.scheduled_time);
+    const formatted = when.toLocaleString([], {
+      weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+    DOM.scheduleBannerText.textContent =
+      `Class with ${schedule.teacher_username} scheduled for ${formatted} (${schedule.duration_minutes} min)`;
+    DOM.scheduleBanner.classList.remove('hidden');
+  }
+
+  function subscribeToSchedule(channelId) {
+    if (scheduleSubscription) {
+      supabase.removeChannel(scheduleSubscription);
+      scheduleSubscription = null;
+    }
+    scheduleSubscription = supabase
+      .channel(`schedule:${channelId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'class_schedule', filter: `channel_id=eq.${channelId}` },
+        () => loadSchedule(channelId)
+      )
+      .subscribe();
+  }
+
+  async function setClassSchedule(teacherUsername, datetimeLocal, durationMinutes) {
+    if (!state.currentChannel) {
+      alert('Select a channel first.');
+      return;
+    }
+    if (!teacherUsername || !datetimeLocal) {
+      alert('Enter a teacher username and a date/time.');
+      return;
+    }
+
+    const { error } = await supabase.from('class_schedule').insert({
+      channel_id: state.currentChannel.id,
+      teacher_username: teacherUsername,
+      scheduled_time: new Date(datetimeLocal).toISOString(),
+      duration_minutes: durationMinutes || 45,
+      set_by: state.currentUser.username,
+    });
+
+    if (error) {
+      alert('Could not set schedule: ' + error.message);
+      return;
+    }
+    alert(`✅ Class time set for ${teacherUsername}`);
+    await loadSchedule(state.currentChannel.id);
   }
 
   // ============================================================
@@ -498,6 +679,19 @@
       alert('Could not add member: ' + error.message);
       return;
     }
+
+    // Make this the user's authoritative role app-wide (fixes role-guessing
+    // bugs for usernames that don't literally contain "teacher"/"student")
+    const { error: roleError } = await supabase
+      .from('user_roles')
+      .upsert({ username, role, updated_at: new Date().toISOString() }, { onConflict: 'username' });
+
+    if (roleError) {
+      console.warn('Could not persist authoritative role:', roleError);
+    } else {
+      state.roleCache[username.toLowerCase()] = role;
+    }
+
     await loadMembers(state.currentChannel.id);
   }
 
@@ -1047,6 +1241,7 @@
 
     try {
       const user = await loginWithUsername(username);
+      await loadRoleCache(); // must happen before role checks below
       const role = getRoleFromUsername(username);
       const key = roleKey(username);
 
@@ -1073,6 +1268,7 @@
       await requestMediaPermissions();
       await renderChannels();
       await loadStatuses();
+      subscribeToPush();
 
       DOM.liveBtnText.textContent = state.isTeacher ? 'Start live classroom' : 'Join live class';
 
@@ -1159,6 +1355,16 @@
   });
 
   DOM.rosterGenBtn.addEventListener('click', generateRoster);
+
+  DOM.setScheduleBtn.addEventListener('click', async () => {
+    await setClassSchedule(
+      DOM.scheduleTeacherInput.value.trim(),
+      DOM.scheduleTimeInput.value,
+      parseInt(DOM.scheduleDurationInput.value, 10)
+    );
+    DOM.scheduleTeacherInput.value = '';
+    DOM.scheduleTimeInput.value = '';
+  });
   DOM.exportAttendanceBtn.addEventListener('click', exportAttendance);
   DOM.assignStudentBtn.addEventListener('click', async () => {
     const username = DOM.assignStudentInput.value.trim();
