@@ -23,14 +23,8 @@
 
   <!-- PWA Manifest -->
   <link rel="manifest" href='data:application/json;base64,eyJuYW1lIjogIk5vdXMgQ29tcGxleCBPcmJpdCIsICJzaG9ydF9uYW1lIjogIk9yYml0IiwgImRlc2NyaXB0aW9uIjogIlVuaWZpZWQgY29tbXVuaWNhdGlvbiBwbGF0Zm9ybSIsICJzdGFydF91cmwiOiAiLiIsICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLCAiYmFja2dyb3VuZF9jb2xvciI6ICIjRjRGNkY4IiwgInRoZW1lX2NvbG9yIjogIiMxRjZGNzgiLCAiaWNvbnMiOiBbeyJzcmMiOiAibm91c2NvbXBsZXgucG5nIiwgInNpemVzIjogIjUxMng1MTIiLCAidHlwZSI6ICJpbWFnZS9wbmcifV19' />
-<base target="_blank">
 </head>
 <body>
-
-<!-- Notification Audio (hidden) -->
-<audio id="notificationSound" preload="auto">
-  <source src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" type="audio/mpeg">
-</audio>
 
 <div id="app" class="app-shell">
   <div style="max-width: 1180px; margin: 0 auto; padding: 0 14px;">
@@ -38,7 +32,6 @@
     <!-- ===== TOP BAR ===== -->
     <header class="topbar">
       <span class="brand-name">Nous Complex Orbit</span>
-      <div id="globalNotificationBadge" class="notif-badge hidden" title="Unread messages">0</div>
     </header>
 
     <!-- ===== AUTH CARD ===== -->
@@ -75,7 +68,7 @@
           <!-- dynamic channels -->
         </div>
 
-        <!-- Admin panel quick links -->
+        <!-- Admin panel -->
         <div id="adminPanel" class="hidden admin-card">
           <div class="section-label"><i class="fas fa-user-shield"></i> Admin console</div>
           <div class="admin-actions">
@@ -88,13 +81,22 @@
             <button id="exportAttendanceBtn" class="btn-admin-sm">
               <i class="fas fa-file-export"></i> Export attendance
             </button>
-            <button id="openAdminPanelBtn" class="btn-admin-sm" style="background:var(--role-admin); color:#fff;">
-              <i class="fas fa-cog"></i> Full Admin Panel
-            </button>
-            <div class="admin-row">
-              <input id="assignStudentInput" placeholder="Student ID" class="field-sm">
-              <button id="assignStudentBtn" class="btn-admin-sm" style="flex-shrink:0;">Assign</button>
-            </div>
+          </div>
+
+          <div class="section-label" style="margin-top:14px;"><i class="fas fa-user-plus"></i> Add to group</div>
+          <p style="font-size:11.5px; color:var(--ink-faint); margin:-4px 0 6px;">Adds to the currently selected channel</p>
+          <div class="admin-row">
+            <input id="assignStudentInput" placeholder="Username" class="field-sm">
+            <select id="assignRoleSelect" class="field-sm" style="flex:0 0 96px;">
+              <option value="student">Student</option>
+              <option value="teacher">Teacher</option>
+            </select>
+            <button id="assignStudentBtn" class="btn-admin-sm" style="flex-shrink:0;">Add</button>
+          </div>
+
+          <div class="section-label" style="margin-top:14px;"><i class="fas fa-people-group"></i> Group members</div>
+          <div id="channelMembersList" style="display:flex; flex-direction:column; gap:5px; max-height:180px; overflow-y:auto;">
+            <div class="empty-note">Select a channel</div>
           </div>
         </div>
       </aside>
@@ -123,21 +125,26 @@
           </div>
           <div id="fileUploadStatus" class="hidden"></div>
 
-          <!-- Reply Preview -->
+          <!-- Reply preview -->
           <div id="replyPreview" class="hidden reply-preview">
-            <div class="reply-preview-inner">
-              <div class="reply-preview-line"></div>
-              <div class="reply-preview-content">
-                <div class="reply-preview-author" id="replyPreviewAuthor">Author</div>
-                <div class="reply-preview-text" id="replyPreviewText">Message text</div>
-              </div>
-              <button id="cancelReplyBtn" class="icon-btn" style="width:26px; height:26px;" title="Cancel reply">
-                <i class="fas fa-xmark"></i>
-              </button>
+            <div class="bar"></div>
+            <div class="info">
+              <div class="author" id="replyPreviewAuthor"></div>
+              <div class="text" id="replyPreviewText"></div>
             </div>
+            <button id="replyPreviewCancel" class="icon-btn" style="width:26px; height:26px;" title="Cancel reply">
+              <i class="fas fa-xmark"></i>
+            </button>
           </div>
 
           <!-- Composer -->
+          <div id="filePreview" class="hidden" style="display:flex; align-items:center; gap:8px; padding:8px 18px; border-top:1px solid var(--border); background: var(--surface-sunken); font-size:13px; color: var(--ink-soft);">
+            <i class="fas fa-paperclip"></i>
+            <span id="filePreviewName" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+            <button id="filePreviewRemove" class="icon-btn" style="width:26px; height:26px;" title="Remove attachment">
+              <i class="fas fa-xmark"></i>
+            </button>
+          </div>
           <div class="composer" style="border-top: 1px solid var(--border);">
             <input id="messageInput" type="text" placeholder="Type a message…" class="field" autocomplete="off">
             <label for="fileInput" class="icon-btn" title="Attach a file">
@@ -175,92 +182,6 @@
       <button id="closeStatusModal" class="btn btn-ghost btn-block">Close</button>
     </div>
   </div>
-
-  <!-- ===== MESSAGE CONTEXT MENU ===== -->
-  <div id="msgContextMenu" class="hidden msg-context-menu">
-    <button id="ctxReplyBtn" class="ctx-item"><i class="fas fa-reply"></i> Reply</button>
-    <button id="ctxDeleteBtn" class="ctx-item ctx-danger"><i class="fas fa-trash"></i> Delete</button>
-  </div>
-
-  <!-- ===== FULL ADMIN PANEL MODAL ===== -->
-  <div id="adminFullPanel" class="hidden modal-overlay" style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:60; padding:16px;">
-    <div class="modal-card admin-modal-card">
-      <div class="admin-modal-header">
-        <h3 class="modal-title"><i class="fas fa-user-shield" style="color:var(--role-admin);"></i> Admin Control Panel</h3>
-        <button id="closeAdminPanelBtn" class="icon-btn"><i class="fas fa-xmark"></i></button>
-      </div>
-
-      <!-- Tabs -->
-      <div class="admin-tabs">
-        <button class="admin-tab active" data-tab="users"><i class="fas fa-users"></i> Users</button>
-        <button class="admin-tab" data-tab="channels"><i class="fas fa-hashtag"></i> Channels</button>
-        <button class="admin-tab" data-tab="members"><i class="fas fa-user-plus"></i> Assignments</button>
-        <button class="admin-tab" data-tab="messages"><i class="fas fa-comments"></i> Messages</button>
-      </div>
-
-      <!-- Users Tab -->
-      <div id="tab-users" class="admin-tab-content active">
-        <div class="admin-form-row">
-          <input id="adminUserName" placeholder="Username" class="field-sm">
-          <input id="adminUserFullName" placeholder="Full Name" class="field-sm">
-          <select id="adminUserRole" class="field-sm">
-            <option value="student">Student</option>
-            <option value="teacher">Teacher</option>
-            <option value="admin">Admin</option>
-          </select>
-          <button id="adminAddUserBtn" class="btn-admin-sm"><i class="fas fa-plus"></i> Add</button>
-        </div>
-        <div id="adminUsersList" class="admin-list">
-          <div class="empty-note">Loading users…</div>
-        </div>
-      </div>
-
-      <!-- Channels Tab -->
-      <div id="tab-channels" class="admin-tab-content">
-        <div class="admin-form-row">
-          <input id="adminChannelName" placeholder="Channel name" class="field-sm" style="flex:1;">
-          <button id="adminAddChannelBtn" class="btn-admin-sm"><i class="fas fa-plus"></i> Add</button>
-        </div>
-        <div id="adminChannelsList" class="admin-list">
-          <div class="empty-note">Loading channels…</div>
-        </div>
-      </div>
-
-      <!-- Members Tab -->
-      <div id="tab-members" class="admin-tab-content">
-        <div class="admin-form-row">
-          <select id="adminMemberChannel" class="field-sm" style="flex:1;">
-            <option value="">Select channel</option>
-          </select>
-          <select id="adminMemberUser" class="field-sm" style="flex:1;">
-            <option value="">Select user</option>
-          </select>
-          <select id="adminMemberRole" class="field-sm">
-            <option value="student">Student</option>
-            <option value="teacher">Teacher</option>
-          </select>
-          <button id="adminAddMemberBtn" class="btn-admin-sm"><i class="fas fa-plus"></i> Assign</button>
-        </div>
-        <div id="adminMembersList" class="admin-list">
-          <div class="empty-note">Loading assignments…</div>
-        </div>
-      </div>
-
-      <!-- Messages Tab -->
-      <div id="tab-messages" class="admin-tab-content">
-        <div class="admin-form-row">
-          <select id="adminMsgChannel" class="field-sm" style="flex:1;">
-            <option value="">All channels</option>
-          </select>
-          <button id="adminRefreshMessagesBtn" class="btn-admin-sm"><i class="fas fa-rotate"></i> Refresh</button>
-        </div>
-        <div id="adminMessagesList" class="admin-list">
-          <div class="empty-note">Select a channel to view messages</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
 </div>
 
 <!-- JavaScript -->
