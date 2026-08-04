@@ -39,6 +39,7 @@
     isTeacher: false,
     videoActive: false,
     progressInterval: null,
+    messagesSubscription: null,
   };
 
   // ============================================================
@@ -259,6 +260,44 @@
     await renderChannels();
     await loadMessages(channel.id);
     await loadStatuses();
+    subscribeToMessages(channel.id);
+  }
+
+  // ============================================================
+  // 8b. REALTIME MESSAGE SYNC
+  // ============================================================
+  function subscribeToMessages(channelId) {
+    // Drop any previous subscription (e.g. from the last channel)
+    if (state.messagesSubscription) {
+      supabase.removeChannel(state.messagesSubscription);
+      state.messagesSubscription = null;
+    }
+
+    state.messagesSubscription = supabase
+      .channel(`messages:${channelId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: CONFIG.SUPABASE.TABLES.MESSAGES,
+          filter: `channel_id=eq.${channelId}`,
+        },
+        (payload) => {
+          // Guard against duplicating a message we already rendered
+          // optimistically or via our own insert's follow-up reload.
+          const exists = state.messages.some((m) => m.id === payload.new.id);
+          if (!exists) {
+            state.messages.push(payload.new);
+            renderMessages();
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('Realtime message sync unavailable — falling back to manual refresh.');
+        }
+      });
   }
 
   async function createChannel(name) {
