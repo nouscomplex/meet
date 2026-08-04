@@ -115,6 +115,15 @@ const CONFIG = {
   },
 
   // ============================================================
+  // PUSH NOTIFICATIONS (lock-screen / background alerts)
+  // Public key only — the matching private key lives on the
+  // server (Supabase Edge Function secret), never in this file.
+  // ============================================================
+  PUSH: {
+    VAPID_PUBLIC_KEY: 'BAHQkLJFJkm-zUEMXKZt7Twb8lzC6fYtCNkb_an0VR9bFLRLOkCixcNZpoH9UX04AmoB3xZFEuo-cK8I_fCd7O0',
+  },
+
+  // ============================================================
   // ENVIRONMENT
   // ============================================================
   ENV: 'development', // 'development' | 'production' | 'staging'
