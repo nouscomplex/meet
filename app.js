@@ -285,39 +285,57 @@
   // ============================================================
   // 8. AUTHENTICATION
   // ============================================================
-  async function loginWithUsername(username) {
-    const email = generateEmail(username);
-    const password = CONFIG.AUTH.DEFAULT_PASSWORD;
+ async function loginWithUsername(username) {
+  const email = generateEmail(username);
+  const password = CONFIG.AUTH.DEFAULT_PASSWORD;
 
-    try {
-      const { error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-      });
+  try {
+    // Try sign up first (creates user if new)
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { username } }
+    });
 
-      const isAlreadyRegistered =
-        signUpError &&
-        (signUpError.status === 400 ||
-          signUpError.status === 409 ||
-          signUpError.status === 422 ||
-          /already registered|already exists/i.test(signUpError.message || ''));
+    // If user already exists, that's fine
+    const isAlreadyRegistered =
+      signUpError &&
+      (signUpError.status === 400 ||
+       signUpError.status === 409 ||
+       signUpError.status === 422 ||
+       /already registered|already exists|user already registered/i.test(signUpError.message || ''));
 
-      if (signUpError && !isAlreadyRegistered) {
-        throw signUpError;
-      }
-
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
-
-      if (error) throw error;
-      return data.user;
-    } catch (e) {
-      console.error('Auth error:', e);
-      throw new Error('Login failed. Please check your School ID.');
+    if (signUpError && !isAlreadyRegistered) {
+      console.warn('SignUp error:', signUpError);
     }
+
+    // If signUp succeeded and user is new but unconfirmed, 
+    // try to sign in anyway (works if email confirmation is off)
+    if (signUpData?.user && !signUpData.session) {
+      console.log('User created but no session — attempting sign in...');
+    }
+
+    // Always try to sign in
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (error) {
+      // If email not confirmed, try to auto-confirm via admin API (fallback)
+      if (error.message?.includes('Email not confirmed') || error.message?.includes('not confirmed')) {
+        console.warn('Email not confirmed. Please disable email confirmation in Supabase Auth settings.');
+        throw new Error('Account pending email confirmation. Ask your admin to disable "Confirm email" in Supabase Auth settings, or check your email inbox.');
+      }
+      throw error;
+    }
+
+    return data.user;
+  } catch (e) {
+    console.error('Auth error:', e);
+    throw new Error(e.message || 'Login failed. Please check your School ID and Supabase configuration.');
   }
+}
 
   // ============================================================
   // 9. CHANNELS (CRUD)
