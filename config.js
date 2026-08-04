@@ -1,5 +1,5 @@
 // ============================================================
-// CONFIGURATION - School Hub Application
+// CONFIGURATION - Nous Complex Orbit Application
 // UPDATE THESE VALUES WITH YOUR OWN CREDENTIALS
 // ============================================================
 
@@ -15,8 +15,8 @@ const CONFIG = {
       HEIGHT: '40px',
       USE_AS_FAVICON: true,
     },
-    NAME: 'School Hub',
-    SHORT_NAME: 'Hub',
+    NAME: 'Nous Complex Orbit',
+    SHORT_NAME: 'Orbit',
     DESCRIPTION: 'Unified communication platform for schools',
     VERSION: '1.0.0',
   },
@@ -67,7 +67,7 @@ const CONFIG = {
   // FILE UPLOAD CONFIGURATION
   // ============================================================
   UPLOAD: {
-    MAX_FILE_SIZE: 2 * 1024 * 1024, // 2MB
+    MAX_FILE_SIZE: 5 * 1024 * 1024, // 5MB
     ALLOWED_TYPES: [
       'image/*',
       '.pdf',
