@@ -1,8 +1,16 @@
 /* ============================================================
-   SCHOOL HUB — Design System
+   SCHOOL HUB — Design System v2.0
    A calm, professional communication hub for schools.
    Signature device: role-colored identity markers
    (Admin = brass, Teacher = teal, Student = denim)
+
+   NEW v2.0:
+   - WhatsApp-style tick marks (sent/delivered/read)
+   - Reply-to message bubbles
+   - Notification badges & sound
+   - Message context menu
+   - Full admin CRUD panel
+   - Seen time tooltips
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap');
@@ -36,6 +44,12 @@
   /* Status */
   --danger: #C4453C;
   --danger-wash: #FBEAE9;
+  --success: #2D8A5E;
+  --success-wash: #E8F5EE;
+
+  /* Ticks */
+  --tick-grey: #A0AAB5;
+  --tick-blue: #53BDEB;
 
   /* Elevation */
   --shadow-sm: 0 1px 2px rgba(22, 35, 63, 0.06);
@@ -103,6 +117,30 @@ body {
   font-size: 1.25rem;
   color: var(--ink);
   letter-spacing: -0.01em;
+}
+
+/* ===== Notification Badge ===== */
+.notif-badge {
+  background: var(--danger);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  margin-left: auto;
+  animation: badgePop 0.3s ease;
+}
+
+@keyframes badgePop {
+  0% { transform: scale(0); }
+  60% { transform: scale(1.2); }
+  100% { transform: scale(1); }
 }
 
 /* ============================================================
@@ -380,6 +418,7 @@ body {
   color: var(--ink-soft);
   border-left: 3px solid transparent;
   transition: background 0.12s ease, color 0.12s ease;
+  position: relative;
 }
 
 .channel-item::before {
@@ -398,6 +437,23 @@ body {
   border-left-color: var(--accent);
 }
 .channel-item.active::before { color: var(--accent); }
+
+/* Channel unread badge */
+.channel-badge {
+  margin-left: auto;
+  background: var(--danger);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+}
 
 /* ===== Admin console ===== */
 .admin-card {
@@ -505,7 +561,17 @@ body {
 
 @media (min-width: 1024px) { .chat-scroll { max-height: 50vh; } }
 
-.msg { display: flex; gap: 10px; max-width: 82%; animation: msgIn 0.2s ease-out; }
+.msg { 
+  display: flex; 
+  gap: 10px; 
+  max-width: 82%; 
+  animation: msgIn 0.2s ease-out;
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+}
+.msg:hover { background: rgba(0,0,0,0.01); border-radius: 8px; }
+
 .msg-theirs { align-self: flex-start; }
 .msg-mine { align-self: flex-end; flex-direction: row-reverse; }
 
@@ -533,8 +599,33 @@ body {
   word-break: break-word;
 }
 
-.msg-mine .msg-bubble { background: var(--accent); color: var(--surface); border-bottom-right-radius: 4px; }
+.msg-mine .msg-bubble { 
+  background: var(--accent); 
+  color: var(--surface); 
+  border-bottom-right-radius: 4px; 
+}
 .msg-theirs .msg-bubble { border-bottom-left-radius: 4px; }
+
+/* Reply bubble inside message */
+.msg-reply {
+  background: rgba(0,0,0,0.06);
+  border-left: 3px solid var(--accent);
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+.msg-mine .msg-reply {
+  background: rgba(255,255,255,0.15);
+  border-left-color: rgba(255,255,255,0.5);
+  color: rgba(255,255,255,0.85);
+}
+.msg-reply-author {
+  font-weight: 600;
+  font-size: 11px;
+  margin-bottom: 2px;
+}
 
 .msg-file {
   font-size: 12px;
@@ -548,6 +639,36 @@ body {
 .msg-mine .msg-file { color: var(--accent-wash); }
 .msg-file:hover { text-decoration: underline; }
 
+/* ===== WhatsApp-style Tick Marks ===== */
+.msg-ticks {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  margin-left: 4px;
+  font-size: 12px;
+}
+
+.msg-mine .msg-ticks { color: rgba(255,255,255,0.7); }
+.msg-theirs .msg-ticks { color: var(--tick-grey); }
+
+.msg-ticks.read { color: var(--tick-blue); }
+.msg-mine .msg-ticks.read { color: #A3E6FF; }
+
+.tick-single::before { content: '✓'; }
+.tick-double::before { content: '✓✓'; letter-spacing: -3px; }
+
+/* Seen time tooltip */
+.msg-seen-time {
+  font-size: 9.5px;
+  color: var(--ink-faint);
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.msg:hover .msg-seen-time { opacity: 1; }
+.msg-mine .msg-seen-time { text-align: right; color: rgba(255,255,255,0.6); }
+
 #fileUploadStatus {
   font-size: 12px;
   color: var(--accent-dark);
@@ -555,6 +676,52 @@ body {
   border-top: 1px solid var(--border);
   background: var(--accent-wash);
   transition: opacity 0.3s ease;
+}
+
+/* ===== Reply Preview (Composer) ===== */
+.reply-preview {
+  padding: 10px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-sunken);
+  animation: slideUp 0.2s ease;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.reply-preview-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.reply-preview-line {
+  width: 3px;
+  height: 32px;
+  background: var(--accent);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.reply-preview-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.reply-preview-author {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.reply-preview-text {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ===== Composer ===== */
@@ -633,6 +800,47 @@ body {
 .video-close:hover { background: rgba(10, 16, 30, 0.8); }
 
 /* ============================================================
+   MESSAGE CONTEXT MENU
+   ============================================================ */
+.msg-context-menu {
+  position: absolute;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  padding: 4px;
+  z-index: 40;
+  min-width: 140px;
+  animation: menuIn 0.12s ease;
+}
+
+@keyframes menuIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.ctx-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13.5px;
+  font-family: var(--font-body);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease;
+}
+.ctx-item:hover { background: var(--surface-sunken); }
+
+.ctx-danger { color: var(--danger); }
+.ctx-danger:hover { background: var(--danger-wash); }
+
+/* ============================================================
    MODALS
    ============================================================ */
 .modal-overlay {
@@ -679,6 +887,130 @@ body {
 }
 
 /* ============================================================
+   ADMIN FULL PANEL MODAL
+   ============================================================ */
+.admin-modal-card {
+  max-width: 720px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.admin-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 12px 24px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-sunken);
+}
+
+.admin-tab {
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 8px 8px 0 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+.admin-tab:hover { color: var(--ink); background: rgba(255,255,255,0.5); }
+.admin-tab.active {
+  color: var(--role-admin);
+  background: var(--surface);
+  border-bottom-color: var(--role-admin);
+}
+
+.admin-tab-content {
+  display: none;
+  padding: 20px 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+.admin-tab-content.active { display: block; }
+
+.admin-form-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.admin-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  font-size: 13.5px;
+}
+
+.admin-list-item .item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-list-item .item-title {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.admin-list-item .item-sub {
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+}
+
+.admin-list-item .item-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.admin-list-item .btn-icon-sm {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+.admin-list-item .btn-icon-sm:hover { background: var(--border); color: var(--ink); }
+.admin-list-item .btn-icon-sm.danger:hover { background: var(--danger-wash); color: var(--danger); }
+
+/* ============================================================
    UTILITIES
    ============================================================ */
 .hidden { display: none !important; }
@@ -697,4 +1029,9 @@ body {
 @media (max-width: 480px) {
   .auth-card { padding: 28px 22px 24px; }
   .topbar { padding: 12px 4px 16px; }
+  .admin-modal-card { max-width: 100%; margin: 8px; }
+  .admin-tabs { padding: 8px 12px 0; overflow-x: auto; }
+  .admin-tab { padding: 8px 10px; font-size: 12px; }
+  .admin-tab-content { padding: 12px; }
+  .admin-form-row { gap: 6px; }
 }
