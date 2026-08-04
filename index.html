@@ -114,6 +114,13 @@
           <div id="fileUploadStatus" class="hidden"></div>
 
           <!-- Composer -->
+          <div id="filePreview" class="hidden" style="display:flex; align-items:center; gap:8px; padding:8px 18px; border-top:1px solid var(--border); background: var(--surface-sunken); font-size:13px; color: var(--ink-soft);">
+            <i class="fas fa-paperclip"></i>
+            <span id="filePreviewName" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+            <button id="filePreviewRemove" class="icon-btn" style="width:26px; height:26px;" title="Remove attachment">
+              <i class="fas fa-xmark"></i>
+            </button>
+          </div>
           <div class="composer" style="border-top: 1px solid var(--border);">
             <input id="messageInput" type="text" placeholder="Type a message…" class="field" autocomplete="off">
             <label for="fileInput" class="icon-btn" title="Attach a file">
