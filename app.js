@@ -1,6 +1,5 @@
 // ============================================================
-// Nous Complex Orbit — Application Logic v2.0
-// Features: WhatsApp ticks, reply-to, notifications, admin CRUD
+// SCHOOL HUB — Application Logic
 // ============================================================
 
 (function() {
@@ -18,7 +17,6 @@
   }
 
   console.log(`🏫 ${CONFIG.BRANDING.NAME} v${CONFIG.BRANDING.VERSION}`);
-  console.log("[APP] Script loaded successfully");
   console.log(`🔧 Environment: ${CONFIG.ENV}`);
 
   // ============================================================
@@ -42,12 +40,8 @@
     videoActive: false,
     progressInterval: null,
     messagesSubscription: null,
-    // NEW v2.0 state
     replyingTo: null,
-    unreadCounts: {},
-    contextMenuTarget: null,
-    adminData: { users: [], channels: [], members: [], messages: [] },
-    lastReadMessageId: {},
+    unreadByChannel: {},
   };
 
   // ============================================================
@@ -88,44 +82,19 @@
     filePreview: $('filePreview'),
     filePreviewName: $('filePreviewName'),
     filePreviewRemove: $('filePreviewRemove'),
+    replyPreview: $('replyPreview'),
+    replyPreviewAuthor: $('replyPreviewAuthor'),
+    replyPreviewText: $('replyPreviewText'),
+    replyPreviewCancel: $('replyPreviewCancel'),
     createChannelBtn: $('createChannelBtn'),
     rosterGenBtn: $('rosterGenBtn'),
     exportAttendanceBtn: $('exportAttendanceBtn'),
     assignStudentBtn: $('assignStudentBtn'),
     assignStudentInput: $('assignStudentInput'),
+    assignRoleSelect: $('assignRoleSelect'),
+    channelMembersList: $('channelMembersList'),
     authLogo: $('authLogo'),
     sidebarLogo: $('sidebarLogo'),
-    // NEW v2.0 DOM refs
-    notificationSound: $('notificationSound'),
-    globalNotificationBadge: $('globalNotificationBadge'),
-    replyPreview: $('replyPreview'),
-    replyPreviewAuthor: $('replyPreviewAuthor'),
-    replyPreviewText: $('replyPreviewText'),
-    cancelReplyBtn: $('cancelReplyBtn'),
-    msgContextMenu: $('msgContextMenu'),
-    ctxReplyBtn: $('ctxReplyBtn'),
-    ctxDeleteBtn: $('ctxDeleteBtn'),
-    adminFullPanel: $('adminFullPanel'),
-    closeAdminPanelBtn: $('closeAdminPanelBtn'),
-    openAdminPanelBtn: $('openAdminPanelBtn'),
-    adminTabs: document.querySelectorAll('.admin-tab'),
-    adminTabContents: document.querySelectorAll('.admin-tab-content'),
-    adminUserName: $('adminUserName'),
-    adminUserFullName: $('adminUserFullName'),
-    adminUserRole: $('adminUserRole'),
-    adminAddUserBtn: $('adminAddUserBtn'),
-    adminUsersList: $('adminUsersList'),
-    adminChannelName: $('adminChannelName'),
-    adminAddChannelBtn: $('adminAddChannelBtn'),
-    adminChannelsList: $('adminChannelsList'),
-    adminMemberChannel: $('adminMemberChannel'),
-    adminMemberUser: $('adminMemberUser'),
-    adminMemberRole: $('adminMemberRole'),
-    adminAddMemberBtn: $('adminAddMemberBtn'),
-    adminMembersList: $('adminMembersList'),
-    adminMsgChannel: $('adminMsgChannel'),
-    adminRefreshMessagesBtn: $('adminRefreshMessagesBtn'),
-    adminMessagesList: $('adminMessagesList'),
   };
 
   // ============================================================
@@ -148,6 +117,35 @@
         this.parentNode.insertBefore(fallback, this);
       });
     });
+  }
+
+  // ============================================================
+  // 5b. NOTIFICATION SOUND
+  // ============================================================
+  let audioCtx = null;
+
+  function playNotifySound() {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      const now = audioCtx.currentTime;
+      // Two-tone "pop" chime, similar cadence to common chat notifications
+      [[880, 0], [1175, 0.09]].forEach(([freq, delay]) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, now + delay);
+        gain.gain.exponentialRampToValueAtTime(0.18, now + delay + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + delay + 0.16);
+        osc.connect(gain).connect(audioCtx.destination);
+        osc.start(now + delay);
+        osc.stop(now + delay + 0.18);
+      });
+    } catch (e) {
+      console.warn('Notification sound unavailable:', e);
+    }
   }
 
   // ============================================================
@@ -187,15 +185,6 @@
     });
   }
 
-  function formatDateFull(ts) {
-    return new Date(ts).toLocaleString([], {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  }
-
   function truncate(str, n = 20) {
     if (!str) return '';
     return str.length > n ? str.substr(0, n) + '…' : str;
@@ -225,139 +214,44 @@
   }
 
   // ============================================================
-  // 7. NOTIFICATIONS & BADGES
-  // ============================================================
-  function playNotificationSound() {
-    if (DOM.notificationSound) {
-      DOM.notificationSound.currentTime = 0;
-      DOM.notificationSound.play().catch(() => {});
-    }
-  }
-
-  function showBrowserNotification(title, body) {
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification(title, { body, icon: CONFIG.BRANDING.LOGO.PATH });
-    }
-  }
-
-  function requestNotificationPermission() {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  }
-
-  function incrementUnread(channelId) {
-    if (!channelId) return;
-    state.unreadCounts[channelId] = (state.unreadCounts[channelId] || 0) + 1;
-    updateNotificationBadges();
-  }
-
-  function clearUnread(channelId) {
-    if (!channelId) return;
-    state.unreadCounts[channelId] = 0;
-    updateNotificationBadges();
-  }
-
-  function getTotalUnread() {
-    return Object.values(state.unreadCounts).reduce((a, b) => a + b, 0);
-  }
-
-  function updateNotificationBadges() {
-    const total = getTotalUnread();
-    if (total > 0) {
-      DOM.globalNotificationBadge.textContent = total > 99 ? '99+' : total;
-      DOM.globalNotificationBadge.classList.remove('hidden');
-    } else {
-      DOM.globalNotificationBadge.classList.add('hidden');
-    }
-    // Update channel list badges
-    document.querySelectorAll('.channel-badge').forEach(badge => {
-      const chId = badge.dataset.channelId;
-      const count = state.unreadCounts[chId] || 0;
-      if (count > 0) {
-        badge.textContent = count > 99 ? '99+' : count;
-        badge.classList.remove('hidden');
-      } else {
-        badge.classList.add('hidden');
-      }
-    });
-  }
-
-  // ============================================================
-  // 8. AUTHENTICATION
+  // 7. AUTHENTICATION
   // ============================================================
   async function loginWithUsername(username) {
     const email = generateEmail(username);
     const password = CONFIG.AUTH.DEFAULT_PASSWORD;
 
-    console.log('[AUTH] Attempting login for:', username);
-    console.log('[AUTH] Email:', email);
-    console.log('[AUTH] Supabase URL:', CONFIG.SUPABASE.URL);
-    console.log('[AUTH] Key prefix:', CONFIG.SUPABASE.ANON_KEY.substring(0, 20) + '...');
-
     try {
-      console.log('[AUTH] Step 1: signUp...');
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+      const { error: signUpError } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { username } }
       });
-
-      console.log('[AUTH] signUp result:', { user: !!signUpData?.user, session: !!signUpData?.session, error: signUpError?.message || 'none' });
 
       const isAlreadyRegistered =
         signUpError &&
         (signUpError.status === 400 ||
           signUpError.status === 409 ||
           signUpError.status === 422 ||
-          /already registered|already exists|user already registered/i.test(signUpError.message || ''));
+          /already registered|already exists/i.test(signUpError.message || ''));
 
       if (signUpError && !isAlreadyRegistered) {
-        console.error('[AUTH] signUp failed with unexpected error:', signUpError);
-        throw new Error(`Sign up failed: ${signUpError.message}`);
+        throw signUpError;
       }
 
-      if (signUpError && isAlreadyRegistered) {
-        console.log('[AUTH] User already registered, proceeding to sign in...');
-      }
-
-      console.log('[AUTH] Step 2: signInWithPassword...');
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
-      console.log('[AUTH] signIn result:', { user: !!data?.user, session: !!data?.session, error: error?.message || 'none' });
-
-      if (error) {
-        if (error.message?.includes('Email not confirmed') || error.message?.includes('not confirmed')) {
-          console.error('[AUTH] Email not confirmed. Disable "Confirm email" in Supabase Auth settings.');
-          throw new Error('Account pending email confirmation. Ask your admin to disable "Confirm email" in Supabase Auth settings.');
-        }
-        throw error;
-      }
-
-      if (!data.user) {
-        throw new Error('No user returned from sign in');
-      }
-
-      console.log('[AUTH] Login successful! User ID:', data.user.id);
+      if (error) throw error;
       return data.user;
     } catch (e) {
-      console.error('[AUTH] Fatal auth error:', e);
-      const msg = e.message || '';
-      if (msg.includes('Email signups are disabled') || msg.includes('Email logins are disabled')) {
-        throw new Error('Email authentication is disabled in Supabase. Go to Authentication → Providers → Email and turn it ON.');
-      }
-      if (msg.includes('not confirmed')) {
-        throw new Error('Email confirmation is required. Turn OFF "Confirm email" in Supabase Auth settings.');
-      }
-      throw new Error(e.message || 'Login failed. Please check your School ID and Supabase configuration.');
+      console.error('Auth error:', e);
+      throw new Error('Login failed. Please check your School ID.');
     }
   }
 
   // ============================================================
-  // 9. CHANNELS (CRUD)
+  // 8. CHANNELS (CRUD)
   // ============================================================
   async function loadChannels() {
     if (!state.currentUser) return [];
@@ -390,34 +284,241 @@
     channels.forEach((ch) => {
       const div = document.createElement('div');
       div.className = `channel-item ${state.currentChannel?.id === ch.id ? 'active' : ''}`;
+      const unread = state.unreadByChannel[ch.id] || 0;
+      const adminControls = state.isAdmin
+        ? `
+          <span class="channel-admin-controls" style="display:flex; gap:4px; flex-shrink:0;">
+            <button class="icon-btn" style="width:22px; height:22px;" title="Rename channel" data-action="rename" data-id="${ch.id}">
+              <i class="fas fa-pen" style="font-size:10px;"></i>
+            </button>
+            <button class="icon-btn" style="width:22px; height:22px;" title="Delete channel" data-action="delete-channel" data-id="${ch.id}">
+              <i class="fas fa-trash" style="font-size:10px; color:var(--danger);"></i>
+            </button>
+          </span>
+        `
+        : '';
       div.innerHTML = `
-        <span style="flex:1;">${escapeHtml(ch.name)}</span>
-        <span class="channel-badge hidden" data-channel-id="${ch.id}">0</span>
+        <span class="channel-name">${escapeHtml(ch.name)}</span>
+        ${unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : ''}
+        ${adminControls}
+      `;
       div.dataset.id = ch.id;
-      div.addEventListener('click', () => selectChannel(ch));
+      div.addEventListener('click', (e) => {
+        if (e.target.closest('[data-action]')) return; // let admin buttons handle their own click
+        selectChannel(ch);
+      });
       DOM.channelList.appendChild(div);
     });
 
-    updateNotificationBadges();
+    // Admin rename/delete controls (delegated once per render)
+    DOM.channelList.querySelectorAll('[data-action="rename"]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        renameChannel(btn.dataset.id);
+      });
+    });
+    DOM.channelList.querySelectorAll('[data-action="delete-channel"]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteChannel(btn.dataset.id);
+      });
+    });
 
     if (!state.currentChannel && channels.length) {
       selectChannel(channels[0]);
     }
   }
 
+  async function renameChannel(channelId) {
+    const newName = prompt('New channel name:');
+    if (!newName) return;
+    const { error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.CHANNELS)
+      .update({ name: newName })
+      .eq('id', channelId);
+    if (error) {
+      alert('Rename failed: ' + error.message);
+      return;
+    }
+    if (state.currentChannel?.id === channelId) state.currentChannel.name = newName;
+    await renderChannels();
+  }
+
+  async function deleteChannel(channelId) {
+    if (!confirm('Delete this channel? This also removes its messages and member list. This cannot be undone.')) return;
+    const { error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.CHANNELS)
+      .delete()
+      .eq('id', channelId);
+    if (error) {
+      alert('Delete failed: ' + error.message);
+      return;
+    }
+    if (state.currentChannel?.id === channelId) {
+      state.currentChannel = null;
+      if (state.messagesSubscription) {
+        supabase.removeChannel(state.messagesSubscription);
+        state.messagesSubscription = null;
+      }
+    }
+    await renderChannels();
+  }
+
+  async function refreshUnreadBadges() {
+    if (!state.currentUser) return;
+    const { data, error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+      .select('channel_id')
+      .is('seen_at', null)
+      .neq('username', state.currentUser.username);
+
+    if (error) return;
+
+    const counts = {};
+    (data || []).forEach((row) => {
+      counts[row.channel_id] = (counts[row.channel_id] || 0) + 1;
+    });
+    state.unreadByChannel = counts;
+
+    // Update badges in place without a full channel re-render
+    document.querySelectorAll('.channel-item').forEach((el) => {
+      const id = el.dataset.id;
+      const existing = el.querySelector('.unread-badge');
+      const count = counts[id] || 0;
+      if (count > 0) {
+        const label = count > 99 ? '99+' : String(count);
+        if (existing) {
+          existing.textContent = label;
+        } else {
+          const badge = document.createElement('span');
+          badge.className = 'unread-badge';
+          badge.textContent = label;
+          el.appendChild(badge);
+        }
+      } else if (existing) {
+        existing.remove();
+      }
+    });
+  }
+
+  // ============================================================
+  // 8c. DELIVERED / SEEN TRACKING
+  // ============================================================
+  async function markDelivered(channelId) {
+    if (!state.currentUser) return;
+    await supabase
+      .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+      .update({ delivered_at: new Date().toISOString() })
+      .eq('channel_id', channelId)
+      .neq('username', state.currentUser.username)
+      .is('delivered_at', null);
+  }
+
+  async function markSeen(channelId) {
+    if (!state.currentUser || !document.hasFocus()) return;
+    await supabase
+      .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+      .update({ seen_at: new Date().toISOString(), seen_by: state.currentUser.username })
+      .eq('channel_id', channelId)
+      .neq('username', state.currentUser.username)
+      .is('seen_at', null);
+    await refreshUnreadBadges();
+  }
+
   async function selectChannel(channel) {
     state.currentChannel = channel;
-    clearUnread(channel.id);
     await renderChannels();
     await loadMessages(channel.id);
     await loadStatuses();
     subscribeToMessages(channel.id);
+    await markDelivered(channel.id);
+    await markSeen(channel.id);
+    if (state.isAdmin) await loadMembers(channel.id);
   }
 
   // ============================================================
-  // 10. REALTIME MESSAGE SYNC
+  // 8d. GROUP MEMBER MANAGEMENT (admin only)
+  // ============================================================
+  async function loadMembers(channelId) {
+    const { data, error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.MEMBERS)
+      .select('*')
+      .eq('channel_id', channelId)
+      .order('role')
+      .order('username');
+
+    if (error) {
+      DOM.channelMembersList.innerHTML = '<div class="empty-note">Could not load members</div>';
+      return;
+    }
+    renderMembers(data || []);
+  }
+
+  function renderMembers(members) {
+    if (!members.length) {
+      DOM.channelMembersList.innerHTML = '<div class="empty-note">No members yet</div>';
+      return;
+    }
+
+    DOM.channelMembersList.innerHTML = members.map((m) => `
+      <div style="display:flex; align-items:center; gap:7px; padding:5px 7px; border-radius:7px; background:var(--surface-sunken);">
+        ${avatarHtml(m.username, 'sm')}
+        <span style="flex:1; font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(m.username)}</span>
+        <span class="role-chip role-${m.role}-chip" style="padding:2px 7px 2px 6px; font-size:9.5px;">${escapeHtml(m.role)}</span>
+        <button class="icon-btn" style="width:22px; height:22px;" title="Remove from group" data-remove-member="${m.id}">
+          <i class="fas fa-xmark" style="font-size:11px;"></i>
+        </button>
+      </div>
+    `).join('');
+
+    DOM.channelMembersList.querySelectorAll('[data-remove-member]').forEach((btn) => {
+      btn.addEventListener('click', () => removeMember(btn.dataset.removeMember));
+    });
+  }
+
+  async function addMemberToChannel(username, role) {
+    if (!username || !state.currentChannel) {
+      alert('Enter a username and select a channel.');
+      return;
+    }
+
+    const { error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.MEMBERS)
+      .upsert(
+        {
+          channel_id: state.currentChannel.id,
+          username,
+          role,
+          added_by: state.currentUser.username,
+        },
+        { onConflict: 'channel_id,username' }
+      );
+
+    if (error) {
+      alert('Could not add member: ' + error.message);
+      return;
+    }
+    await loadMembers(state.currentChannel.id);
+  }
+
+  async function removeMember(memberId) {
+    if (!confirm('Remove this person from the group?')) return;
+    const { error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.MEMBERS)
+      .delete()
+      .eq('id', memberId);
+    if (error) {
+      alert('Remove failed: ' + error.message);
+      return;
+    }
+    await loadMembers(state.currentChannel.id);
+  }
+
+  // ============================================================
+  // 8b. REALTIME MESSAGE SYNC
   // ============================================================
   function subscribeToMessages(channelId) {
+    // Drop any previous subscription (e.g. from the last channel)
     if (state.messagesSubscription) {
       supabase.removeChannel(state.messagesSubscription);
       state.messagesSubscription = null;
@@ -438,20 +539,42 @@
           if (!exists) {
             state.messages.push(payload.new);
             renderMessages();
-            // Notification logic
+
             if (payload.new.username !== state.currentUser?.username) {
-              playNotificationSound();
-              if (document.hidden) {
-                showBrowserNotification(
-                  `${payload.new.username} in ${state.currentChannel?.name || 'channel'}`,
-                  payload.new.content || 'Sent an attachment'
-                );
-              }
-              if (state.currentChannel?.id !== channelId) {
-                incrementUnread(channelId);
-              }
+              playNotifySound();
+              markDelivered(channelId);
+              markSeen(channelId);
             }
           }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: CONFIG.SUPABASE.TABLES.MESSAGES,
+          filter: `channel_id=eq.${channelId}`,
+        },
+        (payload) => {
+          const idx = state.messages.findIndex((m) => m.id === payload.new.id);
+          if (idx !== -1) {
+            state.messages[idx] = payload.new;
+            renderMessages();
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: CONFIG.SUPABASE.TABLES.MESSAGES,
+          filter: `channel_id=eq.${channelId}`,
+        },
+        (payload) => {
+          state.messages = state.messages.filter((m) => m.id !== payload.old.id);
+          renderMessages();
         }
       )
       .subscribe((status) => {
@@ -463,9 +586,11 @@
 
   async function createChannel(name) {
     if (!name) return;
+
     const { error } = await supabase
       .from(CONFIG.SUPABASE.TABLES.CHANNELS)
       .insert({ name });
+
     if (error) {
       alert('Error creating channel: ' + error.message);
       return;
@@ -474,56 +599,7 @@
   }
 
   // ============================================================
-  // 11. MESSAGE STATUS (Ticks) & READ RECEIPTS
-  // ============================================================
-  async function markMessagesAsRead(channelId) {
-    if (!state.currentUser || !channelId) return;
-    // Mark all messages in channel as read by current user
-    const messagesToMark = state.messages.filter(
-      m => m.username !== state.currentUser.username && m.status !== 'read'
-    );
-    for (const msg of messagesToMark) {
-      // Update global message status
-      const { error } = await supabase
-        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
-        .update({ status: 'read', seen_at: new Date().toISOString() })
-        .eq('id', msg.id);
-      if (!error) {
-        msg.status = 'read';
-        msg.seen_at = new Date().toISOString();
-      }
-      // Also insert into message_reads for accurate tracking
-      await supabase
-        .from('message_reads')
-        .upsert({
-          message_id: msg.id,
-          username: state.currentUser.username,
-          read_at: new Date().toISOString()
-        }, { onConflict: 'message_id,username' });
-    }
-    renderMessages();
-  }
-
-  function getTickHtml(msg) {
-    if (msg.username !== state.currentUser?.username) return '';
-    let tickClass = 'tick-single';
-    let readClass = '';
-    if (msg.status === 'read') {
-      tickClass = 'tick-double';
-      readClass = 'read';
-    } else if (msg.status === 'delivered') {
-      tickClass = 'tick-double';
-    }
-    return `<span class="msg-ticks ${readClass} ${tickClass}" title="${msg.status}"></span>`;
-  }
-
-  function getSeenTimeHtml(msg) {
-    if (!msg.seen_at || msg.username !== state.currentUser?.username) return '';
-    return `<div class="msg-seen-time">Seen ${formatDateFull(msg.seen_at)}</div>`;
-  }
-
-  // ============================================================
-  // 12. MESSAGES
+  // 9. MESSAGES
   // ============================================================
   async function loadMessages(channelId) {
     if (!channelId) return;
@@ -537,27 +613,27 @@
     if (error) {
       console.warn('Messages fallback:', error);
       state.messages = [
-        { id: '1', content: 'Welcome to the channel!', username: 'system', created_at: Date.now(), status: 'sent' }
+        {
+          id: '1',
+          content: 'Welcome to the channel!',
+          username: 'system',
+          created_at: Date.now()
+        }
       ];
     } else {
       state.messages = data || [];
     }
-
-    // Mark non-self messages as delivered if they were just sent
-    const otherMessages = state.messages.filter(
-      m => m.username !== state.currentUser?.username && m.status === 'sent'
-    );
-    for (const msg of otherMessages) {
-      await supabase
-        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
-        .update({ status: 'delivered' })
-        .eq('id', msg.id);
-      msg.status = 'delivered';
-    }
-
     renderMessages();
-    // After rendering, mark as read
-    setTimeout(() => markMessagesAsRead(channelId), 500);
+  }
+
+  function ticksHtml(msg) {
+    if (msg.seen_at) {
+      return `<span class="msg-ticks seen" title="Seen"><i class="fas fa-check-double"></i></span>`;
+    }
+    if (msg.delivered_at) {
+      return `<span class="msg-ticks delivered" title="Delivered"><i class="fas fa-check-double"></i></span>`;
+    }
+    return `<span class="msg-ticks" title="Sent"><i class="fas fa-check"></i></span>`;
   }
 
   function renderMessages() {
@@ -574,55 +650,105 @@
       wrap.className = `msg ${isMine ? 'msg-mine' : 'msg-theirs'}`;
       wrap.dataset.id = msg.id;
 
-      // Reply bubble
       let replyHtml = '';
       if (msg.reply_to) {
-        const parent = state.messages.find(m => m.id === msg.reply_to);
-        if (parent) {
-          replyHtml = `
-            <div class="msg-reply">
-              <div class="reply-preview-author">${escapeHtml(parent.username)}</div>
-              <div>${escapeHtml(truncate(parent.content, 60))}</div>
-            </div>
-        }
+        replyHtml = `
+          <div class="msg-reply-quote">
+            <span class="reply-author">${escapeHtml(msg.reply_username || 'Message')}</span>
+            <span class="reply-text">${escapeHtml(truncate(msg.reply_content || '', 60))}</span>
+          </div>
+        `;
       }
 
       let bubbleHtml = '';
       if (msg.content) {
         bubbleHtml += `<div class="msg-bubble">${replyHtml}${escapeHtml(msg.content)}</div>`;
+      } else if (replyHtml) {
+        bubbleHtml += `<div class="msg-bubble">${replyHtml}</div>`;
       }
       if (msg.file_url) {
         bubbleHtml += `
           <a href="${msg.file_url}" target="_blank" rel="noopener" class="msg-file">
             <i class="fas fa-paperclip"></i> Attached file
           </a>
+        `;
       }
+
+      const footerHtml = isMine
+        ? `
+          <div class="msg-meta" style="margin-top:2px;">
+            ${ticksHtml(msg)}
+            ${msg.seen_at ? `<span class="msg-seen-time">Seen ${formatDate(msg.seen_at)}</span>` : ''}
+          </div>
+        `
+        : '';
 
       wrap.innerHTML = `
         ${avatarHtml(msg.username, 'sm')}
         <div class="msg-body">
           <div class="msg-meta">
             <span class="msg-author">${escapeHtml(msg.username || 'unknown')}</span>
-            <span class="msg-time">${formatDate(msg.created_at)} ${getTickHtml(msg)}</span>
+            <span class="msg-time">${formatDate(msg.created_at)}</span>
           </div>
           ${bubbleHtml}
-          ${getSeenTimeHtml(msg)}
+          ${footerHtml}
         </div>
-
-      // Context menu events
-      wrap.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        showContextMenu(e, msg);
-      });
-      wrap.addEventListener('click', (e) => {
-        if (DOM.msgContextMenu) DOM.msgContextMenu.classList.add('hidden');
-      });
-
+        <div class="msg-actions">
+          <button class="msg-reply-btn" title="Reply" data-reply-id="${msg.id}">
+            <i class="fas fa-reply"></i>
+          </button>
+          ${state.isAdmin ? `
+            <button class="msg-reply-btn" title="Delete message" data-delete-id="${msg.id}" style="margin-left:4px;">
+              <i class="fas fa-trash" style="color:var(--danger);"></i>
+            </button>
+          ` : ''}
+        </div>
+      `;
       DOM.chatMessages.appendChild(wrap);
     });
 
     DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
   }
+
+  async function deleteMessage(messageId) {
+    if (!confirm('Delete this message for everyone?')) return;
+    const { error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+      .delete()
+      .eq('id', messageId);
+    if (error) {
+      alert('Delete failed: ' + error.message);
+      return;
+    }
+    state.messages = state.messages.filter((m) => m.id !== messageId);
+    renderMessages();
+  }
+
+  // Delegated click handler for reply buttons (messages are re-rendered often)
+  DOM.chatMessages.addEventListener('click', (e) => {
+    const btn = e.target.closest('.msg-reply-btn');
+    if (!btn) return;
+
+    if (btn.dataset.deleteId) {
+      deleteMessage(btn.dataset.deleteId);
+      return;
+    }
+
+    const id = btn.dataset.replyId;
+    const msg = state.messages.find((m) => m.id === id);
+    if (!msg) return;
+
+    state.replyingTo = msg;
+    DOM.replyPreviewAuthor.textContent = msg.username;
+    DOM.replyPreviewText.textContent = msg.content || (msg.file_url ? 'Attached file' : '');
+    DOM.replyPreview.classList.remove('hidden');
+    DOM.messageInput.focus();
+  });
+
+  DOM.replyPreviewCancel.addEventListener('click', () => {
+    state.replyingTo = null;
+    DOM.replyPreview.classList.add('hidden');
+  });
 
   async function sendMessage(content, file) {
     if (!state.currentChannel || !state.currentUser) {
@@ -637,47 +763,55 @@
         alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
         return;
       }
+
       const path = generateStoragePath(state.currentChannel.id, file.name);
+
       try {
         const { data, error } = await supabase.storage
           .from(CONFIG.SUPABASE.STORAGE_BUCKET)
           .upload(path, file);
+
         if (error) throw error;
+
         const { data: urlData } = supabase.storage
           .from(CONFIG.SUPABASE.STORAGE_BUCKET)
           .getPublicUrl(path);
         fileUrl = urlData.publicUrl;
+
         DOM.fileUploadStatus.textContent = `📎 ${file.name} uploaded`;
         DOM.fileUploadStatus.classList.remove('hidden');
         setTimeout(() => DOM.fileUploadStatus.classList.add('hidden'), 4000);
       } catch (e) {
         console.error('Upload error:', e);
-        alert(`File upload failed: ${e.message || 'unknown error'}`);
+        alert(`File upload failed: ${e.message || 'unknown error — check console for details.'}`);
         return;
       }
     }
 
-    const insertData = {
-      channel_id: state.currentChannel.id,
-      username: state.currentUser.username,
-      content: content || '',
-      file_url: fileUrl,
-      reply_to: state.replyingTo || null,
-      status: 'sent',
-      created_at: new Date().toISOString(),
-    };
+    const replyPayload = state.replyingTo
+      ? {
+          reply_to: state.replyingTo.id,
+          reply_username: state.replyingTo.username,
+          reply_content: state.replyingTo.content || (state.replyingTo.file_url ? '📎 Attached file' : ''),
+        }
+      : {};
 
     const { error } = await supabase
       .from(CONFIG.SUPABASE.TABLES.MESSAGES)
-      .insert(insertData);
+      .insert({
+        channel_id: state.currentChannel.id,
+        username: state.currentUser.username,
+        content: content || '',
+        file_url: fileUrl,
+        created_at: new Date().toISOString(),
+        ...replyPayload,
+      });
 
     if (error) {
       console.error('Send error:', error);
       alert('Failed to send message.');
-      return;
     }
 
-    // Clear reply state
     state.replyingTo = null;
     DOM.replyPreview.classList.add('hidden');
 
@@ -685,37 +819,7 @@
   }
 
   // ============================================================
-  // 13. REPLY-TO FUNCTIONALITY
-  // ============================================================
-  function showContextMenu(e, msg) {
-    state.contextMenuTarget = msg;
-    const menu = DOM.msgContextMenu;
-    menu.style.left = `${e.pageX}px`;
-    menu.style.top = `${e.pageY}px`;
-    menu.classList.remove('hidden');
-  }
-
-  function hideContextMenu() {
-    DOM.msgContextMenu.classList.add('hidden');
-    state.contextMenuTarget = null;
-  }
-
-  function startReply(msg) {
-    state.replyingTo = msg.id;
-    DOM.replyPreviewAuthor.textContent = msg.username;
-    DOM.replyPreviewText.textContent = msg.content || 'Attachment';
-    DOM.replyPreview.classList.remove('hidden');
-    DOM.messageInput.focus();
-    hideContextMenu();
-  }
-
-  function cancelReply() {
-    state.replyingTo = null;
-    DOM.replyPreview.classList.add('hidden');
-  }
-
-  // ============================================================
-  // 14. STATUS UPDATES
+  // 10. STATUS UPDATES
   // ============================================================
   async function loadStatuses() {
     const { data, error } = await supabase
@@ -726,7 +830,12 @@
 
     if (error) {
       state.statuses = [
-        { id: '1', content: 'Welcome to Nous Complex Orbit!', username: 'admin', created_at: Date.now() }
+        {
+          id: '1',
+          content: 'Welcome to Nous Complex Orbit!',
+          username: 'admin',
+          created_at: Date.now()
+        }
       ];
     } else {
       state.statuses = data || [];
@@ -746,6 +855,7 @@
         item.innerHTML = `
           ${avatarHtml(st.username)}
           <span class="status-name">${escapeHtml(truncate(st.username || 'User', 10))}</span>
+        `;
         item.addEventListener('click', () => showStatusModal(st));
         DOM.statusTray.appendChild(item);
       });
@@ -760,6 +870,7 @@
 
   async function postStatus(content) {
     if (!state.currentUser) return;
+
     const { error } = await supabase
       .from(CONFIG.SUPABASE.TABLES.STATUSES)
       .insert({
@@ -767,6 +878,7 @@
         content: content,
         created_at: new Date().toISOString(),
       });
+
     if (error) {
       console.error('Status error:', error);
       alert('Failed to post status.');
@@ -782,6 +894,7 @@
 
     let progress = 0;
     if (state.progressInterval) clearInterval(state.progressInterval);
+
     state.progressInterval = setInterval(() => {
       progress += 2;
       if (progress >= 100) {
@@ -793,14 +906,16 @@
   }
 
   // ============================================================
-  // 15. VIDEO / LIVEKIT
+  // 11. VIDEO / LIVEKIT
   // ============================================================
   function buildLiveUrl() {
     const settings = { ...CONFIG.LIVEKIT.ROOM_SETTINGS };
+
     if (state.isTeacher) {
       settings.lock_webcam = false;
       settings.hide_host_management_controls = false;
     }
+
     const params = new URLSearchParams(settings);
     return `${CONFIG.LIVEKIT.URL}?${params.toString()}`;
   }
@@ -810,6 +925,7 @@
       alert('Please select a channel first.');
       return;
     }
+
     if (CONFIG.FEATURES.ENABLE_ATTENDANCE_LOGGING) {
       try {
         await supabase
@@ -824,6 +940,7 @@
         console.warn('Attendance log skipped:', e);
       }
     }
+
     DOM.videoContainer.classList.remove('hidden');
     DOM.videoIframe.src = buildLiveUrl();
     state.videoActive = true;
@@ -831,7 +948,7 @@
   }
 
   // ============================================================
-  // 16. ADMIN FUNCTIONS (Legacy)
+  // 12. ADMIN FUNCTIONS
   // ============================================================
   async function generateRoster() {
     const students = [];
@@ -843,22 +960,20 @@
       const uid = `${prefix}${String(i).padStart(3, '0')}`;
       const pass = Math.random().toString(36).slice(2, 2 + passLength);
       students.push({ username: uid, password: pass });
+
       try {
-        await supabase.auth.signUp({ email: generateEmail(uid), password: pass });
-        await supabase.from('profiles').insert({
-          username: uid,
-          full_name: uid,
-          role: 'student',
-          email: generateEmail(uid)
+        await supabase.auth.signUp({
+          email: generateEmail(uid),
+          password: pass
         });
       } catch (e) {
         // Ignore duplicate errors
       }
     }
 
-    let csv = 'Username,Password
-    students.forEach(s => csv += `${s.username},${s.password}
-`);
+    let csv = 'Username,Password\n';
+    students.forEach(s => csv += `${s.username},${s.password}\n`);
+
     const blob = new Blob([csv], { type: 'text/csv' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -866,6 +981,7 @@
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+
     alert(`✅ ${count} student roster generated and downloaded!`);
   }
 
@@ -873,13 +989,15 @@
     const { data, error } = await supabase
       .from(CONFIG.SUPABASE.TABLES.ATTENDANCE)
       .select('*');
+
     if (error) {
       alert('No attendance data found.');
       return;
     }
-    let csv = 'Student,Channel,Join Time,Status
-    data.forEach(r => csv += `${r.student_name},${r.channel_id},${r.join_time},${r.status}
-`);
+
+    let csv = 'Student,Channel,Join Time,Status\n';
+    data.forEach(r => csv += `${r.student_name},${r.channel_id},${r.join_time},${r.status}\n`);
+
     const blob = new Blob([csv], { type: 'text/csv' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -889,274 +1007,6 @@
     document.body.removeChild(link);
   }
 
-  async function assignStudentToChannel() {
-    const student = DOM.assignStudentInput.value.trim();
-    if (!student || !state.currentChannel) {
-      alert('Enter student ID and select a channel.');
-      return;
-    }
-    const { error } = await supabase
-      .from(CONFIG.SUPABASE.TABLES.MEMBERS)
-      .insert({
-        channel_id: state.currentChannel.id,
-        username: student,
-      });
-    if (error) {
-      alert('Assignment failed: ' + error.message);
-    } else {
-      alert(`✅ ${student} assigned to ${state.currentChannel.name}`);
-      DOM.assignStudentInput.value = '';
-    }
-  }
-
-  // ============================================================
-  // 17. FULL ADMIN PANEL (CRUD)
-  // ============================================================
-  function openAdminPanel() {
-    DOM.adminFullPanel.classList.remove('hidden');
-    loadAdminData();
-  }
-
-  function closeAdminPanel() {
-    DOM.adminFullPanel.classList.add('hidden');
-  }
-
-  function switchAdminTab(tabName) {
-    DOM.adminTabs.forEach(t => {
-      t.classList.toggle('active', t.dataset.tab === tabName);
-    });
-    DOM.adminTabContents.forEach(c => {
-      c.classList.toggle('active', c.id === `tab-${tabName}`);
-    });
-  }
-
-  async function loadAdminData() {
-    await Promise.all([
-      loadAdminUsers(),
-      loadAdminChannels(),
-      loadAdminMembers(),
-    ]);
-    populateAdminSelects();
-  }
-
-  async function loadAdminUsers() {
-    const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
-    if (error) {
-      DOM.adminUsersList.innerHTML = '<div class="empty-note">Error loading users</div>';
-      return;
-    }
-    state.adminData.users = data || [];
-    renderAdminUsers();
-  }
-
-  function renderAdminUsers() {
-    const list = DOM.adminUsersList;
-    if (!state.adminData.users.length) {
-      list.innerHTML = '<div class="empty-note">No users found</div>';
-      return;
-    }
-    list.innerHTML = state.adminData.users.map(u => `
-      <div class="admin-list-item">
-        <div class="item-info">
-          <div class="item-title">${escapeHtml(u.username)} <span style="color:var(--ink-faint); font-weight:400;">(${u.role})</span></div>
-          <div class="item-sub">${escapeHtml(u.full_name || '')} · ${u.email || ''}</div>
-        </div>
-        <div class="item-actions">
-          <button class="btn-icon-sm danger" onclick="window.deleteAdminUser('${u.id}')" title="Delete"><i class="fas fa-trash"></i></button>
-        </div>
-      </div>
-    `).join('');
-  }
-
-  async function addAdminUser() {
-    const username = DOM.adminUserName.value.trim();
-    const fullName = DOM.adminUserFullName.value.trim();
-    const role = DOM.adminUserRole.value;
-    if (!username) { alert('Username required'); return; }
-
-    const email = generateEmail(username);
-    const password = CONFIG.AUTH.DEFAULT_PASSWORD;
-
-    try {
-      await supabase.auth.signUp({ email, password });
-    } catch (e) {
-      // may already exist
-    }
-
-    const { error } = await supabase.from('profiles').insert({
-      username,
-      full_name: fullName || username,
-      role,
-      email
-    });
-    if (error) {
-      alert('Error adding user: ' + error.message);
-      return;
-    }
-    DOM.adminUserName.value = '';
-    DOM.adminUserFullName.value = '';
-    await loadAdminUsers();
-    alert(`✅ User ${username} added as ${role}`);
-  }
-
-  window.deleteAdminUser = async function(id) {
-    if (!confirm('Delete this user?')) return;
-    await supabase.from('profiles').delete().eq('id', id);
-    await loadAdminUsers();
-  };
-
-  async function loadAdminChannels() {
-    const { data, error } = await supabase.from('channels').select('*').order('name');
-    if (error) {
-      DOM.adminChannelsList.innerHTML = '<div class="empty-note">Error loading channels</div>';
-      return;
-    }
-    state.adminData.channels = data || [];
-    renderAdminChannels();
-  }
-
-  function renderAdminChannels() {
-    const list = DOM.adminChannelsList;
-    if (!state.adminData.channels.length) {
-      list.innerHTML = '<div class="empty-note">No channels found</div>';
-      return;
-    }
-    list.innerHTML = state.adminData.channels.map(c => `
-      <div class="admin-list-item">
-        <div class="item-info">
-          <div class="item-title"># ${escapeHtml(c.name)}</div>
-          <div class="item-sub">${c.id}</div>
-        </div>
-        <div class="item-actions">
-          <button class="btn-icon-sm" onclick="window.editAdminChannel('${c.id}', '${escapeHtml(c.name)}')" title="Edit"><i class="fas fa-pen"></i></button>
-          <button class="btn-icon-sm danger" onclick="window.deleteAdminChannel('${c.id}')" title="Delete"><i class="fas fa-trash"></i></button>
-        </div>
-      </div>
-    `).join('');
-  }
-
-  async function addAdminChannel() {
-    const name = DOM.adminChannelName.value.trim();
-    if (!name) { alert('Channel name required'); return; }
-    const { error } = await supabase.from('channels').insert({ name });
-    if (error) { alert('Error: ' + error.message); return; }
-    DOM.adminChannelName.value = '';
-    await loadAdminChannels();
-    await renderChannels();
-  }
-
-  window.editAdminChannel = async function(id, currentName) {
-    const newName = prompt('Rename channel:', currentName);
-    if (!newName || newName === currentName) return;
-    await supabase.from('channels').update({ name: newName }).eq('id', id);
-    await loadAdminChannels();
-    await renderChannels();
-  };
-
-  window.deleteAdminChannel = async function(id) {
-    if (!confirm('Delete this channel? All messages will be lost.')) return;
-    await supabase.from('channels').delete().eq('id', id);
-    await loadAdminChannels();
-    await renderChannels();
-  };
-
-  async function loadAdminMembers() {
-    const { data, error } = await supabase.from('members').select('*, channels(name)').order('created_at', { ascending: false });
-    if (error) {
-      DOM.adminMembersList.innerHTML = '<div class="empty-note">Error loading members</div>';
-      return;
-    }
-    state.adminData.members = data || [];
-    renderAdminMembers();
-  }
-
-  function renderAdminMembers() {
-    const list = DOM.adminMembersList;
-    if (!state.adminData.members.length) {
-      list.innerHTML = '<div class="empty-note">No assignments found</div>';
-      return;
-    }
-    list.innerHTML = state.adminData.members.map(m => `
-      <div class="admin-list-item">
-        <div class="item-info">
-          <div class="item-title">${escapeHtml(m.username)} <span style="color:var(--ink-faint); font-weight:400;">→ ${escapeHtml(m.channels?.name || m.channel_id)}</span></div>
-          <div class="item-sub">Role: ${m.role || 'student'}</div>
-        </div>
-        <div class="item-actions">
-          <button class="btn-icon-sm danger" onclick="window.deleteAdminMember('${m.id}')" title="Remove"><i class="fas fa-trash"></i></button>
-        </div>
-      </div>
-    `).join('');
-  }
-
-  async function addAdminMember() {
-    const channelId = DOM.adminMemberChannel.value;
-    const username = DOM.adminMemberUser.value;
-    const role = DOM.adminMemberRole.value;
-    if (!channelId || !username) { alert('Select channel and user'); return; }
-    const { error } = await supabase.from('members').insert({ channel_id: channelId, username, role });
-    if (error) { alert('Error: ' + error.message); return; }
-    await loadAdminMembers();
-  }
-
-  window.deleteAdminMember = async function(id) {
-    if (!confirm('Remove this member?')) return;
-    await supabase.from('members').delete().eq('id', id);
-    await loadAdminMembers();
-  };
-
-  async function loadAdminMessages() {
-    const channelId = DOM.adminMsgChannel.value;
-    let query = supabase.from('messages').select('*, channels(name)').order('created_at', { ascending: false }).limit(50);
-    if (channelId) query = query.eq('channel_id', channelId);
-    const { data, error } = await query;
-    if (error) {
-      DOM.adminMessagesList.innerHTML = '<div class="empty-note">Error loading messages</div>';
-      return;
-    }
-    state.adminData.messages = data || [];
-    renderAdminMessages();
-  }
-
-  function renderAdminMessages() {
-    const list = DOM.adminMessagesList;
-    if (!state.adminData.messages.length) {
-      list.innerHTML = '<div class="empty-note">No messages found</div>';
-      return;
-    }
-    list.innerHTML = state.adminData.messages.map(m => `
-      <div class="admin-list-item">
-        <div class="item-info">
-          <div class="item-title">${escapeHtml(m.username)} <span style="color:var(--ink-faint); font-weight:400;">in ${escapeHtml(m.channels?.name || m.channel_id)}</span></div>
-          <div class="item-sub">${escapeHtml(truncate(m.content, 60))} · ${formatDateFull(m.created_at)}</div>
-        </div>
-        <div class="item-actions">
-          <button class="btn-icon-sm danger" onclick="window.deleteAdminMessage('${m.id}')" title="Delete"><i class="fas fa-trash"></i></button>
-        </div>
-      </div>
-    `).join('');
-  }
-
-  window.deleteAdminMessage = async function(id) {
-    if (!confirm('Delete this message?')) return;
-    await supabase.from('messages').delete().eq('id', id);
-    await loadAdminMessages();
-    if (state.currentChannel) await loadMessages(state.currentChannel.id);
-  };
-
-  function populateAdminSelects() {
-    // Channel select
-    const chOpts = state.adminData.channels.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
-    DOM.adminMemberChannel.innerHTML = '<option value="">Select channel</option>' + chOpts;
-    DOM.adminMsgChannel.innerHTML = '<option value="">All channels</option>' + chOpts;
-    // User select
-    const userOpts = state.adminData.users.map(u => `<option value="${u.username}">${escapeHtml(u.username)} (${u.role})</option>`).join('');
-    DOM.adminMemberUser.innerHTML = '<option value="">Select user</option>' + userOpts;
-  }
-
-  // ============================================================
-  // 18. PERMISSION HANDLING
-  // ============================================================
   async function requestMediaPermissions() {
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
@@ -1177,23 +1027,23 @@
             Got it
           </button>
         </div>
+      `;
       document.body.appendChild(modal);
     }
   }
 
   // ============================================================
-  // 19. LOGIN FLOW
+  // 14. LOGIN FLOW
   // ============================================================
   async function handleLogin() {
     const username = DOM.usernameInput.value.trim();
-    console.log('[LOGIN] Button clicked, username:', username);
+
     if (!username) {
       showError('Please enter your School ID.');
       return;
     }
+
     hideError();
-    DOM.loginBtn.disabled = true;
-    DOM.loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
 
     try {
       const user = await loginWithUsername(username);
@@ -1220,7 +1070,6 @@
         DOM.adminPanel.classList.remove('hidden');
       }
 
-      requestNotificationPermission();
       await requestMediaPermissions();
       await renderChannels();
       await loadStatuses();
@@ -1228,20 +1077,19 @@
       DOM.liveBtnText.textContent = state.isTeacher ? 'Start live classroom' : 'Join live class';
 
     } catch (e) {
-      console.error('[LOGIN] Login failed:', e);
       showError(e.message || 'Login error. Please try again.');
-    } finally {
-      DOM.loginBtn.disabled = false;
-      DOM.loginBtn.innerHTML = '<i class="fas fa-arrow-right-to-bracket"></i> Enter Hub';
     }
   }
 
   // ============================================================
-  // 20. EVENT BINDINGS
+  // 15. EVENT BINDINGS
   // ============================================================
   DOM.loginBtn.addEventListener('click', handleLogin);
   DOM.usernameInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); handleLogin(); }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleLogin();
+    }
   });
 
   DOM.sendMsgBtn.addEventListener('click', async () => {
@@ -1255,7 +1103,10 @@
   });
 
   DOM.messageInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); DOM.sendMsgBtn.click(); }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      DOM.sendMsgBtn.click();
+    }
   });
 
   DOM.postStatusBtn.addEventListener('click', async () => {
@@ -1283,7 +1134,10 @@
 
   DOM.fileInput.addEventListener('change', function() {
     const file = this.files[0];
-    if (!file) { DOM.filePreview.classList.add('hidden'); return; }
+    if (!file) {
+      DOM.filePreview.classList.add('hidden');
+      return;
+    }
     if (file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
       alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
       this.value = '';
@@ -1306,7 +1160,12 @@
 
   DOM.rosterGenBtn.addEventListener('click', generateRoster);
   DOM.exportAttendanceBtn.addEventListener('click', exportAttendance);
-  DOM.assignStudentBtn.addEventListener('click', assignStudentToChannel);
+  DOM.assignStudentBtn.addEventListener('click', async () => {
+    const username = DOM.assignStudentInput.value.trim();
+    const role = DOM.assignRoleSelect.value;
+    await addMemberToChannel(username, role);
+    DOM.assignStudentInput.value = '';
+  });
 
   DOM.closeStatusModal.addEventListener('click', () => {
     DOM.statusModal.classList.add('hidden');
@@ -1320,46 +1179,10 @@
     }
   });
 
-  // NEW v2.0 Event Bindings
-  DOM.cancelReplyBtn.addEventListener('click', cancelReply);
-
-  DOM.ctxReplyBtn.addEventListener('click', () => {
-    if (state.contextMenuTarget) startReply(state.contextMenuTarget);
-  });
-
-  DOM.ctxDeleteBtn.addEventListener('click', async () => {
-    if (!state.contextMenuTarget) return;
-    if (!confirm('Delete this message?')) { hideContextMenu(); return; }
-    await supabase.from('messages').delete().eq('id', state.contextMenuTarget.id);
-    hideContextMenu();
-    if (state.currentChannel) await loadMessages(state.currentChannel.id);
-  });
-
-  document.addEventListener('click', (e) => {
-    if (!DOM.msgContextMenu.contains(e.target)) hideContextMenu();
-  });
-
-  DOM.openAdminPanelBtn.addEventListener('click', openAdminPanel);
-  DOM.closeAdminPanelBtn.addEventListener('click', closeAdminPanel);
-
-  DOM.adminTabs.forEach(tab => {
-    tab.addEventListener('click', () => switchAdminTab(tab.dataset.tab));
-  });
-
-  DOM.adminAddUserBtn.addEventListener('click', addAdminUser);
-  DOM.adminAddChannelBtn.addEventListener('click', addAdminChannel);
-  DOM.adminAddMemberBtn.addEventListener('click', addAdminMember);
-  DOM.adminRefreshMessagesBtn.addEventListener('click', loadAdminMessages);
-  DOM.adminMsgChannel.addEventListener('change', loadAdminMessages);
-
-  DOM.adminFullPanel.addEventListener('click', (e) => {
-    if (e.target === DOM.adminFullPanel) closeAdminPanel();
-  });
-
   // ============================================================
-  // 21. BOOTSTRAP
+  // 16. BOOTSTRAP
   // ============================================================
   setupLogos();
-  console.log('✅ Application v2.0 initialized successfully.');
+  console.log('✅ Application initialized successfully.');
 
 })();
