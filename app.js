@@ -1,5 +1,5 @@
 // ============================================================
-// COMPLETE JAVASCRIPT - School Hub Application
+// SCHOOL HUB — Application Logic
 // ============================================================
 
 (function() {
@@ -9,7 +9,7 @@
   // 1. LOAD CONFIGURATION
   // ============================================================
   const CONFIG = window.CONFIG;
-  
+
   if (!CONFIG) {
     console.error('❌ Config not loaded! Please include config.js');
     alert('Configuration file not found. Please check your setup.');
@@ -18,7 +18,6 @@
 
   console.log(`🏫 ${CONFIG.BRANDING.NAME} v${CONFIG.BRANDING.VERSION}`);
   console.log(`🔧 Environment: ${CONFIG.ENV}`);
-  console.log(`📌 Logo: ${CONFIG.BRANDING.LOGO.PATH}`);
 
   // ============================================================
   // 2. SUPABASE CLIENT
@@ -53,6 +52,7 @@
     usernameInput: $('usernameInput'),
     loginBtn: $('loginBtn'),
     authError: $('authError'),
+    authErrorText: $('authErrorText'),
     channelList: $('channelList'),
     userBadge: $('userBadge'),
     adminPanel: $('adminPanel'),
@@ -91,31 +91,19 @@
   function setupLogos() {
     const logoPath = CONFIG.BRANDING.LOGO.PATH;
     const altText = CONFIG.BRANDING.LOGO.ALT;
-    
-    if (DOM.authLogo) {
-      DOM.authLogo.src = logoPath;
-      DOM.authLogo.alt = altText;
-      DOM.authLogo.style.width = CONFIG.BRANDING.LOGO.WIDTH;
-      DOM.authLogo.style.height = CONFIG.BRANDING.LOGO.HEIGHT;
-    }
-    
-    if (DOM.sidebarLogo) {
-      DOM.sidebarLogo.src = logoPath;
-      DOM.sidebarLogo.alt = altText;
-    }
-    
-    const logoElements = [DOM.authLogo, DOM.sidebarLogo];
-    logoElements.forEach(el => {
-      if (el) {
-        el.addEventListener('error', function() {
-          console.warn('Logo image failed to load. Using fallback icon.');
-          this.style.display = 'none';
-          const fallback = document.createElement('i');
-          fallback.className = 'fas fa-graduation-cap text-[#67b3f9]';
-          fallback.style.fontSize = '2rem';
-          this.parentNode.insertBefore(fallback, this);
-        });
-      }
+
+    [DOM.authLogo, DOM.sidebarLogo].forEach((el) => {
+      if (!el) return;
+      el.src = logoPath;
+      el.alt = altText;
+      el.addEventListener('error', function onErr() {
+        this.removeEventListener('error', onErr);
+        this.style.display = 'none';
+        const fallback = document.createElement('i');
+        fallback.className = 'fas fa-graduation-cap';
+        fallback.style.cssText = 'color:var(--accent); font-size:1.4rem; display:flex; align-items:center; justify-content:center;';
+        this.parentNode.insertBefore(fallback, this);
+      });
     });
   }
 
@@ -130,14 +118,29 @@
     return CONFIG.AUTH.ROLES.STUDENT;
   }
 
+  // Role → identity system helpers (the app's signature visual device)
+  function roleKey(username) {
+    const role = getRoleFromUsername(username);
+    if (role === CONFIG.AUTH.ROLES.ADMIN) return 'admin';
+    if (role === CONFIG.AUTH.ROLES.TEACHER) return 'teacher';
+    return 'student';
+  }
+
+  function avatarHtml(username, size) {
+    const key = roleKey(username);
+    const initial = (username || '?').charAt(0).toUpperCase();
+    const sizeClass = size === 'sm' ? ' sm' : '';
+    return `<div class="avatar avatar-${key}${sizeClass}">${initial}</div>`;
+  }
+
   function generateEmail(username) {
     return `${username}${CONFIG.AUTH.EMAIL_SUFFIX}`;
   }
 
   function formatDate(ts) {
-    return new Date(ts).toLocaleTimeString([], { 
-      hour: '2-digit', 
-      minute: '2-digit' 
+    return new Date(ts).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit'
     });
   }
 
@@ -146,8 +149,14 @@
     return str.length > n ? str.substr(0, n) + '…' : str;
   }
 
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str ?? '';
+    return div.innerHTML;
+  }
+
   function showError(message) {
-    DOM.authError.textContent = message;
+    DOM.authErrorText.textContent = message;
     DOM.authError.classList.remove('hidden');
   }
 
@@ -175,16 +184,23 @@
         email,
         password,
       });
-      
-      if (signUpError && signUpError.status !== 409) {
+
+      const isAlreadyRegistered =
+        signUpError &&
+        (signUpError.status === 400 ||
+          signUpError.status === 409 ||
+          signUpError.status === 422 ||
+          /already registered|already exists/i.test(signUpError.message || ''));
+
+      if (signUpError && !isAlreadyRegistered) {
         throw signUpError;
       }
-      
-      const { data, error } = await supabase.auth.signInWithPassword({ 
-        email, 
-        password 
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
       });
-      
+
       if (error) throw error;
       return data.user;
     } catch (e) {
@@ -220,7 +236,7 @@
     DOM.channelList.innerHTML = '';
 
     if (!channels || channels.length === 0) {
-      DOM.channelList.innerHTML = '<div class="text-xs text-gray-400">No channels</div>';
+      DOM.channelList.innerHTML = '<div class="empty-note">No channels yet</div>';
       return;
     }
 
@@ -251,7 +267,7 @@
     const { error } = await supabase
       .from(CONFIG.SUPABASE.TABLES.CHANNELS)
       .insert({ name });
-    
+
     if (error) {
       alert('Error creating channel: ' + error.message);
       return;
@@ -274,11 +290,11 @@
     if (error) {
       console.warn('Messages fallback:', error);
       state.messages = [
-        { 
-          id: '1', 
-          content: 'Welcome to the channel!', 
-          username: 'system', 
-          created_at: Date.now() 
+        {
+          id: '1',
+          content: 'Welcome to the channel!',
+          username: 'system',
+          created_at: Date.now()
         }
       ];
     } else {
@@ -291,34 +307,38 @@
     DOM.chatMessages.innerHTML = '';
 
     if (!state.messages.length) {
-      DOM.chatMessages.innerHTML = '<div class="text-center text-xs text-gray-400">No messages</div>';
+      DOM.chatMessages.innerHTML = '<div class="empty-note center-text" style="width:100%;">No messages yet — say hello</div>';
       return;
     }
 
     state.messages.forEach((msg) => {
-      const div = document.createElement('div');
-      div.className = `msg-enter text-sm ${msg.username === state.currentUser?.username ? 'text-right' : ''}`;
-      
-      let contentHtml = `
-        <span class="font-semibold text-[#0e1c76]">${msg.username || 'unknown'}</span>
-        <span class="text-xs text-gray-400">${formatDate(msg.created_at)}</span>
-        <br/>
-      `;
-      
+      const isMine = msg.username === state.currentUser?.username;
+      const wrap = document.createElement('div');
+      wrap.className = `msg ${isMine ? 'msg-mine' : 'msg-theirs'}`;
+
+      let bubbleHtml = '';
       if (msg.content) {
-        contentHtml += `<span class="bg-white/30 px-2 py-0.5 rounded-lg inline-block">${msg.content}</span>`;
+        bubbleHtml += `<div class="msg-bubble">${escapeHtml(msg.content)}</div>`;
       }
-      
       if (msg.file_url) {
-        contentHtml += `
-          <a href="${msg.file_url}" target="_blank" class="text-[#67b3f9] text-xs underline ml-1">
-            <i class="fas fa-file"></i> file
+        bubbleHtml += `
+          <a href="${msg.file_url}" target="_blank" rel="noopener" class="msg-file">
+            <i class="fas fa-paperclip"></i> Attached file
           </a>
         `;
       }
-      
-      div.innerHTML = contentHtml;
-      DOM.chatMessages.appendChild(div);
+
+      wrap.innerHTML = `
+        ${avatarHtml(msg.username, 'sm')}
+        <div class="msg-body">
+          <div class="msg-meta">
+            <span class="msg-author">${escapeHtml(msg.username || 'unknown')}</span>
+            <span class="msg-time">${formatDate(msg.created_at)}</span>
+          </div>
+          ${bubbleHtml}
+        </div>
+      `;
+      DOM.chatMessages.appendChild(wrap);
     });
 
     DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
@@ -342,7 +362,7 @@
       const { data, error } = await supabase.storage
         .from(CONFIG.SUPABASE.STORAGE_BUCKET)
         .upload(path, file);
-      
+
       if (error) {
         console.error('Upload error:', error);
         alert('File upload failed.');
@@ -389,11 +409,11 @@
 
     if (error) {
       state.statuses = [
-        { 
-          id: '1', 
-          content: 'Welcome to School Hub!', 
-          username: 'admin', 
-          created_at: Date.now() 
+        {
+          id: '1',
+          content: 'Welcome to School Hub!',
+          username: 'admin',
+          created_at: Date.now()
         }
       ];
     } else {
@@ -406,22 +426,19 @@
     DOM.statusTray.innerHTML = '';
 
     if (!state.statuses.length) {
-      DOM.statusTray.innerHTML = '<div class="text-sm text-gray-400">No updates</div>';
-      return;
+      DOM.statusTray.innerHTML = '<div class="empty-note">No updates yet</div>';
+    } else {
+      state.statuses.forEach((st) => {
+        const item = document.createElement('div');
+        item.className = 'status-item';
+        item.innerHTML = `
+          ${avatarHtml(st.username)}
+          <span class="status-name">${escapeHtml(truncate(st.username || 'User', 10))}</span>
+        `;
+        item.addEventListener('click', () => showStatusModal(st));
+        DOM.statusTray.appendChild(item);
+      });
     }
-
-    state.statuses.forEach((st) => {
-      const ring = document.createElement('div');
-      ring.className = 'flex flex-col items-center cursor-pointer min-w-[60px] transition-transform hover:scale-105';
-      ring.innerHTML = `
-        <div class="w-12 h-12 rounded-full status-ring flex items-center justify-center bg-white/40 text-[#0e1c76] font-bold">
-          ${st.username?.charAt(0).toUpperCase() || 'U'}
-        </div>
-        <span class="text-[10px] truncate w-12 text-center text-gray-700">${truncate(st.username || 'User', 8)}</span>
-      `;
-      ring.addEventListener('click', () => showStatusModal(st));
-      DOM.statusTray.appendChild(ring);
-    });
 
     if (state.isAdmin || state.isTeacher) {
       DOM.statusAddBtn.classList.remove('hidden');
@@ -449,14 +466,14 @@
   }
 
   function showStatusModal(status) {
-    DOM.statusModalTitle.textContent = status.username || 'Announcement';
+    DOM.statusModalTitle.innerHTML = `<i class="fas fa-bullhorn" style="color:var(--accent); font-size:14px;"></i> ${escapeHtml(status.username || 'Announcement')}`;
     DOM.statusModalContent.textContent = status.content || '';
     DOM.statusProgress.style.width = '0%';
     DOM.statusModal.classList.remove('hidden');
 
     let progress = 0;
     if (state.progressInterval) clearInterval(state.progressInterval);
-    
+
     state.progressInterval = setInterval(() => {
       progress += 2;
       if (progress >= 100) {
@@ -472,12 +489,12 @@
   // ============================================================
   function buildLiveUrl() {
     const settings = { ...CONFIG.LIVEKIT.ROOM_SETTINGS };
-    
+
     if (state.isTeacher) {
       settings.lock_webcam = false;
       settings.hide_host_management_controls = false;
     }
-    
+
     const params = new URLSearchParams(settings);
     return `${CONFIG.LIVEKIT.URL}?${params.toString()}`;
   }
@@ -506,7 +523,7 @@
     DOM.videoContainer.classList.remove('hidden');
     DOM.videoIframe.src = buildLiveUrl();
     state.videoActive = true;
-    DOM.liveBtnText.textContent = state.isTeacher ? '🎬 Start Live Classroom' : 'Join Live Class';
+    DOM.liveBtnText.textContent = state.isTeacher ? 'Start live classroom' : 'Join live class';
   }
 
   // ============================================================
@@ -517,16 +534,16 @@
     const count = CONFIG.FEATURES.ROSTER.STUDENT_COUNT;
     const prefix = CONFIG.FEATURES.ROSTER.PREFIX;
     const passLength = CONFIG.FEATURES.ROSTER.PASSWORD_LENGTH;
-    
+
     for (let i = 1; i <= count; i++) {
       const uid = `${prefix}${String(i).padStart(3, '0')}`;
       const pass = Math.random().toString(36).slice(2, 2 + passLength);
       students.push({ username: uid, password: pass });
-      
+
       try {
-        await supabase.auth.signUp({ 
-          email: generateEmail(uid), 
-          password: pass 
+        await supabase.auth.signUp({
+          email: generateEmail(uid),
+          password: pass
         });
       } catch (e) {
         // Ignore duplicate errors
@@ -535,7 +552,7 @@
 
     let csv = 'Username,Password\n';
     students.forEach(s => csv += `${s.username},${s.password}\n`);
-    
+
     const blob = new Blob([csv], { type: 'text/csv' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -543,7 +560,7 @@
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    
+
     alert(`✅ ${count} student roster generated and downloaded!`);
   }
 
@@ -551,7 +568,7 @@
     const { data, error } = await supabase
       .from(CONFIG.SUPABASE.TABLES.ATTENDANCE)
       .select('*');
-    
+
     if (error) {
       alert('No attendance data found.');
       return;
@@ -559,7 +576,7 @@
 
     let csv = 'Student,Channel,Join Time,Status\n';
     data.forEach(r => csv += `${r.student_name},${r.channel_id},${r.join_time},${r.status}\n`);
-    
+
     const blob = new Blob([csv], { type: 'text/csv' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -600,16 +617,17 @@
       console.log('Media permissions granted.');
     } catch (e) {
       const modal = document.createElement('div');
-      modal.className = 'fixed inset-0 modal-overlay flex items-center justify-center z-50 p-4';
+      modal.className = 'modal-overlay';
+      modal.style.cssText = 'position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:50; padding:16px;';
       modal.innerHTML = `
-        <div class="glass max-w-sm w-full rounded-3xl p-6 shadow-2xl">
-          <h3 class="font-bold text-[#0e1c76] flex items-center gap-2">
-            <i class="fas fa-exclamation-triangle text-yellow-500"></i> Permissions Required
+        <div class="modal-card">
+          <h3 class="modal-title">
+            <i class="fas fa-triangle-exclamation" style="color:var(--role-admin); font-size:14px;"></i> Permissions required
           </h3>
-          <p class="my-3 text-gray-700 text-sm">
-            Camera and microphone access are blocked. Please allow permissions in your browser settings, then reload the page.
+          <p class="modal-body">
+            Camera and microphone access are blocked. Allow permissions in your browser settings, then reload the page.
           </p>
-          <button onclick="this.closest('.modal-overlay').remove()" class="w-full glass py-2 rounded-xl text-sm hover:bg-white/40">
+          <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-ghost btn-block">
             Got it
           </button>
         </div>
@@ -623,41 +641,45 @@
   // ============================================================
   async function handleLogin() {
     const username = DOM.usernameInput.value.trim();
-    
+
     if (!username) {
       showError('Please enter your School ID.');
       return;
     }
-    
+
     hideError();
 
     try {
       const user = await loginWithUsername(username);
-      
+      const role = getRoleFromUsername(username);
+      const key = roleKey(username);
+
       state.currentUser = {
         id: user.id,
         username: username,
         email: user.email,
-        role: getRoleFromUsername(username),
+        role: role,
       };
-      
-      state.isAdmin = state.currentUser.role === CONFIG.AUTH.ROLES.ADMIN;
-      state.isTeacher = state.currentUser.role === CONFIG.AUTH.ROLES.TEACHER || state.isAdmin;
-      
+
+      state.isAdmin = role === CONFIG.AUTH.ROLES.ADMIN;
+      state.isTeacher = role === CONFIG.AUTH.ROLES.TEACHER || state.isAdmin;
+
       DOM.authCard.classList.add('hidden');
       DOM.dashboard.classList.remove('hidden');
+
       DOM.userBadge.textContent = username;
-      
+      DOM.userBadge.className = `role-chip role-${key}-chip`;
+
       if (state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE) {
         DOM.adminPanel.classList.remove('hidden');
       }
-      
+
       await requestMediaPermissions();
       await renderChannels();
       await loadStatuses();
-      
-      DOM.liveBtnText.textContent = state.isTeacher ? '🎬 Start Live Classroom' : 'Join Live Class';
-      
+
+      DOM.liveBtnText.textContent = state.isTeacher ? 'Start live classroom' : 'Join live class';
+
     } catch (e) {
       showError(e.message || 'Login error. Please try again.');
     }
@@ -746,12 +768,5 @@
   // ============================================================
   setupLogos();
   console.log('✅ Application initialized successfully.');
-  console.log(`📌 Supabase URL: ${CONFIG.SUPABASE.URL}`);
-  console.log(`📌 LiveKit URL: ${CONFIG.LIVEKIT.URL}`);
-  console.log(`🖼️ Logo: ${CONFIG.BRANDING.LOGO.PATH}`);
-
-  // Auto-login for demo (uncomment to enable)
-  // DOM.usernameInput.value = 'teacher005';
-  // handleLogin();
 
 })();
