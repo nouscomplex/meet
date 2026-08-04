@@ -794,3 +794,45 @@ body {
   .auth-card { padding: 28px 22px 24px; }
   .topbar { padding: 12px 4px 16px; }
 }
+
+/* ===== Broader responsive system (laptop down to phone) ===== */
+@media (max-width: 1023px) {
+  .sidebar { max-height: 40vh; }
+  .chat-scroll { max-height: 38vh; }
+}
+
+@media (max-width: 640px) {
+  body { font-size: 15px; }
+  .topbar .brand-name { font-size: 1.05rem; }
+  .auth-title { font-size: 1.35rem; }
+  .panel, .sidebar, .auth-card { border-radius: var(--radius-md); }
+
+  .composer {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .composer .field { flex: 1 1 100%; order: 1; }
+  .icon-btn { order: 2; }
+  .btn-send { order: 3; }
+  .btn-live {
+    order: 4;
+    flex: 1 1 100%;
+    justify-content: center;
+    margin-top: 2px;
+  }
+
+  .msg { max-width: 92%; }
+
+  .admin-row { flex-wrap: wrap; }
+  .admin-row .field-sm { flex: 1 1 100%; }
+  .admin-row .btn-admin-sm { flex: 1 1 100%; }
+
+  .status-item { min-width: 48px; }
+  .video-panel, .video-panel iframe { min-height: 220px; }
+}
+
+@media (max-width: 380px) {
+  .avatar { width: 32px; height: 32px; font-size: 13px; }
+  .auth-card { padding: 22px 16px 20px; }
+  .field, .btn-primary { font-size: 13.5px; }
+}
