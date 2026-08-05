@@ -305,17 +305,38 @@ body {
 /* ============================================================
    APP SHELL / LAYOUT
    ============================================================ */
-.app-shell { min-height: 100vh; }
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
 
 .layout {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  min-height: 80vh;
+  flex: 1;
+  min-height: 0;
+  padding-bottom: 20px;
 }
 
 @media (min-width: 1024px) {
-  .layout { flex-direction: row; }
+  .layout {
+    flex-direction: row;
+    height: calc(100vh - 112px);
+    min-height: 560px;
+  }
+}
+
+@media (min-width: 1440px) {
+  .app-container { max-width: 1400px !important; }
 }
 
 .panel {
@@ -335,7 +356,9 @@ body {
   overflow-y: auto;
 }
 
-@media (min-width: 1024px) { .sidebar { width: 288px; flex-shrink: 0; } }
+@media (min-width: 1024px) {
+  .sidebar { width: 300px; flex-shrink: 0; max-height: none; height: 100%; }
+}
 
 .sidebar-head {
   display: flex;
@@ -448,7 +471,7 @@ body {
 /* ============================================================
    MAIN COLUMN
    ============================================================ */
-.main-col { flex: 1; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.main-col { flex: 1; display: flex; flex-direction: column; gap: 14px; min-width: 0; min-height: 0; }
 
 /* ===== Status / announcement strip ===== */
 .status-strip { padding: 14px; }
@@ -501,9 +524,12 @@ body {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-height: 0;
 }
 
-@media (min-width: 1024px) { .chat-scroll { max-height: 50vh; } }
+@media (min-width: 1024px) {
+  .chat-scroll { max-height: none; }
+}
 
 .msg { display: flex; gap: 10px; max-width: 82%; animation: msgIn 0.2s ease-out; }
 .msg-theirs { align-self: flex-start; }
