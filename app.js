@@ -59,6 +59,7 @@
     authErrorText: $('authErrorText'),
     channelList: $('channelList'),
     userBadge: $('userBadge'),
+    signOutBtn: $('signOutBtn'),
     adminPanel: $('adminPanel'),
     statusTray: $('statusTray'),
     statusPlaceholder: $('statusPlaceholder'),
@@ -1229,6 +1230,40 @@
   // ============================================================
   // 14. LOGIN FLOW
   // ============================================================
+
+  // Everything that happens once we know WHO the user is —
+  // used both for a fresh login and for restoring a session after refresh.
+  async function completeLogin(username, user) {
+    await loadRoleCache(); // must happen before role checks below
+    const role = getRoleFromUsername(username);
+    const key = roleKey(username);
+
+    state.currentUser = {
+      id: user.id,
+      username: username,
+      email: user.email,
+      role: role,
+    };
+
+    state.isAdmin = role === CONFIG.AUTH.ROLES.ADMIN;
+    state.isTeacher = role === CONFIG.AUTH.ROLES.TEACHER || state.isAdmin;
+
+    DOM.authCard.classList.add('hidden');
+    DOM.dashboard.classList.remove('hidden');
+
+    DOM.userBadge.textContent = username;
+    DOM.userBadge.className = `role-chip role-${key}-chip`;
+
+    DOM.adminPanel.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
+
+    await requestMediaPermissions();
+    await renderChannels();
+    await loadStatuses();
+    subscribeToPush();
+
+    DOM.liveBtnText.textContent = state.isTeacher ? 'Start live classroom' : 'Join live class';
+  }
+
   async function handleLogin() {
     const username = DOM.usernameInput.value.trim();
 
@@ -1241,40 +1276,62 @@
 
     try {
       const user = await loginWithUsername(username);
-      await loadRoleCache(); // must happen before role checks below
-      const role = getRoleFromUsername(username);
-      const key = roleKey(username);
-
-      state.currentUser = {
-        id: user.id,
-        username: username,
-        email: user.email,
-        role: role,
-      };
-
-      state.isAdmin = role === CONFIG.AUTH.ROLES.ADMIN;
-      state.isTeacher = role === CONFIG.AUTH.ROLES.TEACHER || state.isAdmin;
-
-      DOM.authCard.classList.add('hidden');
-      DOM.dashboard.classList.remove('hidden');
-
-      DOM.userBadge.textContent = username;
-      DOM.userBadge.className = `role-chip role-${key}-chip`;
-
-      if (state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE) {
-        DOM.adminPanel.classList.remove('hidden');
-      }
-
-      await requestMediaPermissions();
-      await renderChannels();
-      await loadStatuses();
-      subscribeToPush();
-
-      DOM.liveBtnText.textContent = state.isTeacher ? 'Start live classroom' : 'Join live class';
-
+      await completeLogin(username, user);
     } catch (e) {
       showError(e.message || 'Login error. Please try again.');
     }
+  }
+
+  // Runs once when the page loads — if Supabase already has a valid
+  // session (from before a refresh), skip straight to the dashboard
+  // instead of showing the login screen again.
+  async function restoreSession() {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session || !session.user || !session.user.email) return;
+
+      const suffix = CONFIG.AUTH.EMAIL_SUFFIX;
+      if (!session.user.email.endsWith(suffix)) return;
+
+      const username = session.user.email.slice(0, -suffix.length);
+      await completeLogin(username, session.user);
+    } catch (e) {
+      console.warn('Session restore skipped:', e);
+    }
+  }
+
+  async function handleSignOut() {
+    if (!confirm('Sign out?')) return;
+
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('Sign out error:', e);
+    }
+
+    if (state.messagesSubscription) {
+      supabase.removeChannel(state.messagesSubscription);
+      state.messagesSubscription = null;
+    }
+    if (scheduleSubscription) {
+      supabase.removeChannel(scheduleSubscription);
+      scheduleSubscription = null;
+    }
+
+    state.currentUser = null;
+    state.currentChannel = null;
+    state.isAdmin = false;
+    state.isTeacher = false;
+    state.messages = [];
+    state.statuses = [];
+    state.replyingTo = null;
+
+    DOM.dashboard.classList.add('hidden');
+    DOM.adminPanel.classList.add('hidden');
+    DOM.videoContainer.classList.add('hidden');
+    DOM.authCard.classList.remove('hidden');
+    DOM.usernameInput.value = '';
+    hideError();
   }
 
   // ============================================================
@@ -1385,10 +1442,13 @@
     }
   });
 
+  DOM.signOutBtn.addEventListener('click', handleSignOut);
+
   // ============================================================
   // 16. BOOTSTRAP
   // ============================================================
   setupLogos();
+  restoreSession();
   console.log('✅ Application initialized successfully.');
 
 })();
