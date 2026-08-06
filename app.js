@@ -57,6 +57,7 @@
     onlineUsers: new Set(),
     currentTab: 'chats',
     screenReturn: 'chats',
+    currentScreen: 'chats',
   };
 
   // ============================================================
@@ -104,9 +105,15 @@
     darkToggle: $('darkToggle'),
     adminSettingsCard: $('adminSettingsCard'),
     createChannelBtn: $('createChannelBtn'),
-    rosterGenBtn: $('rosterGenBtn'),
-    exportAttendanceBtn: $('exportAttendanceBtn'),
     signOutBtn: $('signOutBtn'),
+
+    // admin: create teacher/student account
+    adminCreateUserCard: $('adminCreateUserCard'),
+    newUserUsername: $('newUserUsername'),
+    newUserRole: $('newUserRole'),
+    newUserPassword: $('newUserPassword'),
+    generatePasswordBtn: $('generatePasswordBtn'),
+    createUserBtn: $('createUserBtn'),
 
     // chat detail
     backFromChat: $('backFromChat'),
@@ -361,6 +368,13 @@
     return `${username}${CONFIG.AUTH.EMAIL_SUFFIX}`;
   }
 
+  function generatePassword(length = 10) {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    let out = '';
+    for (let i = 0; i < length; i++) out += chars.charAt(Math.floor(Math.random() * chars.length));
+    return out;
+  }
+
   function formatDate(ts) {
     return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
@@ -427,8 +441,20 @@
     profile: DOM.screenProfile,
   };
 
+  // Screens that are conceptually "inside" the Chats tab — on desktop the
+  // channel list stays visible as a permanent left pane alongside these,
+  // instead of being replaced full-screen like it is on mobile.
+  const CHAT_GROUP_SCREENS = ['chats', 'chatDetail', 'members', 'profile'];
+  const isDesktopLayout = () => window.matchMedia('(min-width: 1024px)').matches;
+
   function goToScreen(name) {
-    Object.values(SCREEN_EL).forEach((el) => el && el.classList.add('hidden'));
+    const keepChatsVisible = isDesktopLayout() && CHAT_GROUP_SCREENS.includes(name);
+
+    Object.entries(SCREEN_EL).forEach(([key, el]) => {
+      if (!el) return;
+      if (keepChatsVisible && key === 'chats') return; // leave the groups panel showing
+      el.classList.add('hidden');
+    });
     if (SCREEN_EL[name]) SCREEN_EL[name].classList.remove('hidden');
 
     const isRoot = ROOT_TABS.includes(name);
@@ -439,7 +465,20 @@
         b.classList.toggle('active', b.dataset.tab === name);
       });
     }
+    state.currentScreen = name;
   }
+
+  // Re-apply the layout when crossing the desktop breakpoint (e.g. resizing
+  // a laptop window), so the groups panel appears/disappears correctly
+  // without needing another click.
+  let lastIsDesktop = isDesktopLayout();
+  window.addEventListener('resize', () => {
+    const nowDesktop = isDesktopLayout();
+    if (nowDesktop !== lastIsDesktop) {
+      lastIsDesktop = nowDesktop;
+      if (state.currentScreen) goToScreen(state.currentScreen);
+    }
+  });
 
   // ============================================================
   // 7. AUTHENTICATION
@@ -468,6 +507,44 @@
     } catch (e) {
       console.error('Auth error:', e);
       throw new Error('Login failed. Please check your School ID.');
+    }
+  }
+
+  // ============================================================
+  // 7a. ADMIN: CREATE TEACHER / STUDENT ACCOUNT
+  // ============================================================
+  async function createUserAccount(username, role, password) {
+    if (!username) { alert('Enter a username.'); return; }
+    if (!password) { alert('Enter or generate a password.'); return; }
+
+    const email = generateEmail(username);
+
+    try {
+      const { error: signUpError } = await supabase.auth.signUp({ email, password });
+
+      const isAlreadyRegistered =
+        signUpError &&
+        (signUpError.status === 400 ||
+          signUpError.status === 409 ||
+          signUpError.status === 422 ||
+          /already registered|already exists/i.test(signUpError.message || ''));
+
+      if (signUpError && !isAlreadyRegistered) throw signUpError;
+
+      const { error: roleError } = await supabase
+        .from('user_roles')
+        .upsert({ username, role }, { onConflict: 'username' });
+      if (roleError) throw roleError;
+
+      state.roleCache[username.toLowerCase()] = role;
+
+      alert(`Account created for "${username}" (${role}).\n\nPassword: ${password}\n\nShare this with them securely — it won't be shown again.`);
+      DOM.newUserUsername.value = '';
+      DOM.newUserPassword.value = '';
+      DOM.newUserRole.value = 'student';
+    } catch (e) {
+      console.error('Create user error:', e);
+      alert('Could not create account: ' + (e.message || e));
     }
   }
 
@@ -1374,6 +1451,7 @@
     DOM.settingsEmail.textContent = user.email || generateEmail(username);
 
     DOM.adminSettingsCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
+    DOM.adminCreateUserCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
     DOM.adminProfileSchedule.classList.toggle('hidden', !state.isAdmin);
 
     setupPresence();
@@ -1518,8 +1596,20 @@
   DOM.createChannelBtn.addEventListener('click', handleCreateChannel);
   DOM.createChannelFab.addEventListener('click', handleCreateChannel);
 
-  DOM.rosterGenBtn.addEventListener('click', generateRoster);
-  DOM.exportAttendanceBtn.addEventListener('click', exportAttendance);
+  DOM.generatePasswordBtn.addEventListener('click', () => {
+    DOM.newUserPassword.value = generatePassword();
+  });
+  DOM.createUserBtn.addEventListener('click', () => {
+    createUserAccount(
+      DOM.newUserUsername.value.trim(),
+      DOM.newUserRole.value,
+      DOM.newUserPassword.value.trim()
+    );
+  });
+
+  // (rosterGenBtn / exportAttendanceBtn have no corresponding elements in
+  // index.html — generateRoster()/exportAttendance() are kept below in case
+  // a future UI wires them up, but no listener is bound here.)
 
   DOM.setScheduleBtn.addEventListener('click', async () => {
     await setClassSchedule(
