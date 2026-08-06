@@ -1,151 +1,350 @@
-@import "tailwindcss" source(none);
-@source "../src";
-@import "tw-animate-css";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+  <title>Nous Complex Orbit</title>
 
-@custom-variant dark (&:is(.dark *));
+  <!-- CSS -->
+  <link rel="stylesheet" href="styles.css">
 
-/*
- * NOUS COMPLEX ORBIT — design system.
- * Palette is locked to three colors:
- *   navy   #0e1b75  -> --primary
- *   white  #ffffff  -> --surface / --primary-foreground
- *   sky    #6bb4fa  -> --accent
- * Neutrals are desaturated mixes of navy + white only.
- */
+  <!-- Supabase SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-@theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
-  --radius-pill: 999px;
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-faint: var(--faint);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent-wash: var(--accent-wash);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-border-strong: var(--border-strong);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-surface: var(--surface);
-  --color-sunken: var(--sunken);
-  --color-online: var(--online);
-  --color-shell: var(--shell);
+  <!-- CONFIGURATION -->
+  <script src="config.js"></script>
 
-  --font-display: "Atkinson Hyperlegible", system-ui, sans-serif;
-  --font-body: "Atkinson Hyperlegible", system-ui, sans-serif;
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" sizes="32x32" href="nouscomplex.png">
+  <link rel="apple-touch-icon" href="nouscomplex.png">
 
-  --shadow-soft: 0 1px 2px oklch(0.2915 0.1511 267.52 / 0.06);
-  --shadow-card: 0 8px 24px -10px oklch(0.2915 0.1511 267.52 / 0.18);
-  --shadow-float: 0 20px 44px -18px oklch(0.2915 0.1511 267.52 / 0.42);
-}
+  <!-- PWA Manifest -->
+  <link rel="manifest" href='data:application/json;base64,eyJuYW1lIjogIk5vdXMgQ29tcGxleCBPcmJpdCIsICJzaG9ydF9uYW1lIjogIk9yYml0IiwgImRlc2NyaXB0aW9uIjogIlVuaWZpZWQgY29tbXVuaWNhdGlvbiBwbGF0Zm9ybSIsICJzdGFydF91cmwiOiAiLiIsICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLCAiYmFja2dyb3VuZF9jb2xvciI6ICIjRjRGNkY4IiwgInRoZW1lX2NvbG9yIjogIiMxRjZGNzgiLCAiaWNvbnMiOiBbeyJzcmMiOiAibm91c2NvbXBsZXgucG5nIiwgInNpemVzIjogIjUxMng1MTIiLCAidHlwZSI6ICJpbWFnZS9wbmcifV19' />
+</head>
+<body>
 
-:root {
-  --radius: 0.875rem;
+<div id="app" class="app-shell">
+  <div class="phone-frame">
 
-  /* navy */
-  --primary: oklch(0.2915 0.1511 267.52);
-  --primary-foreground: oklch(1 0 0);
-  /* sky */
-  --accent: oklch(0.7509 0.1254 248.88);
-  --accent-foreground: oklch(0.2915 0.1511 267.52);
-  --accent-wash: oklch(0.955 0.028 248.88);
+    <!-- ===== AUTH CARD ===== -->
+    <div id="authCard" class="auth-wrap">
+      <div class="auth-card">
+        <img src="nouscomplex.png" alt="Nous Complex Orbit" class="auth-emblem" id="authLogo">
+        <h1 class="auth-title">Welcome back</h1>
+        <p class="auth-sub">Sign in with your School ID to continue</p>
 
-  --background: oklch(0.972 0.008 270);
-  --foreground: oklch(0.2915 0.1511 267.52);
-  --surface: oklch(1 0 0);
-  --sunken: oklch(0.958 0.011 270);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.2915 0.1511 267.52);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.2915 0.1511 267.52);
-  --secondary: oklch(0.955 0.012 270);
-  --secondary-foreground: oklch(0.2915 0.1511 267.52);
-  --muted: oklch(0.955 0.012 270);
-  --muted-foreground: oklch(0.558 0.045 270);
-  --faint: oklch(0.7 0.032 270);
-  --destructive: oklch(0.42 0.11 267.52);
-  --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0.928 0.016 270);
-  --border-strong: oklch(0.868 0.028 270);
-  --input: oklch(0.928 0.016 270);
-  --ring: oklch(0.7509 0.1254 248.88);
-  --online: oklch(0.7509 0.1254 248.88);
-  --shell: oklch(0.93 0.018 270);
-}
+        <input id="usernameInput" type="text" placeholder="e.g. student042 or teacher005" class="field" autocomplete="off">
+        <button id="loginBtn" class="btn btn-primary btn-block" style="margin-top: 12px;">
+          <i class="fas fa-arrow-right-to-bracket"></i> Enter Hub
+        </button>
+        <p id="authError" class="error-text hidden">
+          <i class="fas fa-circle-exclamation"></i> <span id="authErrorText"></span>
+        </p>
 
-.dark {
-  --background: oklch(0.19 0.062 267.52);
-  --foreground: oklch(0.98 0.005 270);
-  --surface: oklch(0.245 0.078 267.52);
-  --sunken: oklch(0.225 0.07 267.52);
-  --card: oklch(0.245 0.078 267.52);
-  --card-foreground: oklch(0.98 0.005 270);
-  --popover: oklch(0.245 0.078 267.52);
-  --popover-foreground: oklch(0.98 0.005 270);
-  --primary: oklch(0.7509 0.1254 248.88);
-  --primary-foreground: oklch(0.19 0.062 267.52);
-  --secondary: oklch(0.29 0.085 267.52);
-  --secondary-foreground: oklch(0.98 0.005 270);
-  --muted: oklch(0.29 0.085 267.52);
-  --muted-foreground: oklch(0.74 0.04 270);
-  --faint: oklch(0.62 0.045 270);
-  --accent: oklch(0.7509 0.1254 248.88);
-  --accent-foreground: oklch(0.19 0.062 267.52);
-  --accent-wash: oklch(0.3 0.09 260);
-  --border: oklch(0.34 0.08 267.52);
-  --border-strong: oklch(0.42 0.09 267.52);
-  --input: oklch(0.34 0.08 267.52);
-  --shell: oklch(0.13 0.05 267.52);
-}
+        <p class="auth-note">Simulated login · email confirmation off</p>
+      </div>
+    </div>
 
-@layer base {
-  * {
-    border-color: var(--color-border);
+    <!-- ===== APP BODY (mobile screens) ===== -->
+    <div id="dashboard" class="hidden app-body">
+
+      <!-- ============================================================
+           SCREEN: CHATS
+      ============================================================ -->
+      <section id="screenChats" class="screen">
+        <header class="brand-header">
+          <div class="brand-lockup">
+            <img src="nouscomplex.png" alt="" class="brand-mark" id="sidebarLogo">
+          </div>
+          <span class="brand-word">Orbit</span>
+        </header>
+
+        <div class="search-bar">
+          <i class="fas fa-magnifying-glass"></i>
+          <input id="chatSearchInput" type="text" placeholder="Search Sessions or Messages" autocomplete="off">
+        </div>
+
+        <div id="channelList" class="chat-list">
+          <!-- dynamic chat rows -->
+        </div>
+
+        <button id="createChannelFab" class="fab hidden" title="New channel">
+          <i class="fas fa-plus"></i>
+        </button>
+      </section>
+
+      <!-- ============================================================
+           SCREEN: UPDATES
+      ============================================================ -->
+      <section id="screenUpdates" class="screen hidden">
+        <header class="screen-header">
+          <span class="screen-title">Updates</span>
+          <span id="userBadge" class="role-chip"></span>
+        </header>
+
+        <div id="statusTray" class="updates-list">
+          <div id="statusPlaceholder" class="empty-note">No updates yet</div>
+        </div>
+
+        <div id="statusAddBtn" class="hidden status-add-wrap">
+          <button id="postStatusBtn" class="btn btn-ghost btn-block">
+            <i class="fas fa-plus"></i> Post an update
+          </button>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SCREEN: SETTINGS
+      ============================================================ -->
+      <section id="screenSettings" class="screen hidden">
+        <header class="screen-header">
+          <span class="screen-title">Settings</span>
+        </header>
+
+        <div class="settings-profile-card">
+          <div class="avatar avatar-student lg" id="settingsAvatar">?</div>
+          <div class="settings-profile-info">
+            <div class="settings-profile-name" id="settingsName">—</div>
+            <div class="settings-profile-email" id="settingsEmail">—</div>
+          </div>
+        </div>
+
+        <div class="settings-list">
+          <div class="settings-row">
+            <div class="settings-row-icon"><i class="fas fa-bell"></i></div>
+            <div class="settings-row-text">
+              <div class="settings-row-title">Notifications</div>
+              <div class="settings-row-sub">Push alerts, sound, vibration</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="notifToggle">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-icon"><i class="fas fa-moon"></i></div>
+            <div class="settings-row-text">
+              <div class="settings-row-title">Dark Theme</div>
+              <div class="settings-row-sub">Toggle between light and dark UI</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="darkToggle">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+          </div>
+        </div>
+
+        <div id="adminSettingsCard" class="hidden settings-list" style="margin-top:14px;">
+          <div class="settings-list-label"><i class="fas fa-user-shield"></i> Admin tools</div>
+          <button id="createChannelBtn" class="settings-action-row">
+            <i class="fas fa-plus"></i> New channel
+          </button>
+          <button id="rosterGenBtn" class="settings-action-row">
+            <i class="fas fa-users"></i> Generate roster
+          </button>
+          <button id="exportAttendanceBtn" class="settings-action-row">
+            <i class="fas fa-file-export"></i> Export attendance
+          </button>
+        </div>
+
+        <button id="signOutBtn" class="logout-btn">
+          <i class="fas fa-arrow-right-from-bracket"></i> Log out
+        </button>
+      </section>
+
+      <!-- ============================================================
+           SCREEN: CHAT DETAIL
+      ============================================================ -->
+      <section id="screenChatDetail" class="screen hidden">
+        <header class="chat-detail-header">
+          <button id="backFromChat" class="icon-btn back-btn"><i class="fas fa-arrow-left"></i></button>
+          <button id="chatDetailTitleBtn" class="chat-detail-title">
+            <span class="title-name" id="chatDetailName">Select a channel</span>
+            <span class="title-sub" id="chatDetailSub"></span>
+          </button>
+          <button id="joinLiveBtn" class="btn-live-pill">
+            <i class="fas fa-tower-broadcast"></i> <span id="liveBtnText">Join Live Session</span>
+          </button>
+        </header>
+
+        <div id="scheduleBanner" class="hidden schedule-banner">
+          <i class="fas fa-calendar-day"></i>
+          <span id="scheduleBannerText"></span>
+        </div>
+
+        <div class="chat-scroll" id="chatContainer">
+          <div id="chatMessages">
+            <div class="empty-note center-text" style="width:100%;">Select a channel to start</div>
+          </div>
+        </div>
+
+        <div id="fileUploadStatus" class="hidden"></div>
+
+        <!-- Reply preview -->
+        <div id="replyPreview" class="hidden reply-preview">
+          <div class="bar"></div>
+          <div class="info">
+            <div class="author" id="replyPreviewAuthor"></div>
+            <div class="text" id="replyPreviewText"></div>
+          </div>
+          <button id="replyPreviewCancel" class="icon-btn" title="Cancel reply">
+            <i class="fas fa-xmark"></i>
+          </button>
+        </div>
+
+        <!-- File preview -->
+        <div id="filePreview" class="hidden file-preview-bar">
+          <i class="fas fa-paperclip"></i>
+          <span id="filePreviewName"></span>
+          <button id="filePreviewRemove" class="icon-btn" title="Remove attachment">
+            <i class="fas fa-xmark"></i>
+          </button>
+        </div>
+
+        <!-- Composer -->
+        <div class="composer">
+          <label for="fileInput" class="icon-btn" title="Attach a file">
+            <i class="fas fa-paperclip"></i>
+          </label>
+          <input id="fileInput" type="file" class="hidden" accept="image/*,.pdf,.doc,.docx,.txt,.png,.jpg,.jpeg">
+          <input id="messageInput" type="text" placeholder="Message group…" class="field" autocomplete="off">
+          <button id="sendMsgBtn" class="btn-send" title="Send">
+            <i class="fas fa-arrow-up"></i>
+          </button>
+        </div>
+
+        <!-- Video -->
+        <div id="videoContainer" class="hidden video-panel">
+          <iframe id="videoIframe" src="" allow="camera; microphone; display-capture; autoplay; encrypted-media" allowfullscreen></iframe>
+          <button id="closeVideoBtn" class="video-close"><i class="fas fa-xmark"></i></button>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SCREEN: MEMBERS
+      ============================================================ -->
+      <section id="screenMembers" class="screen hidden">
+        <header class="screen-header">
+          <button id="backFromMembers" class="icon-btn back-btn"><i class="fas fa-arrow-left"></i></button>
+          <span class="screen-title">Members</span>
+        </header>
+
+        <div class="search-bar">
+          <i class="fas fa-magnifying-glass"></i>
+          <input id="memberSearchInput" type="text" placeholder="Search Member" autocomplete="off">
+        </div>
+
+        <div id="adminAddMemberRow" class="hidden admin-add-row">
+          <input id="assignStudentInput" placeholder="Username" class="field-sm">
+          <select id="assignRoleSelect" class="field-sm" style="flex:0 0 96px;">
+            <option value="student">Student</option>
+            <option value="teacher">Teacher</option>
+          </select>
+          <button id="assignStudentBtn" class="btn-admin-sm">Add</button>
+        </div>
+
+        <div class="members-wrap">
+          <div id="channelMembersList" class="member-list">
+            <div class="empty-note">Select a channel</div>
+          </div>
+          <div id="alphaIndex" class="alpha-index"></div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SCREEN: PROFILE (group info)
+      ============================================================ -->
+      <section id="screenProfile" class="screen hidden">
+        <header class="screen-header">
+          <button id="backFromProfile" class="icon-btn back-btn"><i class="fas fa-arrow-left"></i></button>
+          <span class="screen-title">Profile</span>
+        </header>
+
+        <div class="profile-card">
+          <div class="profile-card-name" id="profileChannelName">—</div>
+          <div class="profile-card-meta" id="profileChannelMeta">—</div>
+          <p class="profile-card-desc" id="profileChannelDesc"></p>
+        </div>
+
+        <button id="profileMembersBtn" class="btn-navy-pill">
+          <i class="fas fa-people-group"></i> Members
+        </button>
+
+        <div class="profile-section-row">
+          <span class="section-label">Shared media</span>
+          <a href="#" id="profileSeeAllMedia" class="see-all-link hidden">See all</a>
+        </div>
+        <div id="sharedMediaGrid" class="shared-media-grid">
+          <div class="empty-note">No shared media yet</div>
+        </div>
+
+        <div id="adminProfileSchedule" class="hidden schedule-card">
+          <div class="section-label"><i class="fas fa-calendar-clock"></i> Schedule class time</div>
+          <input id="scheduleTeacherInput" placeholder="Teacher username" class="field-sm" style="width:100%; margin-bottom:6px;">
+          <input id="scheduleTimeInput" type="datetime-local" class="field-sm" style="width:100%; margin-bottom:6px;">
+          <div class="admin-row">
+            <input id="scheduleDurationInput" type="number" min="10" max="240" value="45" class="field-sm" style="flex:0 0 90px;" title="Duration (minutes)">
+            <button id="setScheduleBtn" class="btn-admin-sm" style="flex:1;">
+              <i class="fas fa-clock"></i> Set time
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           BOTTOM NAVIGATION
+      ============================================================ -->
+      <nav class="bottom-nav" id="bottomNav">
+        <button class="nav-btn active" data-tab="chats">
+          <span class="nav-icon-wrap"><i class="fas fa-comment-dots"></i><span id="navChatsBadge" class="nav-badge hidden">0</span></span>
+          <span>Chats</span>
+        </button>
+        <button class="nav-btn" data-tab="updates">
+          <span class="nav-icon-wrap"><i class="fas fa-arrows-rotate"></i></span>
+          <span>Updates</span>
+        </button>
+        <button class="nav-btn" data-tab="settings">
+          <span class="nav-icon-wrap"><i class="fas fa-gear"></i></span>
+          <span>Settings</span>
+        </button>
+      </nav>
+
+    </div>
+  </div>
+
+  <!-- ===== STATUS / UPDATE VIEWER (dark full-screen) ===== -->
+  <div id="statusModal" class="hidden status-viewer">
+    <div class="status-viewer-inner">
+      <div class="status-segments" id="statusSegments">
+        <div class="segment"><div id="statusProgress" class="segment-fill"></div></div>
+      </div>
+      <div class="status-viewer-header">
+        <button id="closeStatusModal" class="icon-btn back-btn"><i class="fas fa-arrow-left"></i></button>
+        <div class="avatar sm status-viewer-avatar" id="statusViewerAvatar">?</div>
+        <div class="status-viewer-meta">
+          <div id="statusModalTitle" class="status-viewer-name"></div>
+          <div id="statusModalTime" class="status-viewer-time"></div>
+        </div>
+      </div>
+      <div class="status-viewer-body">
+        <p id="statusModalContent"></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- JavaScript -->
+<script src="app.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch((e) => console.warn('Service worker registration failed:', e));
+    });
   }
+</script>
 
-  html {
-    -webkit-text-size-adjust: 100%;
-  }
-
-  body {
-    background-color: var(--color-shell);
-    color: var(--color-foreground);
-    font-family: var(--font-body);
-    -webkit-font-smoothing: antialiased;
-    line-height: 1.5;
-  }
-
-  h1,
-  h2,
-  h3,
-  .font-display {
-    font-family: var(--font-display);
-  }
-}
-
-/* Hide scrollbars inside the phone frame while keeping scroll */
-@utility scroll-hidden {
-  scrollbar-width: none;
-  &::-webkit-scrollbar {
-    display: none;
-  }
-}
+</body>
+</html>
