@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes, viewport-fit=cover">
+  <meta name="theme-color" content="#0e1b75">
   <title>Nous Complex Orbit</title>
 
   <!-- CSS -->
@@ -94,6 +95,10 @@
             <i class="fas fa-plus"></i> Post an update
           </button>
         </div>
+
+        <button id="postStatusFab" class="fab hidden" title="Post an update">
+          <i class="fas fa-plus"></i>
+        </button>
       </section>
 
       <!-- ============================================================
@@ -142,12 +147,26 @@
           <button id="createChannelBtn" class="settings-action-row">
             <i class="fas fa-plus"></i> New channel
           </button>
-          <button id="rosterGenBtn" class="settings-action-row">
-            <i class="fas fa-users"></i> Generate roster
-          </button>
-          <button id="exportAttendanceBtn" class="settings-action-row">
-            <i class="fas fa-file-export"></i> Export attendance
-          </button>
+        </div>
+
+        <div id="adminCreateUserCard" class="hidden settings-list" style="margin-top:14px;">
+          <div class="settings-list-label"><i class="fas fa-user-plus"></i> Add teacher or student</div>
+          <div style="padding:4px 16px 16px; display:flex; flex-direction:column; gap:8px;">
+            <input id="newUserUsername" class="field-sm" placeholder="Username" style="width:100%;">
+            <div class="admin-row">
+              <select id="newUserRole" class="field-sm" style="flex:0 0 108px;">
+                <option value="student">Student</option>
+                <option value="teacher">Teacher</option>
+              </select>
+              <input id="newUserPassword" class="field-sm" placeholder="Password" style="flex:1;">
+              <button id="generatePasswordBtn" class="icon-btn" title="Generate password" type="button">
+                <i class="fas fa-shuffle"></i>
+              </button>
+            </div>
+            <button id="createUserBtn" class="btn-admin-sm" style="width:100%;">
+              <i class="fas fa-user-plus"></i> Create account
+            </button>
+          </div>
         </div>
 
         <button id="signOutBtn" class="logout-btn">
