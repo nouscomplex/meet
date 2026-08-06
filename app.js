@@ -1,9 +1,18 @@
 // ============================================================
-// SCHOOL HUB — Application Logic
+// NOUS COMPLEX ORBIT — Application Logic
 // ============================================================
 
 (function() {
   "use strict";
+
+  // ============================================================
+  // 0. THEME (applied before login too)
+  // ============================================================
+  try {
+    if (localStorage.getItem('orbit-theme') === 'dark') {
+      document.body.classList.add('theme-dark');
+    }
+  } catch (e) { /* localStorage unavailable */ }
 
   // ============================================================
   // 1. LOAD CONFIGURATION
@@ -33,8 +42,10 @@
   const state = {
     currentUser: null,
     currentChannel: null,
+    currentMembers: [],
     statuses: [],
     messages: [],
+    channelPreviews: {},
     isAdmin: false,
     isTeacher: false,
     videoActive: false,
@@ -43,6 +54,9 @@
     replyingTo: null,
     unreadByChannel: {},
     roleCache: {},
+    onlineUsers: new Set(),
+    currentTab: 'chats',
+    screenReturn: 'chats',
   };
 
   // ============================================================
@@ -57,52 +71,102 @@
     loginBtn: $('loginBtn'),
     authError: $('authError'),
     authErrorText: $('authErrorText'),
+    authLogo: $('authLogo'),
+    sidebarLogo: $('sidebarLogo'),
+
+    // screens
+    screenChats: $('screenChats'),
+    screenUpdates: $('screenUpdates'),
+    screenSettings: $('screenSettings'),
+    screenChatDetail: $('screenChatDetail'),
+    screenMembers: $('screenMembers'),
+    screenProfile: $('screenProfile'),
+    bottomNav: $('bottomNav'),
+    navChatsBadge: $('navChatsBadge'),
+
+    // chats
+    chatSearchInput: $('chatSearchInput'),
     channelList: $('channelList'),
+    createChannelFab: $('createChannelFab'),
+
+    // updates
     userBadge: $('userBadge'),
-    signOutBtn: $('signOutBtn'),
-    adminPanel: $('adminPanel'),
     statusTray: $('statusTray'),
     statusPlaceholder: $('statusPlaceholder'),
     statusAddBtn: $('statusAddBtn'),
     postStatusBtn: $('postStatusBtn'),
-    chatMessages: $('chatMessages'),
-    chatContainer: $('chatContainer'),
-    messageInput: $('messageInput'),
-    fileInput: $('fileInput'),
-    sendMsgBtn: $('sendMsgBtn'),
+
+    // settings
+    settingsAvatar: $('settingsAvatar'),
+    settingsName: $('settingsName'),
+    settingsEmail: $('settingsEmail'),
+    notifToggle: $('notifToggle'),
+    darkToggle: $('darkToggle'),
+    adminSettingsCard: $('adminSettingsCard'),
+    createChannelBtn: $('createChannelBtn'),
+    rosterGenBtn: $('rosterGenBtn'),
+    exportAttendanceBtn: $('exportAttendanceBtn'),
+    signOutBtn: $('signOutBtn'),
+
+    // chat detail
+    backFromChat: $('backFromChat'),
+    chatDetailTitleBtn: $('chatDetailTitleBtn'),
+    chatDetailName: $('chatDetailName'),
+    chatDetailSub: $('chatDetailSub'),
     joinLiveBtn: $('joinLiveBtn'),
     liveBtnText: $('liveBtnText'),
-    videoContainer: $('videoContainer'),
-    videoIframe: $('videoIframe'),
-    closeVideoBtn: $('closeVideoBtn'),
-    statusModal: $('statusModal'),
-    statusModalTitle: $('statusModalTitle'),
-    statusModalContent: $('statusModalContent'),
-    statusProgress: $('statusProgress'),
-    closeStatusModal: $('closeStatusModal'),
+    scheduleBanner: $('scheduleBanner'),
+    scheduleBannerText: $('scheduleBannerText'),
+    chatContainer: $('chatContainer'),
+    chatMessages: $('chatMessages'),
     fileUploadStatus: $('fileUploadStatus'),
-    filePreview: $('filePreview'),
-    filePreviewName: $('filePreviewName'),
-    filePreviewRemove: $('filePreviewRemove'),
     replyPreview: $('replyPreview'),
     replyPreviewAuthor: $('replyPreviewAuthor'),
     replyPreviewText: $('replyPreviewText'),
     replyPreviewCancel: $('replyPreviewCancel'),
-    createChannelBtn: $('createChannelBtn'),
-    rosterGenBtn: $('rosterGenBtn'),
-    exportAttendanceBtn: $('exportAttendanceBtn'),
-    assignStudentBtn: $('assignStudentBtn'),
+    filePreview: $('filePreview'),
+    filePreviewName: $('filePreviewName'),
+    filePreviewRemove: $('filePreviewRemove'),
+    fileInput: $('fileInput'),
+    messageInput: $('messageInput'),
+    sendMsgBtn: $('sendMsgBtn'),
+    videoContainer: $('videoContainer'),
+    videoIframe: $('videoIframe'),
+    closeVideoBtn: $('closeVideoBtn'),
+
+    // members
+    backFromMembers: $('backFromMembers'),
+    memberSearchInput: $('memberSearchInput'),
+    adminAddMemberRow: $('adminAddMemberRow'),
     assignStudentInput: $('assignStudentInput'),
     assignRoleSelect: $('assignRoleSelect'),
+    assignStudentBtn: $('assignStudentBtn'),
     channelMembersList: $('channelMembersList'),
+    alphaIndex: $('alphaIndex'),
+
+    // profile
+    backFromProfile: $('backFromProfile'),
+    profileChannelName: $('profileChannelName'),
+    profileChannelMeta: $('profileChannelMeta'),
+    profileChannelDesc: $('profileChannelDesc'),
+    profileMembersBtn: $('profileMembersBtn'),
+    profileSeeAllMedia: $('profileSeeAllMedia'),
+    sharedMediaGrid: $('sharedMediaGrid'),
+    adminProfileSchedule: $('adminProfileSchedule'),
     scheduleTeacherInput: $('scheduleTeacherInput'),
     scheduleTimeInput: $('scheduleTimeInput'),
     scheduleDurationInput: $('scheduleDurationInput'),
     setScheduleBtn: $('setScheduleBtn'),
-    scheduleBanner: $('scheduleBanner'),
-    scheduleBannerText: $('scheduleBannerText'),
-    authLogo: $('authLogo'),
-    sidebarLogo: $('sidebarLogo'),
+
+    // status viewer
+    statusModal: $('statusModal'),
+    statusSegments: $('statusSegments'),
+    statusProgress: $('statusProgress'),
+    closeStatusModal: $('closeStatusModal'),
+    statusViewerAvatar: $('statusViewerAvatar'),
+    statusModalTitle: $('statusModalTitle'),
+    statusModalTime: $('statusModalTime'),
+    statusModalContent: $('statusModalContent'),
   };
 
   // ============================================================
@@ -138,7 +202,6 @@
       if (audioCtx.state === 'suspended') audioCtx.resume();
 
       const now = audioCtx.currentTime;
-      // Two-tone "pop" chime, similar cadence to common chat notifications
       [[880, 0], [1175, 0.09]].forEach(([freq, delay]) => {
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
@@ -169,18 +232,18 @@
   async function subscribeToPush() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
       console.warn('Push notifications not supported on this browser/device.');
-      return;
+      return false;
     }
     if (!CONFIG.PUSH || !CONFIG.PUSH.VAPID_PUBLIC_KEY) {
       console.warn('No VAPID public key configured — push notifications disabled.');
-      return;
+      return false;
     }
 
     try {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
         console.warn('Notification permission not granted.');
-        return;
+        return false;
       }
 
       const registration = await navigator.serviceWorker.ready;
@@ -203,8 +266,33 @@
         },
         { onConflict: 'endpoint' }
       );
+      return true;
     } catch (e) {
       console.warn('Push subscription failed:', e);
+      return false;
+    }
+  }
+
+  async function unsubscribeFromPush() {
+    try {
+      if (!('serviceWorker' in navigator)) return;
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        await supabase.from('push_subscriptions').delete().eq('endpoint', subscription.endpoint);
+        await subscription.unsubscribe();
+      }
+    } catch (e) {
+      console.warn('Push unsubscribe failed:', e);
+    }
+  }
+
+  async function setNotificationsEnabled(enabled) {
+    if (enabled) {
+      const ok = await subscribeToPush();
+      DOM.notifToggle.checked = !!ok;
+    } else {
+      await unsubscribeFromPush();
     }
   }
 
@@ -215,11 +303,8 @@
     if (!username) return CONFIG.AUTH.ROLES.STUDENT;
     const key = username.toLowerCase();
 
-    // Authoritative: a role an admin explicitly assigned via "Add to group"
     if (state.roleCache[key]) return state.roleCache[key];
 
-    // Fallback heuristic for accounts never explicitly assigned a role
-    // (e.g. admin accounts, or before roles existed)
     if (key.includes(CONFIG.AUTH.ROLES.ADMIN)) return CONFIG.AUTH.ROLES.ADMIN;
     if (key.includes(CONFIG.AUTH.ROLES.TEACHER)) return CONFIG.AUTH.ROLES.TEACHER;
     return CONFIG.AUTH.ROLES.STUDENT;
@@ -236,7 +321,6 @@
     });
   }
 
-  // Role → identity system helpers (the app's signature visual device)
   function roleKey(username) {
     const role = getRoleFromUsername(username);
     if (role === CONFIG.AUTH.ROLES.ADMIN) return 'admin';
@@ -247,8 +331,30 @@
   function avatarHtml(username, size) {
     const key = roleKey(username);
     const initial = (username || '?').charAt(0).toUpperCase();
-    const sizeClass = size === 'sm' ? ' sm' : '';
-    return `<div class="avatar avatar-${key}${sizeClass}">${initial}</div>`;
+    const sizeClass = size === 'sm' ? ' sm' : size === 'lg' ? ' lg' : '';
+    const online = state.onlineUsers.has((username || '').toLowerCase());
+    return `<div class="avatar avatar-${key}${sizeClass}">${initial}<span class="avatar-dot${online ? ' online' : ''}"></span></div>`;
+  }
+
+  // Deterministic decorative color for a channel avatar (channels aren't role-typed)
+  function channelColorKey(ch) {
+    const keys = ['admin', 'teacher', 'student'];
+    let hash = 0;
+    for (const c of String(ch.id)) hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
+    return keys[hash % keys.length];
+  }
+
+  function channelAvatarHtml(ch) {
+    const key = channelColorKey(ch);
+    const initial = (ch.name || '?').charAt(0).toUpperCase();
+    return `<div class="avatar avatar-${key}">${initial}</div>`;
+  }
+
+  function setAvatarEl(el, username, extraClass) {
+    if (!el) return;
+    const key = roleKey(username);
+    el.className = `avatar avatar-${key}${extraClass ? ' ' + extraClass : ''}`;
+    el.textContent = (username || '?').charAt(0).toUpperCase();
   }
 
   function generateEmail(username) {
@@ -256,10 +362,24 @@
   }
 
   function formatDate(ts) {
-    return new Date(ts).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function formatFullDate(ts) {
+    return new Date(ts).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  }
+
+  function formatTimeAgo(ts) {
+    if (!ts) return '';
+    const diffMs = Date.now() - new Date(ts).getTime();
+    const min = Math.floor(diffMs / 60000);
+    if (min < 1) return 'now';
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const day = Math.floor(hr / 24);
+    if (day < 7) return `${day}d ago`;
+    return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' });
   }
 
   function truncate(str, n = 20) {
@@ -271,6 +391,10 @@
     const div = document.createElement('div');
     div.textContent = str ?? '';
     return div.innerHTML;
+  }
+
+  function isImageFile(url) {
+    return !!url && /\.(png|jpe?g|gif|webp|svg)$/i.test(url.split('?')[0]);
   }
 
   function showError(message) {
@@ -291,6 +415,33 @@
   }
 
   // ============================================================
+  // 6b. SCREEN NAVIGATION
+  // ============================================================
+  const ROOT_TABS = ['chats', 'updates', 'settings'];
+  const SCREEN_EL = {
+    chats: DOM.screenChats,
+    updates: DOM.screenUpdates,
+    settings: DOM.screenSettings,
+    chatDetail: DOM.screenChatDetail,
+    members: DOM.screenMembers,
+    profile: DOM.screenProfile,
+  };
+
+  function goToScreen(name) {
+    Object.values(SCREEN_EL).forEach((el) => el && el.classList.add('hidden'));
+    if (SCREEN_EL[name]) SCREEN_EL[name].classList.remove('hidden');
+
+    const isRoot = ROOT_TABS.includes(name);
+    DOM.bottomNav.classList.toggle('hidden', !isRoot);
+    if (isRoot) {
+      state.currentTab = name;
+      DOM.bottomNav.querySelectorAll('.nav-btn').forEach((b) => {
+        b.classList.toggle('active', b.dataset.tab === name);
+      });
+    }
+  }
+
+  // ============================================================
   // 7. AUTHENTICATION
   // ============================================================
   async function loginWithUsername(username) {
@@ -298,10 +449,7 @@
     const password = CONFIG.AUTH.DEFAULT_PASSWORD;
 
     try {
-      const { error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-      });
+      const { error: signUpError } = await supabase.auth.signUp({ email, password });
 
       const isAlreadyRegistered =
         signUpError &&
@@ -314,11 +462,7 @@
         throw signUpError;
       }
 
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
-
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       return data.user;
     } catch (e) {
@@ -328,13 +472,45 @@
   }
 
   // ============================================================
+  // 7b. PRESENCE (who's online)
+  // ============================================================
+  let presenceChannel = null;
+
+  function setupPresence() {
+    if (!state.currentUser) return;
+    presenceChannel = supabase.channel('presence:orbit', {
+      config: { presence: { key: state.currentUser.username.toLowerCase() } },
+    });
+
+    presenceChannel
+      .on('presence', { event: 'sync' }, () => {
+        const s = presenceChannel.presenceState();
+        state.onlineUsers = new Set(Object.keys(s));
+        renderMembers();
+        updateChatDetailSubtitle();
+        updateProfileMeta();
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await presenceChannel.track({ username: state.currentUser.username, online_at: new Date().toISOString() });
+        }
+      });
+  }
+
+  function teardownPresence() {
+    if (presenceChannel) {
+      supabase.removeChannel(presenceChannel);
+      presenceChannel = null;
+    }
+    state.onlineUsers = new Set();
+  }
+
+  // ============================================================
   // 8. CHANNELS (CRUD)
   // ============================================================
   async function loadChannels() {
     if (!state.currentUser) return [];
 
-    // Admins see everything. Teachers/students only see channels
-    // they've been explicitly assigned to.
     if (state.isAdmin) {
       const { data, error } = await supabase
         .from(CONFIG.SUPABASE.TABLES.CHANNELS)
@@ -378,63 +554,107 @@
     return channels || [];
   }
 
+  async function loadChannelPreviews(channelIds) {
+    if (!channelIds.length) return {};
+    const { data, error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+      .select('channel_id, content, username, created_at, file_url')
+      .in('channel_id', channelIds)
+      .order('created_at', { ascending: false })
+      .limit(300);
+
+    if (error) {
+      console.warn('Preview lookup failed:', error);
+      return {};
+    }
+    const map = {};
+    (data || []).forEach((m) => {
+      if (!map[m.channel_id]) map[m.channel_id] = m;
+    });
+    return map;
+  }
+
+  let allChannels = [];
+
   async function renderChannels() {
     const channels = await loadChannels();
+    allChannels = channels;
+    state.channelPreviews = await loadChannelPreviews(channels.map((c) => c.id));
+    renderChatList(channels);
+
+    if (!state.currentChannel && channels.length) {
+      selectChannel(channels[0]);
+    }
+  }
+
+  function renderChatList(channels) {
     DOM.channelList.innerHTML = '';
+    DOM.createChannelFab.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
 
     if (!channels || channels.length === 0) {
       DOM.channelList.innerHTML = state.isAdmin
-        ? '<div class="empty-note">No channels yet</div>'
+        ? '<div class="empty-note">No channels yet — tap + to create one</div>'
         : '<div class="empty-note">You haven\'t been added to a group yet — ask your admin.</div>';
       return;
     }
 
     channels.forEach((ch) => {
-      const div = document.createElement('div');
-      div.className = `channel-item ${state.currentChannel?.id === ch.id ? 'active' : ''}`;
+      const preview = state.channelPreviews[ch.id];
       const unread = state.unreadByChannel[ch.id] || 0;
-      const adminControls = state.isAdmin
-        ? `
-          <span class="channel-admin-controls" style="display:flex; gap:4px; flex-shrink:0;">
-            <button class="icon-btn" style="width:22px; height:22px;" title="Rename channel" data-action="rename" data-id="${ch.id}">
-              <i class="fas fa-pen" style="font-size:10px;"></i>
-            </button>
-            <button class="icon-btn" style="width:22px; height:22px;" title="Delete channel" data-action="delete-channel" data-id="${ch.id}">
-              <i class="fas fa-trash" style="font-size:10px; color:var(--danger);"></i>
-            </button>
+      const previewText = preview
+        ? (preview.content ? escapeHtml(truncate(preview.content, 42)) : (preview.file_url ? '📎 Attachment' : ''))
+        : 'No messages yet';
+      const previewAuthor = preview && preview.username ? `${escapeHtml(preview.username)}: ` : '';
+      const time = preview ? formatTimeAgo(preview.created_at) : '';
+
+      const row = document.createElement('div');
+      row.className = 'chat-row';
+      row.dataset.id = ch.id;
+      row.dataset.name = ch.name.toLowerCase();
+      row.innerHTML = `
+        ${channelAvatarHtml(ch)}
+        <div class="chat-row-body">
+          <div class="chat-row-top">
+            <span class="chat-row-name">${escapeHtml(ch.name)}</span>
+            <span class="chat-row-time">${time}</span>
+          </div>
+          <div class="chat-row-bottom">
+            <span class="chat-row-preview">${previewAuthor}${previewText}</span>
+            ${unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : ''}
+          </div>
+        </div>
+        ${state.isAdmin ? `
+          <span class="chat-admin-actions">
+            <button class="icon-btn" style="width:26px;height:26px;" title="Rename" data-action="rename" data-id="${ch.id}"><i class="fas fa-pen" style="font-size:10px;"></i></button>
+            <button class="icon-btn" style="width:26px;height:26px;" title="Delete" data-action="delete-channel" data-id="${ch.id}"><i class="fas fa-trash" style="font-size:10px;color:var(--danger);"></i></button>
           </span>
-        `
-        : '';
-      div.innerHTML = `
-        <span class="channel-name">${escapeHtml(ch.name)}</span>
-        ${unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : ''}
-        ${adminControls}
+        ` : ''}
       `;
-      div.dataset.id = ch.id;
-      div.addEventListener('click', (e) => {
-        if (e.target.closest('[data-action]')) return; // let admin buttons handle their own click
-        selectChannel(ch);
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('[data-action]')) return;
+        openChannel(ch);
       });
-      DOM.channelList.appendChild(div);
+      DOM.channelList.appendChild(row);
     });
 
-    // Admin rename/delete controls (delegated once per render)
     DOM.channelList.querySelectorAll('[data-action="rename"]').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        renameChannel(btn.dataset.id);
-      });
+      btn.addEventListener('click', (e) => { e.stopPropagation(); renameChannel(btn.dataset.id); });
     });
     DOM.channelList.querySelectorAll('[data-action="delete-channel"]').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        deleteChannel(btn.dataset.id);
-      });
+      btn.addEventListener('click', (e) => { e.stopPropagation(); deleteChannel(btn.dataset.id); });
     });
+  }
 
-    if (!state.currentChannel && channels.length) {
-      selectChannel(channels[0]);
-    }
+  function filterChatList(query) {
+    const q = query.trim().toLowerCase();
+    DOM.channelList.querySelectorAll('.chat-row').forEach((row) => {
+      row.classList.toggle('hidden', !!q && !row.dataset.name.includes(q));
+    });
+  }
+
+  async function openChannel(channel) {
+    await selectChannel(channel);
+    goToScreen('chatDetail');
   }
 
   async function renameChannel(channelId) {
@@ -444,24 +664,15 @@
       .from(CONFIG.SUPABASE.TABLES.CHANNELS)
       .update({ name: newName })
       .eq('id', channelId);
-    if (error) {
-      alert('Rename failed: ' + error.message);
-      return;
-    }
+    if (error) { alert('Rename failed: ' + error.message); return; }
     if (state.currentChannel?.id === channelId) state.currentChannel.name = newName;
     await renderChannels();
   }
 
   async function deleteChannel(channelId) {
     if (!confirm('Delete this channel? This also removes its messages and member list. This cannot be undone.')) return;
-    const { error } = await supabase
-      .from(CONFIG.SUPABASE.TABLES.CHANNELS)
-      .delete()
-      .eq('id', channelId);
-    if (error) {
-      alert('Delete failed: ' + error.message);
-      return;
-    }
+    const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.CHANNELS).delete().eq('id', channelId);
+    if (error) { alert('Delete failed: ' + error.message); return; }
     if (state.currentChannel?.id === channelId) {
       state.currentChannel = null;
       if (state.messagesSubscription) {
@@ -483,30 +694,14 @@
     if (error) return;
 
     const counts = {};
-    (data || []).forEach((row) => {
-      counts[row.channel_id] = (counts[row.channel_id] || 0) + 1;
-    });
+    (data || []).forEach((row) => { counts[row.channel_id] = (counts[row.channel_id] || 0) + 1; });
     state.unreadByChannel = counts;
 
-    // Update badges in place without a full channel re-render
-    document.querySelectorAll('.channel-item').forEach((el) => {
-      const id = el.dataset.id;
-      const existing = el.querySelector('.unread-badge');
-      const count = counts[id] || 0;
-      if (count > 0) {
-        const label = count > 99 ? '99+' : String(count);
-        if (existing) {
-          existing.textContent = label;
-        } else {
-          const badge = document.createElement('span');
-          badge.className = 'unread-badge';
-          badge.textContent = label;
-          el.appendChild(badge);
-        }
-      } else if (existing) {
-        existing.remove();
-      }
-    });
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+    DOM.navChatsBadge.textContent = total > 99 ? '99+' : String(total);
+    DOM.navChatsBadge.classList.toggle('hidden', total === 0);
+
+    renderChatList(allChannels);
   }
 
   // ============================================================
@@ -535,15 +730,28 @@
 
   async function selectChannel(channel) {
     state.currentChannel = channel;
-    await renderChannels();
     await loadMessages(channel.id);
-    await loadStatuses();
+    await loadMembers(channel.id);
     subscribeToMessages(channel.id);
     await markDelivered(channel.id);
     await markSeen(channel.id);
-    if (state.isAdmin) await loadMembers(channel.id);
     await loadSchedule(channel.id);
     subscribeToSchedule(channel.id);
+    updateChatDetailHeader();
+    updateProfileScreen();
+  }
+
+  function updateChatDetailHeader() {
+    if (!state.currentChannel) return;
+    DOM.chatDetailName.textContent = state.currentChannel.name;
+    updateChatDetailSubtitle();
+  }
+
+  function updateChatDetailSubtitle() {
+    if (!state.currentChannel) return;
+    const total = state.currentMembers.length;
+    const online = state.currentMembers.filter((m) => state.onlineUsers.has((m.username || '').toLowerCase())).length;
+    DOM.chatDetailSub.textContent = total ? `${total} member${total === 1 ? '' : 's'} · ${online} online` : '';
   }
 
   // ============================================================
@@ -569,11 +777,8 @@
 
   function renderScheduleBanner(schedule) {
     const when = new Date(schedule.scheduled_time);
-    const formatted = when.toLocaleString([], {
-      weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-    });
-    DOM.scheduleBannerText.textContent =
-      `Class with ${schedule.teacher_username} scheduled for ${formatted} (${schedule.duration_minutes} min)`;
+    const formatted = when.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    DOM.scheduleBannerText.textContent = `Class with ${schedule.teacher_username} scheduled for ${formatted} (${schedule.duration_minutes} min)`;
     DOM.scheduleBanner.classList.remove('hidden');
   }
 
@@ -584,23 +789,13 @@
     }
     scheduleSubscription = supabase
       .channel(`schedule:${channelId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'class_schedule', filter: `channel_id=eq.${channelId}` },
-        () => loadSchedule(channelId)
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'class_schedule', filter: `channel_id=eq.${channelId}` }, () => loadSchedule(channelId))
       .subscribe();
   }
 
   async function setClassSchedule(teacherUsername, datetimeLocal, durationMinutes) {
-    if (!state.currentChannel) {
-      alert('Select a channel first.');
-      return;
-    }
-    if (!teacherUsername || !datetimeLocal) {
-      alert('Enter a teacher username and a date/time.');
-      return;
-    }
+    if (!state.currentChannel) { alert('Select a channel first.'); return; }
+    if (!teacherUsername || !datetimeLocal) { alert('Enter a teacher username and a date/time.'); return; }
 
     const { error } = await supabase.from('class_schedule').insert({
       channel_id: state.currentChannel.id,
@@ -610,79 +805,100 @@
       set_by: state.currentUser.username,
     });
 
-    if (error) {
-      alert('Could not set schedule: ' + error.message);
-      return;
-    }
+    if (error) { alert('Could not set schedule: ' + error.message); return; }
     alert(`✅ Class time set for ${teacherUsername}`);
     await loadSchedule(state.currentChannel.id);
   }
 
   // ============================================================
-  // 8d. GROUP MEMBER MANAGEMENT (admin only)
+  // 8d. GROUP MEMBER MANAGEMENT
   // ============================================================
   async function loadMembers(channelId) {
     const { data, error } = await supabase
       .from(CONFIG.SUPABASE.TABLES.MEMBERS)
       .select('*')
       .eq('channel_id', channelId)
-      .order('role')
       .order('username');
 
     if (error) {
+      state.currentMembers = [];
       DOM.channelMembersList.innerHTML = '<div class="empty-note">Could not load members</div>';
       return;
     }
-    renderMembers(data || []);
+    state.currentMembers = data || [];
+    renderMembers();
+    updateChatDetailSubtitle();
+    updateProfileMeta();
   }
 
-  function renderMembers(members) {
+  function renderMembers() {
+    DOM.adminAddMemberRow.classList.toggle('hidden', !state.isAdmin);
+
+    const query = (DOM.memberSearchInput.value || '').trim().toLowerCase();
+    const members = [...state.currentMembers]
+      .filter((m) => !query || m.username.toLowerCase().includes(query))
+      .sort((a, b) => a.username.localeCompare(b.username));
+
     if (!members.length) {
-      DOM.channelMembersList.innerHTML = '<div class="empty-note">No members yet</div>';
+      DOM.channelMembersList.innerHTML = `<div class="empty-note">${state.currentChannel ? 'No members yet' : 'Select a channel'}</div>`;
+      DOM.alphaIndex.innerHTML = '';
       return;
     }
 
-    DOM.channelMembersList.innerHTML = members.map((m) => `
-      <div style="display:flex; align-items:center; gap:7px; padding:5px 7px; border-radius:7px; background:var(--surface-sunken);">
-        ${avatarHtml(m.username, 'sm')}
-        <span style="flex:1; font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(m.username)}</span>
-        <span class="role-chip role-${m.role}-chip" style="padding:2px 7px 2px 6px; font-size:9.5px;">${escapeHtml(m.role)}</span>
-        <button class="icon-btn" style="width:22px; height:22px;" title="Remove from group" data-remove-member="${m.id}">
-          <i class="fas fa-xmark" style="font-size:11px;"></i>
-        </button>
-      </div>
-    `).join('');
+    let html = '';
+    let lastLetter = '';
+    members.forEach((m) => {
+      const letter = m.username.charAt(0).toUpperCase();
+      if (letter !== lastLetter) {
+        html += `<div class="member-group-letter" id="memberLetter-${letter}">${letter}</div>`;
+        lastLetter = letter;
+      }
+      const online = state.onlineUsers.has(m.username.toLowerCase());
+      html += `
+        <div class="member-row" id="member-${m.id}">
+          ${avatarHtml(m.username, 'sm')}
+          <div style="flex:1; min-width:0;">
+            <div class="member-name">${escapeHtml(m.username)}</div>
+            <div class="member-status${online ? ' online' : ''}"><span class="dot"></span>${online ? 'Active now' : 'Offline'}</div>
+          </div>
+          <span class="role-chip role-${m.role}-chip member-role-chip">${escapeHtml(m.role)}</span>
+          ${state.isAdmin ? `
+            <button class="icon-btn member-remove-btn" style="width:26px;height:26px;" title="Remove from group" data-remove-member="${m.id}">
+              <i class="fas fa-xmark" style="font-size:11px;"></i>
+            </button>` : ''}
+        </div>
+      `;
+    });
+    DOM.channelMembersList.innerHTML = html;
 
     DOM.channelMembersList.querySelectorAll('[data-remove-member]').forEach((btn) => {
       btn.addEventListener('click', () => removeMember(btn.dataset.removeMember));
     });
+
+    // Alphabet index
+    const present = new Set(members.map((m) => m.username.charAt(0).toUpperCase()));
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+    DOM.alphaIndex.innerHTML = alphabet.map((l) => `<span data-letter="${l}" class="${present.has(l) ? '' : 'hidden'}">${l}</span>`).join('');
+    DOM.alphaIndex.querySelectorAll('span').forEach((span) => {
+      span.addEventListener('click', () => {
+        const target = document.getElementById(`memberLetter-${span.dataset.letter}`);
+        if (target) target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      });
+    });
   }
 
   async function addMemberToChannel(username, role) {
-    if (!username || !state.currentChannel) {
-      alert('Enter a username and select a channel.');
-      return;
-    }
+    if (!username || !state.currentChannel) { alert('Enter a username and select a channel.'); return; }
 
     const { error } = await supabase
       .from(CONFIG.SUPABASE.TABLES.MEMBERS)
       .upsert(
-        {
-          channel_id: state.currentChannel.id,
-          username,
-          role,
-          added_by: state.currentUser.username,
-        },
+        { channel_id: state.currentChannel.id, username, role, added_by: state.currentUser.username },
         { onConflict: 'channel_id,username' }
       );
 
-    if (error) {
-      alert('Could not add member: ' + error.message);
-      return;
-    }
+    if (error) { alert('Could not add member: ' + error.message); return; }
 
-    // Make this the user's authoritative role app-wide (fixes role-guessing
-    // bugs for usernames that don't literally contain "teacher"/"student")
     const { error: roleError } = await supabase
       .from('user_roles')
       .upsert({ username, role, updated_at: new Date().toISOString() }, { onConflict: 'username' });
@@ -698,14 +914,8 @@
 
   async function removeMember(memberId) {
     if (!confirm('Remove this person from the group?')) return;
-    const { error } = await supabase
-      .from(CONFIG.SUPABASE.TABLES.MEMBERS)
-      .delete()
-      .eq('id', memberId);
-    if (error) {
-      alert('Remove failed: ' + error.message);
-      return;
-    }
+    const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.MEMBERS).delete().eq('id', memberId);
+    if (error) { alert('Remove failed: ' + error.message); return; }
     await loadMembers(state.currentChannel.id);
   }
 
@@ -713,7 +923,6 @@
   // 8b. REALTIME MESSAGE SYNC
   // ============================================================
   function subscribeToMessages(channelId) {
-    // Drop any previous subscription (e.g. from the last channel)
     if (state.messagesSubscription) {
       supabase.removeChannel(state.messagesSubscription);
       state.messagesSubscription = null;
@@ -721,57 +930,28 @@
 
     state.messagesSubscription = supabase
       .channel(`messages:${channelId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: CONFIG.SUPABASE.TABLES.MESSAGES,
-          filter: `channel_id=eq.${channelId}`,
-        },
-        (payload) => {
-          const exists = state.messages.some((m) => m.id === payload.new.id);
-          if (!exists) {
-            state.messages.push(payload.new);
-            renderMessages();
-
-            if (payload.new.username !== state.currentUser?.username) {
-              playNotifySound();
-              markDelivered(channelId);
-              markSeen(channelId);
-            }
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: CONFIG.SUPABASE.TABLES.MESSAGES,
-          filter: `channel_id=eq.${channelId}`,
-        },
-        (payload) => {
-          const idx = state.messages.findIndex((m) => m.id === payload.new.id);
-          if (idx !== -1) {
-            state.messages[idx] = payload.new;
-            renderMessages();
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: CONFIG.SUPABASE.TABLES.MESSAGES,
-          filter: `channel_id=eq.${channelId}`,
-        },
-        (payload) => {
-          state.messages = state.messages.filter((m) => m.id !== payload.old.id);
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: CONFIG.SUPABASE.TABLES.MESSAGES, filter: `channel_id=eq.${channelId}` }, (payload) => {
+        const exists = state.messages.some((m) => m.id === payload.new.id);
+        if (!exists) {
+          state.messages.push(payload.new);
           renderMessages();
+          refreshUnreadBadges();
+
+          if (payload.new.username !== state.currentUser?.username) {
+            playNotifySound();
+            markDelivered(channelId);
+            markSeen(channelId);
+          }
         }
-      )
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: CONFIG.SUPABASE.TABLES.MESSAGES, filter: `channel_id=eq.${channelId}` }, (payload) => {
+        const idx = state.messages.findIndex((m) => m.id === payload.new.id);
+        if (idx !== -1) { state.messages[idx] = payload.new; renderMessages(); }
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: CONFIG.SUPABASE.TABLES.MESSAGES, filter: `channel_id=eq.${channelId}` }, (payload) => {
+        state.messages = state.messages.filter((m) => m.id !== payload.old.id);
+        renderMessages();
+      })
       .subscribe((status) => {
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           console.warn('Realtime message sync unavailable — falling back to manual refresh.');
@@ -781,15 +961,8 @@
 
   async function createChannel(name) {
     if (!name) return;
-
-    const { error } = await supabase
-      .from(CONFIG.SUPABASE.TABLES.CHANNELS)
-      .insert({ name });
-
-    if (error) {
-      alert('Error creating channel: ' + error.message);
-      return;
-    }
+    const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.CHANNELS).insert({ name });
+    if (error) { alert('Error creating channel: ' + error.message); return; }
     await renderChannels();
   }
 
@@ -807,27 +980,17 @@
 
     if (error) {
       console.warn('Messages fallback:', error);
-      state.messages = [
-        {
-          id: '1',
-          content: 'Welcome to the channel!',
-          username: 'system',
-          created_at: Date.now()
-        }
-      ];
+      state.messages = [{ id: '1', content: 'Welcome to the channel!', username: 'system', created_at: Date.now() }];
     } else {
       state.messages = data || [];
     }
     renderMessages();
+    updateProfileScreen();
   }
 
   function ticksHtml(msg) {
-    if (msg.seen_at) {
-      return `<span class="msg-ticks seen" title="Seen"><i class="fas fa-check-double"></i></span>`;
-    }
-    if (msg.delivered_at) {
-      return `<span class="msg-ticks delivered" title="Delivered"><i class="fas fa-check-double"></i></span>`;
-    }
+    if (msg.seen_at) return `<span class="msg-ticks seen" title="Seen"><i class="fas fa-check-double"></i></span>`;
+    if (msg.delivered_at) return `<span class="msg-ticks delivered" title="Delivered"><i class="fas fa-check-double"></i></span>`;
     return `<span class="msg-ticks" title="Sent"><i class="fas fa-check"></i></span>`;
   }
 
@@ -844,6 +1007,7 @@
       const wrap = document.createElement('div');
       wrap.className = `msg ${isMine ? 'msg-mine' : 'msg-theirs'}`;
       wrap.dataset.id = msg.id;
+      wrap.dataset.role = roleKey(msg.username);
 
       let replyHtml = '';
       if (msg.reply_to) {
@@ -870,12 +1034,7 @@
       }
 
       const footerHtml = isMine
-        ? `
-          <div class="msg-meta" style="margin-top:2px;">
-            ${ticksHtml(msg)}
-            ${msg.seen_at ? `<span class="msg-seen-time">Seen ${formatDate(msg.seen_at)}</span>` : ''}
-          </div>
-        `
+        ? `<div class="msg-meta" style="margin-top:2px;">${ticksHtml(msg)}${msg.seen_at ? `<span class="msg-seen-time">Seen ${formatDate(msg.seen_at)}</span>` : ''}</div>`
         : '';
 
       wrap.innerHTML = `
@@ -889,14 +1048,8 @@
           ${footerHtml}
         </div>
         <div class="msg-actions">
-          <button class="msg-reply-btn" title="Reply" data-reply-id="${msg.id}">
-            <i class="fas fa-reply"></i>
-          </button>
-          ${state.isAdmin ? `
-            <button class="msg-reply-btn" title="Delete message" data-delete-id="${msg.id}" style="margin-left:4px;">
-              <i class="fas fa-trash" style="color:var(--danger);"></i>
-            </button>
-          ` : ''}
+          <button class="msg-reply-btn" title="Reply" data-reply-id="${msg.id}"><i class="fas fa-reply"></i></button>
+          ${state.isAdmin ? `<button class="msg-reply-btn" title="Delete message" data-delete-id="${msg.id}" style="margin-left:4px;"><i class="fas fa-trash" style="color:var(--danger);"></i></button>` : ''}
         </div>
       `;
       DOM.chatMessages.appendChild(wrap);
@@ -907,27 +1060,17 @@
 
   async function deleteMessage(messageId) {
     if (!confirm('Delete this message for everyone?')) return;
-    const { error } = await supabase
-      .from(CONFIG.SUPABASE.TABLES.MESSAGES)
-      .delete()
-      .eq('id', messageId);
-    if (error) {
-      alert('Delete failed: ' + error.message);
-      return;
-    }
+    const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.MESSAGES).delete().eq('id', messageId);
+    if (error) { alert('Delete failed: ' + error.message); return; }
     state.messages = state.messages.filter((m) => m.id !== messageId);
     renderMessages();
   }
 
-  // Delegated click handler for reply buttons (messages are re-rendered often)
   DOM.chatMessages.addEventListener('click', (e) => {
     const btn = e.target.closest('.msg-reply-btn');
     if (!btn) return;
 
-    if (btn.dataset.deleteId) {
-      deleteMessage(btn.dataset.deleteId);
-      return;
-    }
+    if (btn.dataset.deleteId) { deleteMessage(btn.dataset.deleteId); return; }
 
     const id = btn.dataset.replyId;
     const msg = state.messages.find((m) => m.id === id);
@@ -946,10 +1089,7 @@
   });
 
   async function sendMessage(content, file) {
-    if (!state.currentChannel || !state.currentUser) {
-      alert('Please select a channel first.');
-      return;
-    }
+    if (!state.currentChannel || !state.currentUser) { alert('Please select a channel first.'); return; }
 
     let fileUrl = null;
 
@@ -962,15 +1102,10 @@
       const path = generateStoragePath(state.currentChannel.id, file.name);
 
       try {
-        const { data, error } = await supabase.storage
-          .from(CONFIG.SUPABASE.STORAGE_BUCKET)
-          .upload(path, file);
-
+        const { error } = await supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).upload(path, file);
         if (error) throw error;
 
-        const { data: urlData } = supabase.storage
-          .from(CONFIG.SUPABASE.STORAGE_BUCKET)
-          .getPublicUrl(path);
+        const { data: urlData } = supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).getPublicUrl(path);
         fileUrl = urlData.publicUrl;
 
         DOM.fileUploadStatus.textContent = `📎 ${file.name} uploaded`;
@@ -984,33 +1119,26 @@
     }
 
     const replyPayload = state.replyingTo
-      ? {
-          reply_to: state.replyingTo.id,
-          reply_username: state.replyingTo.username,
-          reply_content: state.replyingTo.content || (state.replyingTo.file_url ? '📎 Attached file' : ''),
-        }
+      ? { reply_to: state.replyingTo.id, reply_username: state.replyingTo.username, reply_content: state.replyingTo.content || (state.replyingTo.file_url ? '📎 Attached file' : '') }
       : {};
 
-    const { error } = await supabase
-      .from(CONFIG.SUPABASE.TABLES.MESSAGES)
-      .insert({
-        channel_id: state.currentChannel.id,
-        username: state.currentUser.username,
-        content: content || '',
-        file_url: fileUrl,
-        created_at: new Date().toISOString(),
-        ...replyPayload,
-      });
+    const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.MESSAGES).insert({
+      channel_id: state.currentChannel.id,
+      username: state.currentUser.username,
+      content: content || '',
+      file_url: fileUrl,
+      created_at: new Date().toISOString(),
+      ...replyPayload,
+    });
 
-    if (error) {
-      console.error('Send error:', error);
-      alert('Failed to send message.');
-    }
+    if (error) { console.error('Send error:', error); alert('Failed to send message.'); }
 
     state.replyingTo = null;
     DOM.replyPreview.classList.add('hidden');
 
     await loadMessages(state.currentChannel.id);
+    state.channelPreviews = await loadChannelPreviews(allChannels.map((c) => c.id));
+    renderChatList(allChannels);
   }
 
   // ============================================================
@@ -1024,14 +1152,7 @@
       .limit(10);
 
     if (error) {
-      state.statuses = [
-        {
-          id: '1',
-          content: 'Welcome to Nous Complex Orbit!',
-          username: 'admin',
-          created_at: Date.now()
-        }
-      ];
+      state.statuses = [{ id: '1', content: 'Welcome to Nous Complex Orbit!', username: 'admin', created_at: Date.now() }];
     } else {
       state.statuses = data || [];
     }
@@ -1046,43 +1167,38 @@
     } else {
       state.statuses.forEach((st) => {
         const item = document.createElement('div');
-        item.className = 'status-item';
+        item.className = 'update-row';
         item.innerHTML = `
           ${avatarHtml(st.username)}
-          <span class="status-name">${escapeHtml(truncate(st.username || 'User', 10))}</span>
+          <div class="update-row-body">
+            <div class="update-row-name">${escapeHtml(st.username || 'User')}</div>
+            <div class="update-row-preview">${escapeHtml(truncate(st.content || '', 46))}</div>
+          </div>
+          <div class="update-row-time">${formatTimeAgo(st.created_at)}</div>
         `;
         item.addEventListener('click', () => showStatusModal(st));
         DOM.statusTray.appendChild(item);
       });
     }
 
-    if (state.isAdmin || state.isTeacher) {
-      DOM.statusAddBtn.classList.remove('hidden');
-    } else {
-      DOM.statusAddBtn.classList.add('hidden');
-    }
+    DOM.statusAddBtn.classList.toggle('hidden', !(state.isAdmin || state.isTeacher));
   }
 
   async function postStatus(content) {
     if (!state.currentUser) return;
-
-    const { error } = await supabase
-      .from(CONFIG.SUPABASE.TABLES.STATUSES)
-      .insert({
-        username: state.currentUser.username,
-        content: content,
-        created_at: new Date().toISOString(),
-      });
-
-    if (error) {
-      console.error('Status error:', error);
-      alert('Failed to post status.');
-    }
+    const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.STATUSES).insert({
+      username: state.currentUser.username,
+      content: content,
+      created_at: new Date().toISOString(),
+    });
+    if (error) { console.error('Status error:', error); alert('Failed to post status.'); }
     await loadStatuses();
   }
 
   function showStatusModal(status) {
-    DOM.statusModalTitle.innerHTML = `<i class="fas fa-bullhorn" style="color:var(--accent); font-size:14px;"></i> ${escapeHtml(status.username || 'Announcement')}`;
+    setAvatarEl(DOM.statusViewerAvatar, status.username, 'sm status-viewer-avatar');
+    DOM.statusModalTitle.textContent = status.username || 'Announcement';
+    DOM.statusModalTime.textContent = formatFullDate(status.created_at);
     DOM.statusModalContent.textContent = status.content || '';
     DOM.statusProgress.style.width = '0%';
     DOM.statusModal.classList.remove('hidden');
@@ -1091,13 +1207,19 @@
     if (state.progressInterval) clearInterval(state.progressInterval);
 
     state.progressInterval = setInterval(() => {
-      progress += 2;
+      progress += 1.2;
       if (progress >= 100) {
         clearInterval(state.progressInterval);
         state.progressInterval = null;
+        DOM.statusModal.classList.add('hidden');
       }
       DOM.statusProgress.style.width = Math.min(progress, 100) + '%';
     }, 50);
+  }
+
+  function closeStatusViewer() {
+    DOM.statusModal.classList.add('hidden');
+    if (state.progressInterval) { clearInterval(state.progressInterval); state.progressInterval = null; }
   }
 
   // ============================================================
@@ -1105,32 +1227,25 @@
   // ============================================================
   function buildLiveUrl() {
     const settings = { ...CONFIG.LIVEKIT.ROOM_SETTINGS };
-
     if (state.isTeacher) {
       settings.lock_webcam = false;
       settings.hide_host_management_controls = false;
     }
-
     const params = new URLSearchParams(settings);
     return `${CONFIG.LIVEKIT.URL}?${params.toString()}`;
   }
 
   async function joinLiveClass() {
-    if (!state.currentUser || !state.currentChannel) {
-      alert('Please select a channel first.');
-      return;
-    }
+    if (!state.currentUser || !state.currentChannel) { alert('Please select a channel first.'); return; }
 
     if (CONFIG.FEATURES.ENABLE_ATTENDANCE_LOGGING) {
       try {
-        await supabase
-          .from(CONFIG.SUPABASE.TABLES.ATTENDANCE)
-          .insert({
-            student_name: state.currentUser.username,
-            channel_id: state.currentChannel.id,
-            join_time: new Date().toISOString(),
-            status: 'Present',
-          });
+        await supabase.from(CONFIG.SUPABASE.TABLES.ATTENDANCE).insert({
+          student_name: state.currentUser.username,
+          channel_id: state.currentChannel.id,
+          join_time: new Date().toISOString(),
+          status: 'Present',
+        });
       } catch (e) {
         console.warn('Attendance log skipped:', e);
       }
@@ -1139,7 +1254,7 @@
     DOM.videoContainer.classList.remove('hidden');
     DOM.videoIframe.src = buildLiveUrl();
     state.videoActive = true;
-    DOM.liveBtnText.textContent = state.isTeacher ? 'Start live classroom' : 'Join live class';
+    DOM.liveBtnText.textContent = state.isTeacher ? 'Start Live Session' : 'Join Live Session';
   }
 
   // ============================================================
@@ -1155,15 +1270,9 @@
       const uid = `${prefix}${String(i).padStart(3, '0')}`;
       const pass = Math.random().toString(36).slice(2, 2 + passLength);
       students.push({ username: uid, password: pass });
-
       try {
-        await supabase.auth.signUp({
-          email: generateEmail(uid),
-          password: pass
-        });
-      } catch (e) {
-        // Ignore duplicate errors
-      }
+        await supabase.auth.signUp({ email: generateEmail(uid), password: pass });
+      } catch (e) { /* ignore duplicate errors */ }
     }
 
     let csv = 'Username,Password\n';
@@ -1181,14 +1290,8 @@
   }
 
   async function exportAttendance() {
-    const { data, error } = await supabase
-      .from(CONFIG.SUPABASE.TABLES.ATTENDANCE)
-      .select('*');
-
-    if (error) {
-      alert('No attendance data found.');
-      return;
-    }
+    const { data, error } = await supabase.from(CONFIG.SUPABASE.TABLES.ATTENDANCE).select('*');
+    if (error) { alert('No attendance data found.'); return; }
 
     let csv = 'Student,Channel,Join Time,Status\n';
     data.forEach(r => csv += `${r.student_name},${r.channel_id},${r.join_time},${r.status}\n`);
@@ -1209,18 +1312,11 @@
     } catch (e) {
       const modal = document.createElement('div');
       modal.className = 'modal-overlay';
-      modal.style.cssText = 'position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:50; padding:16px;';
       modal.innerHTML = `
         <div class="modal-card">
-          <h3 class="modal-title">
-            <i class="fas fa-triangle-exclamation" style="color:var(--role-admin); font-size:14px;"></i> Permissions required
-          </h3>
-          <p class="modal-body">
-            Camera and microphone access are blocked. Allow permissions in your browser settings, then reload the page.
-          </p>
-          <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-ghost btn-block">
-            Got it
-          </button>
+          <h3 class="modal-title"><i class="fas fa-triangle-exclamation" style="color:var(--role-admin); font-size:14px;"></i> Permissions required</h3>
+          <p class="modal-body">Camera and microphone access are blocked. Allow permissions in your browser settings, then reload the page.</p>
+          <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-ghost btn-block">Got it</button>
         </div>
       `;
       document.body.appendChild(modal);
@@ -1228,23 +1324,42 @@
   }
 
   // ============================================================
+  // 13. PROFILE & SHARED MEDIA SCREEN
+  // ============================================================
+  function updateProfileMeta() {
+    if (!state.currentChannel) return;
+    const total = state.currentMembers.length;
+    const online = state.currentMembers.filter((m) => state.onlineUsers.has((m.username || '').toLowerCase())).length;
+    DOM.profileChannelMeta.textContent = total ? `${total} member${total === 1 ? '' : 's'} · ${online} online` : '';
+  }
+
+  function updateProfileScreen() {
+    if (!state.currentChannel) return;
+    DOM.profileChannelName.textContent = state.currentChannel.name;
+    DOM.profileChannelDesc.textContent = `Group workspace for ${state.currentChannel.name}. Share updates, chat with the group, and join live sessions together.`;
+    updateProfileMeta();
+
+    const media = state.messages.filter((m) => isImageFile(m.file_url));
+    if (!media.length) {
+      DOM.sharedMediaGrid.innerHTML = '<div class="empty-note">No shared media yet</div>';
+      DOM.profileSeeAllMedia.classList.add('hidden');
+      return;
+    }
+    const showAll = DOM.sharedMediaGrid.dataset.showAll === 'true';
+    const shown = showAll ? media : media.slice(-6);
+    DOM.sharedMediaGrid.innerHTML = shown.map((m) => `<img src="${m.file_url}" alt="Shared media" loading="lazy">`).join('');
+    DOM.profileSeeAllMedia.classList.toggle('hidden', media.length <= 6);
+  }
+
+  // ============================================================
   // 14. LOGIN FLOW
   // ============================================================
-
-  // Everything that happens once we know WHO the user is —
-  // used both for a fresh login and for restoring a session after refresh.
   async function completeLogin(username, user) {
-    await loadRoleCache(); // must happen before role checks below
+    await loadRoleCache();
     const role = getRoleFromUsername(username);
     const key = roleKey(username);
 
-    state.currentUser = {
-      id: user.id,
-      username: username,
-      email: user.email,
-      role: role,
-    };
-
+    state.currentUser = { id: user.id, username: username, email: user.email, role: role };
     state.isAdmin = role === CONFIG.AUTH.ROLES.ADMIN;
     state.isTeacher = role === CONFIG.AUTH.ROLES.TEACHER || state.isAdmin;
 
@@ -1254,24 +1369,25 @@
     DOM.userBadge.textContent = username;
     DOM.userBadge.className = `role-chip role-${key}-chip`;
 
-    DOM.adminPanel.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
+    setAvatarEl(DOM.settingsAvatar, username, 'lg');
+    DOM.settingsName.textContent = username;
+    DOM.settingsEmail.textContent = user.email || generateEmail(username);
 
+    DOM.adminSettingsCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
+    DOM.adminProfileSchedule.classList.toggle('hidden', !state.isAdmin);
+
+    setupPresence();
     await requestMediaPermissions();
     await renderChannels();
     await loadStatuses();
-    subscribeToPush();
+    subscribeToPush().then((ok) => { DOM.notifToggle.checked = !!ok; });
 
-    DOM.liveBtnText.textContent = state.isTeacher ? 'Start live classroom' : 'Join live class';
+    goToScreen('chats');
   }
 
   async function handleLogin() {
     const username = DOM.usernameInput.value.trim();
-
-    if (!username) {
-      showError('Please enter your School ID.');
-      return;
-    }
-
+    if (!username) { showError('Please enter your School ID.'); return; }
     hideError();
 
     try {
@@ -1282,9 +1398,6 @@
     }
   }
 
-  // Runs once when the page loads — if Supabase already has a valid
-  // session (from before a refresh), skip straight to the dashboard
-  // instead of showing the login screen again.
   async function restoreSession() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -1303,23 +1416,15 @@
   async function handleSignOut() {
     if (!confirm('Sign out?')) return;
 
-    try {
-      await supabase.auth.signOut();
-    } catch (e) {
-      console.warn('Sign out error:', e);
-    }
+    try { await supabase.auth.signOut(); } catch (e) { console.warn('Sign out error:', e); }
 
-    if (state.messagesSubscription) {
-      supabase.removeChannel(state.messagesSubscription);
-      state.messagesSubscription = null;
-    }
-    if (scheduleSubscription) {
-      supabase.removeChannel(scheduleSubscription);
-      scheduleSubscription = null;
-    }
+    if (state.messagesSubscription) { supabase.removeChannel(state.messagesSubscription); state.messagesSubscription = null; }
+    if (scheduleSubscription) { supabase.removeChannel(scheduleSubscription); scheduleSubscription = null; }
+    teardownPresence();
 
     state.currentUser = null;
     state.currentChannel = null;
+    state.currentMembers = [];
     state.isAdmin = false;
     state.isTeacher = false;
     state.messages = [];
@@ -1327,7 +1432,6 @@
     state.replyingTo = null;
 
     DOM.dashboard.classList.add('hidden');
-    DOM.adminPanel.classList.add('hidden');
     DOM.videoContainer.classList.add('hidden');
     DOM.authCard.classList.remove('hidden');
     DOM.usernameInput.value = '';
@@ -1339,10 +1443,23 @@
   // ============================================================
   DOM.loginBtn.addEventListener('click', handleLogin);
   DOM.usernameInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleLogin();
-    }
+    if (e.key === 'Enter') { e.preventDefault(); handleLogin(); }
+  });
+
+  // Bottom nav
+  DOM.bottomNav.querySelectorAll('.nav-btn').forEach((btn) => {
+    btn.addEventListener('click', () => goToScreen(btn.dataset.tab));
+  });
+
+  // Chat search
+  DOM.chatSearchInput.addEventListener('input', () => filterChatList(DOM.chatSearchInput.value));
+
+  // Chat detail navigation
+  DOM.backFromChat.addEventListener('click', () => goToScreen('chats'));
+  DOM.chatDetailTitleBtn.addEventListener('click', () => {
+    if (!state.currentChannel) return;
+    updateProfileScreen();
+    goToScreen('profile');
   });
 
   DOM.sendMsgBtn.addEventListener('click', async () => {
@@ -1356,26 +1473,17 @@
   });
 
   DOM.messageInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      DOM.sendMsgBtn.click();
-    }
+    if (e.key === 'Enter') { e.preventDefault(); DOM.sendMsgBtn.click(); }
   });
 
   DOM.postStatusBtn.addEventListener('click', async () => {
-    if (!CONFIG.FEATURES.ENABLE_STATUS_UPDATES) {
-      alert('Status updates are disabled.');
-      return;
-    }
+    if (!CONFIG.FEATURES.ENABLE_STATUS_UPDATES) { alert('Status updates are disabled.'); return; }
     const content = prompt('Share a status update:');
     if (content) await postStatus(content);
   });
 
   DOM.joinLiveBtn.addEventListener('click', () => {
-    if (!CONFIG.FEATURES.ENABLE_VIDEO_CONFERENCE) {
-      alert('Video conferencing is disabled.');
-      return;
-    }
+    if (!CONFIG.FEATURES.ENABLE_VIDEO_CONFERENCE) { alert('Video conferencing is disabled.'); return; }
     joinLiveClass();
   });
 
@@ -1387,10 +1495,7 @@
 
   DOM.fileInput.addEventListener('change', function() {
     const file = this.files[0];
-    if (!file) {
-      DOM.filePreview.classList.add('hidden');
-      return;
-    }
+    if (!file) { DOM.filePreview.classList.add('hidden'); return; }
     if (file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
       alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
       this.value = '';
@@ -1406,12 +1511,15 @@
     DOM.filePreview.classList.add('hidden');
   });
 
-  DOM.createChannelBtn.addEventListener('click', async () => {
+  async function handleCreateChannel() {
     const name = prompt('Enter new channel name:');
     if (name) await createChannel(name);
-  });
+  }
+  DOM.createChannelBtn.addEventListener('click', handleCreateChannel);
+  DOM.createChannelFab.addEventListener('click', handleCreateChannel);
 
   DOM.rosterGenBtn.addEventListener('click', generateRoster);
+  DOM.exportAttendanceBtn.addEventListener('click', exportAttendance);
 
   DOM.setScheduleBtn.addEventListener('click', async () => {
     await setClassSchedule(
@@ -1422,7 +1530,7 @@
     DOM.scheduleTeacherInput.value = '';
     DOM.scheduleTimeInput.value = '';
   });
-  DOM.exportAttendanceBtn.addEventListener('click', exportAttendance);
+
   DOM.assignStudentBtn.addEventListener('click', async () => {
     const username = DOM.assignStudentInput.value.trim();
     const role = DOM.assignRoleSelect.value;
@@ -1430,17 +1538,34 @@
     DOM.assignStudentInput.value = '';
   });
 
-  DOM.closeStatusModal.addEventListener('click', () => {
-    DOM.statusModal.classList.add('hidden');
-    if (state.progressInterval) clearInterval(state.progressInterval);
+  // Members screen
+  DOM.backFromMembers.addEventListener('click', () => goToScreen('profile'));
+  DOM.memberSearchInput.addEventListener('input', () => renderMembers());
+  DOM.profileMembersBtn.addEventListener('click', () => {
+    if (!state.currentChannel) { alert('Select a channel first.'); return; }
+    renderMembers();
+    goToScreen('members');
   });
 
-  DOM.statusModal.addEventListener('click', (e) => {
-    if (e.target === DOM.statusModal) {
-      DOM.statusModal.classList.add('hidden');
-      if (state.progressInterval) clearInterval(state.progressInterval);
-    }
+  // Profile screen
+  DOM.backFromProfile.addEventListener('click', () => goToScreen('chatDetail'));
+  DOM.profileSeeAllMedia.addEventListener('click', (e) => {
+    e.preventDefault();
+    DOM.sharedMediaGrid.dataset.showAll = 'true';
+    updateProfileScreen();
   });
+
+  // Status viewer
+  DOM.closeStatusModal.addEventListener('click', closeStatusViewer);
+  DOM.statusModal.addEventListener('click', (e) => { if (e.target === DOM.statusModal) closeStatusViewer(); });
+
+  // Settings toggles
+  DOM.notifToggle.addEventListener('change', () => setNotificationsEnabled(DOM.notifToggle.checked));
+  DOM.darkToggle.addEventListener('change', () => {
+    document.body.classList.toggle('theme-dark', DOM.darkToggle.checked);
+    try { localStorage.setItem('orbit-theme', DOM.darkToggle.checked ? 'dark' : 'light'); } catch (e) { /* ignore */ }
+  });
+  DOM.darkToggle.checked = document.body.classList.contains('theme-dark');
 
   DOM.signOutBtn.addEventListener('click', handleSignOut);
 
