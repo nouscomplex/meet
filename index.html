@@ -27,12 +27,7 @@
 <body>
 
 <div id="app" class="app-shell">
-  <div class="app-container" style="max-width: 1180px; margin: 0 auto; padding: 0 14px;">
-
-    <!-- ===== TOP BAR ===== -->
-    <header class="topbar">
-      <span class="brand-name">Nous Complex Orbit</span>
-    </header>
+  <div class="phone-frame">
 
     <!-- ===== AUTH CARD ===== -->
     <div id="authCard" class="auth-wrap">
@@ -53,133 +48,172 @@
       </div>
     </div>
 
-    <!-- ===== MAIN DASHBOARD ===== -->
-    <div id="dashboard" class="hidden layout" style="padding-bottom: 24px;">
+    <!-- ===== APP BODY (mobile screens) ===== -->
+    <div id="dashboard" class="hidden app-body">
 
-      <!-- SIDEBAR -->
-      <aside class="sidebar panel">
-        <div class="sidebar-head">
-          <img src="nouscomplex.png" alt="Nous Complex Orbit" class="avatar sm" id="sidebarLogo" style="border-radius:9px;">
-          <span class="label">Channels</span>
-          <span id="userBadge" class="role-chip role-student-chip" style="margin-left:auto;"></span>
-          <button id="signOutBtn" class="icon-btn" style="width:28px; height:28px;" title="Sign out">
-            <i class="fas fa-arrow-right-from-bracket" style="font-size:13px;"></i>
+      <!-- ============================================================
+           SCREEN: CHATS
+      ============================================================ -->
+      <section id="screenChats" class="screen">
+        <header class="brand-header">
+          <div class="brand-lockup">
+            <img src="nouscomplex.png" alt="" class="brand-mark" id="sidebarLogo">
+          </div>
+          <span class="brand-word">Orbit</span>
+        </header>
+
+        <div class="search-bar">
+          <i class="fas fa-magnifying-glass"></i>
+          <input id="chatSearchInput" type="text" placeholder="Search Sessions or Messages" autocomplete="off">
+        </div>
+
+        <div id="channelList" class="chat-list">
+          <!-- dynamic chat rows -->
+        </div>
+
+        <button id="createChannelFab" class="fab hidden" title="New channel">
+          <i class="fas fa-plus"></i>
+        </button>
+      </section>
+
+      <!-- ============================================================
+           SCREEN: UPDATES
+      ============================================================ -->
+      <section id="screenUpdates" class="screen hidden">
+        <header class="screen-header">
+          <span class="screen-title">Updates</span>
+          <span id="userBadge" class="role-chip"></span>
+        </header>
+
+        <div id="statusTray" class="updates-list">
+          <div id="statusPlaceholder" class="empty-note">No updates yet</div>
+        </div>
+
+        <div id="statusAddBtn" class="hidden status-add-wrap">
+          <button id="postStatusBtn" class="btn btn-ghost btn-block">
+            <i class="fas fa-plus"></i> Post an update
+          </button>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SCREEN: SETTINGS
+      ============================================================ -->
+      <section id="screenSettings" class="screen hidden">
+        <header class="screen-header">
+          <span class="screen-title">Settings</span>
+        </header>
+
+        <div class="settings-profile-card">
+          <div class="avatar avatar-student lg" id="settingsAvatar">?</div>
+          <div class="settings-profile-info">
+            <div class="settings-profile-name" id="settingsName">—</div>
+            <div class="settings-profile-email" id="settingsEmail">—</div>
+          </div>
+        </div>
+
+        <div class="settings-list">
+          <div class="settings-row">
+            <div class="settings-row-icon"><i class="fas fa-bell"></i></div>
+            <div class="settings-row-text">
+              <div class="settings-row-title">Notifications</div>
+              <div class="settings-row-sub">Push alerts, sound, vibration</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="notifToggle">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-icon"><i class="fas fa-moon"></i></div>
+            <div class="settings-row-text">
+              <div class="settings-row-title">Dark Theme</div>
+              <div class="settings-row-sub">Toggle between light and dark UI</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="darkToggle">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+          </div>
+        </div>
+
+        <div id="adminSettingsCard" class="hidden settings-list" style="margin-top:14px;">
+          <div class="settings-list-label"><i class="fas fa-user-shield"></i> Admin tools</div>
+          <button id="createChannelBtn" class="settings-action-row">
+            <i class="fas fa-plus"></i> New channel
+          </button>
+          <button id="rosterGenBtn" class="settings-action-row">
+            <i class="fas fa-users"></i> Generate roster
+          </button>
+          <button id="exportAttendanceBtn" class="settings-action-row">
+            <i class="fas fa-file-export"></i> Export attendance
           </button>
         </div>
 
-        <div id="channelList" class="channel-list">
-          <!-- dynamic channels -->
+        <button id="signOutBtn" class="logout-btn">
+          <i class="fas fa-arrow-right-from-bracket"></i> Log out
+        </button>
+      </section>
+
+      <!-- ============================================================
+           SCREEN: CHAT DETAIL
+      ============================================================ -->
+      <section id="screenChatDetail" class="screen hidden">
+        <header class="chat-detail-header">
+          <button id="backFromChat" class="icon-btn back-btn"><i class="fas fa-arrow-left"></i></button>
+          <button id="chatDetailTitleBtn" class="chat-detail-title">
+            <span class="title-name" id="chatDetailName">Select a channel</span>
+            <span class="title-sub" id="chatDetailSub"></span>
+          </button>
+          <button id="joinLiveBtn" class="btn-live-pill">
+            <i class="fas fa-tower-broadcast"></i> <span id="liveBtnText">Join Live Session</span>
+          </button>
+        </header>
+
+        <div id="scheduleBanner" class="hidden schedule-banner">
+          <i class="fas fa-calendar-day"></i>
+          <span id="scheduleBannerText"></span>
         </div>
 
-        <!-- Admin panel -->
-        <div id="adminPanel" class="hidden admin-card">
-          <div class="section-label"><i class="fas fa-user-shield"></i> Admin console</div>
-          <div class="admin-actions">
-            <button id="createChannelBtn" class="btn-admin-sm">
-              <i class="fas fa-plus"></i> New channel
-            </button>
-            <button id="rosterGenBtn" class="btn-admin-sm">
-              <i class="fas fa-users"></i> Generate roster
-            </button>
-            <button id="exportAttendanceBtn" class="btn-admin-sm">
-              <i class="fas fa-file-export"></i> Export attendance
-            </button>
-          </div>
-
-          <div class="section-label" style="margin-top:14px;"><i class="fas fa-user-plus"></i> Add to group</div>
-          <p style="font-size:11.5px; color:var(--ink-faint); margin:-4px 0 6px;">Adds to the currently selected channel</p>
-          <div class="admin-row">
-            <input id="assignStudentInput" placeholder="Username" class="field-sm">
-            <select id="assignRoleSelect" class="field-sm" style="flex:0 0 96px;">
-              <option value="student">Student</option>
-              <option value="teacher">Teacher</option>
-            </select>
-            <button id="assignStudentBtn" class="btn-admin-sm" style="flex-shrink:0;">Add</button>
-          </div>
-
-          <div class="section-label" style="margin-top:14px;"><i class="fas fa-people-group"></i> Group members</div>
-          <div id="channelMembersList" style="display:flex; flex-direction:column; gap:5px; max-height:180px; overflow-y:auto;">
-            <div class="empty-note">Select a channel</div>
-          </div>
-
-          <div class="section-label" style="margin-top:14px;"><i class="fas fa-calendar-clock"></i> Schedule class time</div>
-          <p style="font-size:11.5px; color:var(--ink-faint); margin:-4px 0 6px;">For the currently selected channel</p>
-          <div style="display:flex; flex-direction:column; gap:6px;">
-            <input id="scheduleTeacherInput" placeholder="Teacher username" class="field-sm">
-            <input id="scheduleTimeInput" type="datetime-local" class="field-sm">
-            <div class="admin-row">
-              <input id="scheduleDurationInput" type="number" min="10" max="240" value="45" class="field-sm" style="flex:0 0 90px;" title="Duration (minutes)">
-              <button id="setScheduleBtn" class="btn-admin-sm" style="flex:1;">
-                <i class="fas fa-clock"></i> Set time
-              </button>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      <!-- MAIN CONTENT -->
-      <main class="main-col">
-
-        <!-- Scheduled class banner -->
-        <div id="scheduleBanner" class="hidden panel" style="padding:12px 16px; display:flex; align-items:center; gap:10px; border-left:3px solid var(--accent);">
-          <i class="fas fa-calendar-day" style="color:var(--accent);"></i>
-          <span id="scheduleBannerText" style="font-size:13.5px; color:var(--ink-soft);"></span>
-        </div>
-
-        <!-- Status tray -->
-        <div class="panel status-strip">
-          <div class="status-row scrollbar-hide" id="statusTray">
-            <div id="statusPlaceholder" class="empty-note">No updates yet</div>
-          </div>
-          <div id="statusAddBtn" class="hidden status-add-wrap">
-            <button id="postStatusBtn" class="btn btn-ghost" style="font-size:13px; padding:7px 14px;">
-              <i class="fas fa-plus"></i> Post an update
-            </button>
+        <div class="chat-scroll" id="chatContainer">
+          <div id="chatMessages">
+            <div class="empty-note center-text" style="width:100%;">Select a channel to start</div>
           </div>
         </div>
 
-        <!-- Chat -->
-        <div class="panel chat-panel">
-          <div class="chat-scroll" id="chatContainer">
-            <div id="chatMessages" style="display:flex; flex-direction:column; gap:14px;">
-              <div class="empty-note center-text" style="width:100%;">Select a channel to start</div>
-            </div>
-          </div>
-          <div id="fileUploadStatus" class="hidden"></div>
+        <div id="fileUploadStatus" class="hidden"></div>
 
-          <!-- Reply preview -->
-          <div id="replyPreview" class="hidden reply-preview">
-            <div class="bar"></div>
-            <div class="info">
-              <div class="author" id="replyPreviewAuthor"></div>
-              <div class="text" id="replyPreviewText"></div>
-            </div>
-            <button id="replyPreviewCancel" class="icon-btn" style="width:26px; height:26px;" title="Cancel reply">
-              <i class="fas fa-xmark"></i>
-            </button>
+        <!-- Reply preview -->
+        <div id="replyPreview" class="hidden reply-preview">
+          <div class="bar"></div>
+          <div class="info">
+            <div class="author" id="replyPreviewAuthor"></div>
+            <div class="text" id="replyPreviewText"></div>
           </div>
+          <button id="replyPreviewCancel" class="icon-btn" title="Cancel reply">
+            <i class="fas fa-xmark"></i>
+          </button>
+        </div>
 
-          <!-- Composer -->
-          <div id="filePreview" class="hidden" style="display:flex; align-items:center; gap:8px; padding:8px 18px; border-top:1px solid var(--border); background: var(--surface-sunken); font-size:13px; color: var(--ink-soft);">
+        <!-- File preview -->
+        <div id="filePreview" class="hidden file-preview-bar">
+          <i class="fas fa-paperclip"></i>
+          <span id="filePreviewName"></span>
+          <button id="filePreviewRemove" class="icon-btn" title="Remove attachment">
+            <i class="fas fa-xmark"></i>
+          </button>
+        </div>
+
+        <!-- Composer -->
+        <div class="composer">
+          <label for="fileInput" class="icon-btn" title="Attach a file">
             <i class="fas fa-paperclip"></i>
-            <span id="filePreviewName" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
-            <button id="filePreviewRemove" class="icon-btn" style="width:26px; height:26px;" title="Remove attachment">
-              <i class="fas fa-xmark"></i>
-            </button>
-          </div>
-          <div class="composer" style="border-top: 1px solid var(--border);">
-            <input id="messageInput" type="text" placeholder="Type a message…" class="field" autocomplete="off">
-            <label for="fileInput" class="icon-btn" title="Attach a file">
-              <i class="fas fa-paperclip"></i>
-            </label>
-            <input id="fileInput" type="file" class="hidden" accept="image/*,.pdf,.doc,.docx,.txt,.png,.jpg,.jpeg">
-            <button id="sendMsgBtn" class="btn-send" title="Send">
-              <i class="fas fa-paper-plane"></i>
-            </button>
-            <button id="joinLiveBtn" class="btn-live">
-              <i class="fas fa-video"></i> <span id="liveBtnText">Join live class</span>
-            </button>
-          </div>
+          </label>
+          <input id="fileInput" type="file" class="hidden" accept="image/*,.pdf,.doc,.docx,.txt,.png,.jpg,.jpeg">
+          <input id="messageInput" type="text" placeholder="Message group…" class="field" autocomplete="off">
+          <button id="sendMsgBtn" class="btn-send" title="Send">
+            <i class="fas fa-arrow-up"></i>
+          </button>
         </div>
 
         <!-- Video -->
@@ -187,21 +221,117 @@
           <iframe id="videoIframe" src="" allow="camera; microphone; display-capture; autoplay; encrypted-media" allowfullscreen></iframe>
           <button id="closeVideoBtn" class="video-close"><i class="fas fa-xmark"></i></button>
         </div>
+      </section>
 
-      </main>
+      <!-- ============================================================
+           SCREEN: MEMBERS
+      ============================================================ -->
+      <section id="screenMembers" class="screen hidden">
+        <header class="screen-header">
+          <button id="backFromMembers" class="icon-btn back-btn"><i class="fas fa-arrow-left"></i></button>
+          <span class="screen-title">Members</span>
+        </header>
+
+        <div class="search-bar">
+          <i class="fas fa-magnifying-glass"></i>
+          <input id="memberSearchInput" type="text" placeholder="Search Member" autocomplete="off">
+        </div>
+
+        <div id="adminAddMemberRow" class="hidden admin-add-row">
+          <input id="assignStudentInput" placeholder="Username" class="field-sm">
+          <select id="assignRoleSelect" class="field-sm" style="flex:0 0 96px;">
+            <option value="student">Student</option>
+            <option value="teacher">Teacher</option>
+          </select>
+          <button id="assignStudentBtn" class="btn-admin-sm">Add</button>
+        </div>
+
+        <div class="members-wrap">
+          <div id="channelMembersList" class="member-list">
+            <div class="empty-note">Select a channel</div>
+          </div>
+          <div id="alphaIndex" class="alpha-index"></div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SCREEN: PROFILE (group info)
+      ============================================================ -->
+      <section id="screenProfile" class="screen hidden">
+        <header class="screen-header">
+          <button id="backFromProfile" class="icon-btn back-btn"><i class="fas fa-arrow-left"></i></button>
+          <span class="screen-title">Profile</span>
+        </header>
+
+        <div class="profile-card">
+          <div class="profile-card-name" id="profileChannelName">—</div>
+          <div class="profile-card-meta" id="profileChannelMeta">—</div>
+          <p class="profile-card-desc" id="profileChannelDesc"></p>
+        </div>
+
+        <button id="profileMembersBtn" class="btn-navy-pill">
+          <i class="fas fa-people-group"></i> Members
+        </button>
+
+        <div class="profile-section-row">
+          <span class="section-label">Shared media</span>
+          <a href="#" id="profileSeeAllMedia" class="see-all-link hidden">See all</a>
+        </div>
+        <div id="sharedMediaGrid" class="shared-media-grid">
+          <div class="empty-note">No shared media yet</div>
+        </div>
+
+        <div id="adminProfileSchedule" class="hidden schedule-card">
+          <div class="section-label"><i class="fas fa-calendar-clock"></i> Schedule class time</div>
+          <input id="scheduleTeacherInput" placeholder="Teacher username" class="field-sm" style="width:100%; margin-bottom:6px;">
+          <input id="scheduleTimeInput" type="datetime-local" class="field-sm" style="width:100%; margin-bottom:6px;">
+          <div class="admin-row">
+            <input id="scheduleDurationInput" type="number" min="10" max="240" value="45" class="field-sm" style="flex:0 0 90px;" title="Duration (minutes)">
+            <button id="setScheduleBtn" class="btn-admin-sm" style="flex:1;">
+              <i class="fas fa-clock"></i> Set time
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           BOTTOM NAVIGATION
+      ============================================================ -->
+      <nav class="bottom-nav" id="bottomNav">
+        <button class="nav-btn active" data-tab="chats">
+          <span class="nav-icon-wrap"><i class="fas fa-comment-dots"></i><span id="navChatsBadge" class="nav-badge hidden">0</span></span>
+          <span>Chats</span>
+        </button>
+        <button class="nav-btn" data-tab="updates">
+          <span class="nav-icon-wrap"><i class="fas fa-arrows-rotate"></i></span>
+          <span>Updates</span>
+        </button>
+        <button class="nav-btn" data-tab="settings">
+          <span class="nav-icon-wrap"><i class="fas fa-gear"></i></span>
+          <span>Settings</span>
+        </button>
+      </nav>
+
     </div>
-
   </div>
 
-  <!-- ===== STATUS MODAL ===== -->
-  <div id="statusModal" class="hidden modal-overlay" style="position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:50; padding:16px;">
-    <div class="modal-card">
-      <h3 id="statusModalTitle" class="modal-title"><i class="fas fa-bullhorn" style="color:var(--accent); font-size:14px;"></i> Update</h3>
-      <p id="statusModalContent" class="modal-body"></p>
-      <div class="progress-track">
-        <div id="statusProgress" class="progress-bar"></div>
+  <!-- ===== STATUS / UPDATE VIEWER (dark full-screen) ===== -->
+  <div id="statusModal" class="hidden status-viewer">
+    <div class="status-viewer-inner">
+      <div class="status-segments" id="statusSegments">
+        <div class="segment"><div id="statusProgress" class="segment-fill"></div></div>
       </div>
-      <button id="closeStatusModal" class="btn btn-ghost btn-block">Close</button>
+      <div class="status-viewer-header">
+        <button id="closeStatusModal" class="icon-btn back-btn"><i class="fas fa-arrow-left"></i></button>
+        <div class="avatar sm status-viewer-avatar" id="statusViewerAvatar">?</div>
+        <div class="status-viewer-meta">
+          <div id="statusModalTitle" class="status-viewer-name"></div>
+          <div id="statusModalTime" class="status-viewer-time"></div>
+        </div>
+      </div>
+      <div class="status-viewer-body">
+        <p id="statusModalContent"></p>
+      </div>
     </div>
   </div>
 </div>
