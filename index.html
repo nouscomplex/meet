@@ -35,9 +35,10 @@
       <div class="auth-card">
         <img src="nouscomplex.png" alt="Nous Complex Orbit" class="auth-emblem" id="authLogo">
         <h1 class="auth-title">Welcome back</h1>
-        <p class="auth-sub">Sign in with your School ID to continue</p>
+        <p class="auth-sub">Sign in with your School ID and password to continue</p>
 
-        <input id="usernameInput" type="text" placeholder="e.g. student042 or teacher005" class="field" autocomplete="off">
+        <input id="usernameInput" type="text" placeholder="e.g. student042 or teacher005" class="field" autocomplete="username">
+        <input id="passwordInput" type="password" placeholder="Password" class="field" style="margin-top: 10px;" autocomplete="current-password">
         <button id="loginBtn" class="btn btn-primary btn-block" style="margin-top: 12px;">
           <i class="fas fa-arrow-right-to-bracket"></i> Enter Hub
         </button>
@@ -45,9 +46,14 @@
           <i class="fas fa-circle-exclamation"></i> <span id="authErrorText"></span>
         </p>
 
-        <p class="auth-note">Simulated login · email confirmation off</p>
+        <p class="auth-note">Ask your admin if you don't have an account yet</p>
       </div>
     </div>
+    <!-- [NCO-KEEP: auth-password-field] Login now requires a real password —
+         accounts are provisioned by an admin from Settings, not auto-created
+         on first login. Do not remove passwordInput or reintroduce a
+         default-password auto-signup flow; see app.js loginWithUsername(). -->
+
 
     <!-- ===== APP BODY (mobile screens) ===== -->
     <div id="dashboard" class="hidden app-body">
@@ -347,6 +353,9 @@
           <div id="statusModalTitle" class="status-viewer-name"></div>
           <div id="statusModalTime" class="status-viewer-time"></div>
         </div>
+        <!-- [NCO-KEEP: status-pause-btn] Pauses the auto-advance timer; see
+             toggleStatusPause()/showStatusModal() in app.js. -->
+        <button id="statusPauseBtn" class="icon-btn back-btn" title="Pause"><i class="fas fa-pause"></i></button>
       </div>
       <div class="status-viewer-body">
         <p id="statusModalContent"></p>
