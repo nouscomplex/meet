@@ -69,6 +69,7 @@
     authCard: $('authCard'),
     dashboard: $('dashboard'),
     usernameInput: $('usernameInput'),
+    passwordInput: $('passwordInput'), // [NCO-KEEP: restrict-login-without-password]
     loginBtn: $('loginBtn'),
     authError: $('authError'),
     authErrorText: $('authErrorText'),
@@ -174,6 +175,7 @@
     statusModalTitle: $('statusModalTitle'),
     statusModalTime: $('statusModalTime'),
     statusModalContent: $('statusModalContent'),
+    statusPauseBtn: $('statusPauseBtn'), // [NCO-KEEP: status-pause-btn]
   };
 
   // ============================================================
@@ -368,6 +370,19 @@
     return `${username}${CONFIG.AUTH.EMAIL_SUFFIX}`;
   }
 
+  // [NCO-KEEP: normalize-username] Always pass usernames through this
+  // before storing, comparing, or querying by them. Supabase Auth
+  // lowercases the local part of the email it stores, so a session
+  // restored after refresh derives a lowercased username from
+  // session.user.email — if a membership/role row was written with a
+  // different case, that lookup silently returns nothing (this was the
+  // "channel disappears after refresh" bug for teachers/students). Apply
+  // this at every entry point: login, admin account creation, adding a
+  // member to a channel, and scheduling a class.
+  function normalizeUsername(raw) {
+    return (raw || '').trim().toLowerCase();
+  }
+
   function generatePassword(length = 10) {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
     let out = '';
@@ -458,7 +473,14 @@
     if (SCREEN_EL[name]) SCREEN_EL[name].classList.remove('hidden');
 
     const isRoot = ROOT_TABS.includes(name);
-    DOM.bottomNav.classList.toggle('hidden', !isRoot);
+    // [NCO-KEEP: nav-rail-desktop] On mobile the bottom nav hides on
+    // sub-screens (chatDetail/members/profile) so the screen gets the full
+    // viewport, with the back button as the way out. On desktop the same
+    // nav becomes a permanent left icon rail (see @media 1024px in
+    // styles.css) and must stay visible there regardless of screen, or
+    // opening a chat wipes out the whole left side of the app.
+    const hideNav = !isRoot && !isDesktopLayout();
+    DOM.bottomNav.classList.toggle('hidden', hideNav);
     if (isRoot) {
       state.currentTab = name;
       DOM.bottomNav.querySelectorAll('.nav-btn').forEach((b) => {
@@ -483,30 +505,21 @@
   // ============================================================
   // 7. AUTHENTICATION
   // ============================================================
-  async function loginWithUsername(username) {
+  // [NCO-KEEP: login-requires-password] Sign-in only — do NOT reintroduce
+  // signUp()-on-login with a shared CONFIG.AUTH.DEFAULT_PASSWORD. That
+  // previously let anyone log in as any username (it silently created the
+  // account on first use). Accounts must now be provisioned by an admin
+  // via createUserAccount() with an individual password.
+  async function loginWithUsername(username, password) {
     const email = generateEmail(username);
-    const password = CONFIG.AUTH.DEFAULT_PASSWORD;
 
     try {
-      const { error: signUpError } = await supabase.auth.signUp({ email, password });
-
-      const isAlreadyRegistered =
-        signUpError &&
-        (signUpError.status === 400 ||
-          signUpError.status === 409 ||
-          signUpError.status === 422 ||
-          /already registered|already exists/i.test(signUpError.message || ''));
-
-      if (signUpError && !isAlreadyRegistered) {
-        throw signUpError;
-      }
-
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       return data.user;
     } catch (e) {
       console.error('Auth error:', e);
-      throw new Error('Login failed. Please check your School ID.');
+      throw new Error('Incorrect School ID or password.');
     }
   }
 
@@ -514,6 +527,7 @@
   // 7a. ADMIN: CREATE TEACHER / STUDENT ACCOUNT
   // ============================================================
   async function createUserAccount(username, role, password) {
+    username = normalizeUsername(username); // [NCO-KEEP: normalize-username]
     if (!username) { alert('Enter a username.'); return; }
     if (!password) { alert('Enter or generate a password.'); return; }
 
@@ -872,6 +886,7 @@
 
   async function setClassSchedule(teacherUsername, datetimeLocal, durationMinutes) {
     if (!state.currentChannel) { alert('Select a channel first.'); return; }
+    teacherUsername = normalizeUsername(teacherUsername); // [NCO-KEEP: normalize-username]
     if (!teacherUsername || !datetimeLocal) { alert('Enter a teacher username and a date/time.'); return; }
 
     const { error } = await supabase.from('class_schedule').insert({
@@ -908,13 +923,28 @@
     updateProfileMeta();
   }
 
+  // [NCO-KEEP: teacher-on-top] Role display order for the member list —
+  // teachers above students. Change this array, not the sort call below,
+  // if the ordering needs to change later.
+  // [NCO-KEEP: teacher-on-top] maps a letter to the id of its first
+  // member-group-letter divider in the currently rendered list; rebuilt on
+  // every renderMembers() call, read by the alpha-index click handler.
+  let memberLetterAnchors = {};
+
+  const MEMBER_ROLE_ORDER = ['admin', 'teacher', 'student'];
+  const MEMBER_ROLE_LABEL = { admin: 'Admins', teacher: 'Teachers', student: 'Students' };
+
   function renderMembers() {
     DOM.adminAddMemberRow.classList.toggle('hidden', !state.isAdmin);
 
     const query = (DOM.memberSearchInput.value || '').trim().toLowerCase();
     const members = [...state.currentMembers]
       .filter((m) => !query || m.username.toLowerCase().includes(query))
-      .sort((a, b) => a.username.localeCompare(b.username));
+      .sort((a, b) => {
+        const roleDiff = MEMBER_ROLE_ORDER.indexOf(a.role) - MEMBER_ROLE_ORDER.indexOf(b.role);
+        if (roleDiff !== 0) return roleDiff;
+        return a.username.localeCompare(b.username);
+      });
 
     if (!members.length) {
       DOM.channelMembersList.innerHTML = `<div class="empty-note">${state.currentChannel ? 'No members yet' : 'Select a channel'}</div>`;
@@ -923,11 +953,21 @@
     }
 
     let html = '';
+    let lastRole = '';
     let lastLetter = '';
+    let anchorIdx = 0;
+    memberLetterAnchors = {}; // [NCO-KEEP: teacher-on-top] reset per render, read by the alpha-index click handler below
     members.forEach((m) => {
+      if (m.role !== lastRole) {
+        html += `<div class="member-group-letter member-role-header">${MEMBER_ROLE_LABEL[m.role] || escapeHtml(m.role)}</div>`;
+        lastRole = m.role;
+        lastLetter = ''; // restart the letter dividers within each role section
+      }
       const letter = m.username.charAt(0).toUpperCase();
       if (letter !== lastLetter) {
-        html += `<div class="member-group-letter" id="memberLetter-${letter}">${letter}</div>`;
+        const anchorId = `memberLetter-${anchorIdx++}`;
+        html += `<div class="member-group-letter" id="${anchorId}">${letter}</div>`;
+        if (!(letter in memberLetterAnchors)) memberLetterAnchors[letter] = anchorId;
         lastLetter = letter;
       }
       const online = state.onlineUsers.has(m.username.toLowerCase());
@@ -958,13 +998,19 @@
     DOM.alphaIndex.innerHTML = alphabet.map((l) => `<span data-letter="${l}" class="${present.has(l) ? '' : 'hidden'}">${l}</span>`).join('');
     DOM.alphaIndex.querySelectorAll('span').forEach((span) => {
       span.addEventListener('click', () => {
-        const target = document.getElementById(`memberLetter-${span.dataset.letter}`);
+        // [NCO-KEEP: teacher-on-top] look up via memberLetterAnchors, not
+        // document.getElementById('memberLetter-' + letter) — with
+        // role-grouping the same letter can appear under more than one
+        // section, so ids are no longer just the bare letter.
+        const anchorId = memberLetterAnchors[span.dataset.letter];
+        const target = anchorId && document.getElementById(anchorId);
         if (target) target.scrollIntoView({ block: 'start', behavior: 'smooth' });
       });
     });
   }
 
   async function addMemberToChannel(username, role) {
+    username = normalizeUsername(username); // [NCO-KEEP: normalize-username]
     if (!username || !state.currentChannel) { alert('Enter a username and select a channel.'); return; }
 
     const { error } = await supabase
@@ -1272,6 +1318,12 @@
     await loadStatuses();
   }
 
+  // [NCO-KEEP: status-pause-btn] progress/paused state lives outside
+  // showStatusModal so toggleStatusPause() (wired to the pause button) can
+  // reach it without tearing down and restarting the interval.
+  let statusProgressValue = 0;
+  let statusPaused = false;
+
   function showStatusModal(status) {
     setAvatarEl(DOM.statusViewerAvatar, status.username, 'sm status-viewer-avatar');
     DOM.statusModalTitle.textContent = status.username || 'Announcement';
@@ -1280,23 +1332,39 @@
     DOM.statusProgress.style.width = '0%';
     DOM.statusModal.classList.remove('hidden');
 
-    let progress = 0;
+    statusProgressValue = 0;
+    statusPaused = false;
+    updateStatusPauseIcon();
     if (state.progressInterval) clearInterval(state.progressInterval);
 
     state.progressInterval = setInterval(() => {
-      progress += 1.2;
-      if (progress >= 100) {
+      if (statusPaused) return; // [NCO-KEEP: status-pause-btn]
+      statusProgressValue += 1.2;
+      if (statusProgressValue >= 100) {
         clearInterval(state.progressInterval);
         state.progressInterval = null;
         DOM.statusModal.classList.add('hidden');
       }
-      DOM.statusProgress.style.width = Math.min(progress, 100) + '%';
+      DOM.statusProgress.style.width = Math.min(statusProgressValue, 100) + '%';
     }, 50);
+  }
+
+  // [NCO-KEEP: status-pause-btn] wired to #statusPauseBtn in event bindings below
+  function toggleStatusPause() {
+    statusPaused = !statusPaused;
+    updateStatusPauseIcon();
+  }
+
+  function updateStatusPauseIcon() {
+    if (!DOM.statusPauseBtn) return;
+    DOM.statusPauseBtn.innerHTML = statusPaused ? '<i class="fas fa-play"></i>' : '<i class="fas fa-pause"></i>';
+    DOM.statusPauseBtn.title = statusPaused ? 'Resume' : 'Pause';
   }
 
   function closeStatusViewer() {
     DOM.statusModal.classList.add('hidden');
     if (state.progressInterval) { clearInterval(state.progressInterval); state.progressInterval = null; }
+    statusPaused = false; // [NCO-KEEP: status-pause-btn] don't leak paused state into the next status opened
   }
 
   // ============================================================
@@ -1463,15 +1531,26 @@
     goToScreen('chats');
   }
 
+  // [NCO-KEEP: restrict-login-without-password] Both fields are required —
+  // do not let this fall through to loginWithUsername with an empty
+  // password; signInWithPassword('') would just surface as a generic auth
+  // error instead of a clear "enter a password" message.
   async function handleLogin() {
-    const username = DOM.usernameInput.value.trim();
-    if (!username) { showError('Please enter your School ID.'); return; }
+    const username = normalizeUsername(DOM.usernameInput.value); // [NCO-KEEP: normalize-username]
+    const password = DOM.passwordInput.value;
+
+    if (!username || !password) {
+      showError('Enter both your School ID and password.');
+      return;
+    }
     hideError();
 
     try {
-      const user = await loginWithUsername(username);
+      const user = await loginWithUsername(username, password);
+      DOM.passwordInput.value = '';
       await completeLogin(username, user);
     } catch (e) {
+      DOM.passwordInput.value = '';
       showError(e.message || 'Login error. Please try again.');
     }
   }
@@ -1484,7 +1563,7 @@
       const suffix = CONFIG.AUTH.EMAIL_SUFFIX;
       if (!session.user.email.endsWith(suffix)) return;
 
-      const username = session.user.email.slice(0, -suffix.length);
+      const username = normalizeUsername(session.user.email.slice(0, -suffix.length)); // [NCO-KEEP: normalize-username — fixes channel list disappearing on refresh]
       await completeLogin(username, session.user);
     } catch (e) {
       console.warn('Session restore skipped:', e);
@@ -1513,6 +1592,7 @@
     DOM.videoContainer.classList.add('hidden');
     DOM.authCard.classList.remove('hidden');
     DOM.usernameInput.value = '';
+    DOM.passwordInput.value = ''; // [NCO-KEEP: restrict-login-without-password]
     hideError();
   }
 
@@ -1521,6 +1601,9 @@
   // ============================================================
   DOM.loginBtn.addEventListener('click', handleLogin);
   DOM.usernameInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleLogin(); }
+  });
+  DOM.passwordInput.addEventListener('keypress', (e) => { // [NCO-KEEP: restrict-login-without-password]
     if (e.key === 'Enter') { e.preventDefault(); handleLogin(); }
   });
 
@@ -1648,6 +1731,7 @@
   // Status viewer
   DOM.closeStatusModal.addEventListener('click', closeStatusViewer);
   DOM.statusModal.addEventListener('click', (e) => { if (e.target === DOM.statusModal) closeStatusViewer(); });
+  DOM.statusPauseBtn.addEventListener('click', toggleStatusPause); // [NCO-KEEP: status-pause-btn]
 
   // Settings toggles
   DOM.notifToggle.addEventListener('change', () => setNotificationsEnabled(DOM.notifToggle.checked));
