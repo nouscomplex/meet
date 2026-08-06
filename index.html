@@ -2,11 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
-  <title>Nous Complex Orbit</title>
-
-  <!-- CSS -->
-  <link rel="stylesheet" href="styles.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nous Complex Orbit — Desktop</title>
 
   <!-- Supabase SDK -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -14,336 +11,1889 @@
   <!-- Font Awesome -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 
-  <!-- CONFIGURATION -->
-  <script src="config.js"></script>
+  <style>
+    /* ============================================================
+       NOUS COMPLEX ORBIT — WhatsApp Web Desktop Style
+       Three-column layout: Sidebar | Chat | Profile
+       ============================================================ */
 
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" sizes="32x32" href="nouscomplex.png">
-  <link rel="apple-touch-icon" href="nouscomplex.png">
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
 
-  <!-- PWA Manifest -->
-  <link rel="manifest" href='data:application/json;base64,eyJuYW1lIjogIk5vdXMgQ29tcGxleCBPcmJpdCIsICJzaG9ydF9uYW1lIjogIk9yYml0IiwgImRlc2NyaXB0aW9uIjogIlVuaWZpZWQgY29tbXVuaWNhdGlvbiBwbGF0Zm9ybSIsICJzdGFydF91cmwiOiAiLiIsICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLCAiYmFja2dyb3VuZF9jb2xvciI6ICIjRjRGNkY4IiwgInRoZW1lX2NvbG9yIjogIiMxRjZGNzgiLCAiaWNvbnMiOiBbeyJzcmMiOiAibm91c2NvbXBsZXgucG5nIiwgInNpemVzIjogIjUxMng1MTIiLCAidHlwZSI6ICJpbWFnZS9wbmcifV19' />
+    :root {
+      --bg: #EDF1F5;
+      --sidebar-bg: #FFFFFF;
+      --chat-bg: #F0F2F5;
+      --surface: #FFFFFF;
+      --surface-sunken: #F0F2F5;
+      --border: #E9ECEF;
+      --border-strong: #D1D7DD;
+      --ink: #1A1D2A;
+      --ink-soft: #6A7083;
+      --ink-faint: #9BA1B3;
+      --accent: #5B4FE9;
+      --accent-dark: #4A3FD1;
+      --accent-wash: #EEECFF;
+      --navy: #12142F;
+      --navy-soft: #1C1F42;
+      --role-admin: #5B4FE9;
+      --role-admin-wash: #EEECFF;
+      --role-teacher: #1FA971;
+      --role-teacher-wash: #E5F8EF;
+      --role-student: #E1508B;
+      --role-student-wash: #FCEAF2;
+      --danger: #E24C43;
+      --danger-wash: #FDEBEA;
+      --online: #22C55E;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+      --shadow-md: 0 4px 16px rgba(0,0,0,0.08);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 18px;
+      --radius-pill: 999px;
+      --sidebar-width: 340px;
+      --profile-width: 320px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: #D1D7DD;
+      color: var(--ink);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; }
+
+    /* ===== APP CONTAINER ===== */
+    .app-container {
+      width: 100%;
+      max-width: 1440px;
+      height: 100vh;
+      max-height: 900px;
+      background: var(--surface);
+      border-radius: 12px;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.2);
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* ============================================================
+       SIDEBAR (Chats list + header)
+       ============================================================ */
+    .sidebar {
+      width: var(--sidebar-width);
+      min-width: var(--sidebar-width);
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .sidebar-header {
+      padding: 16px 18px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sidebar-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .sidebar-brand img {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      object-fit: contain;
+    }
+    .sidebar-brand span {
+      font-family: 'Manrope', sans-serif;
+      font-weight: 800;
+      font-size: 1.1rem;
+      color: var(--ink);
+    }
+
+    .sidebar-actions {
+      display: flex;
+      gap: 4px;
+    }
+    .sidebar-actions button {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: none;
+      background: transparent;
+      color: var(--ink-soft);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      transition: background 0.15s ease;
+    }
+    .sidebar-actions button:hover { background: var(--surface-sunken); color: var(--ink); }
+
+    .sidebar-search {
+      padding: 10px 16px 8px;
+    }
+    .sidebar-search input {
+      width: 100%;
+      padding: 10px 14px 10px 38px;
+      border-radius: var(--radius-pill);
+      border: none;
+      background: var(--surface-sunken);
+      font-size: 13.5px;
+      color: var(--ink);
+      outline: none;
+      font-family: inherit;
+    }
+    .sidebar-search input::placeholder { color: var(--ink-faint); }
+    .sidebar-search .search-icon {
+      position: relative;
+    }
+    .sidebar-search .search-icon i {
+      position: absolute;
+      left: 13px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--ink-faint);
+      font-size: 13px;
+    }
+
+    .sidebar-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 6px 12px;
+    }
+
+    .chat-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: background 0.12s ease;
+      position: relative;
+    }
+    .chat-item:hover { background: var(--surface-sunken); }
+    .chat-item.active { background: var(--accent-wash); }
+
+    .chat-item .avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 16px;
+      color: #fff;
+      flex-shrink: 0;
+      position: relative;
+    }
+    .chat-item .avatar-dot {
+      position: absolute;
+      bottom: -1px;
+      right: -1px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--ink-faint);
+      border: 2.5px solid var(--surface);
+    }
+    .chat-item .avatar-dot.online { background: var(--online); }
+
+    .chat-item .avatar-admin { background: linear-gradient(155deg, var(--role-admin), #7A70F0); }
+    .chat-item .avatar-teacher { background: linear-gradient(155deg, var(--role-teacher), #3FC98C); }
+    .chat-item .avatar-student { background: linear-gradient(155deg, var(--role-student), #EE79A8); }
+
+    .chat-item-info { flex: 1; min-width: 0; }
+    .chat-item-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .chat-item-name { font-weight: 600; font-size: 14.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .chat-item-time { font-size: 11px; color: var(--ink-faint); flex-shrink: 0; }
+    .chat-item-bottom { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; }
+    .chat-item-preview { font-size: 13px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .chat-item-unread {
+      background: var(--accent);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      min-width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 5px;
+      flex-shrink: 0;
+    }
+
+    .chat-item-admin-actions {
+      display: none;
+      gap: 2px;
+      margin-left: 4px;
+    }
+    .chat-item:hover .chat-item-admin-actions { display: flex; }
+    .chat-item-admin-actions button {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: none;
+      background: transparent;
+      color: var(--ink-faint);
+      cursor: pointer;
+      font-size: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .chat-item-admin-actions button:hover { background: var(--surface-sunken); color: var(--danger); }
+
+    /* ============================================================
+       CHAT AREA (Main)
+       ============================================================ */
+    .chat-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--chat-bg);
+      min-width: 0;
+    }
+
+    .chat-area-header {
+      padding: 12px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .chat-area-header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+    }
+    .chat-area-header-left .avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .chat-area-header-info { min-width: 0; }
+    .chat-area-header-name { font-weight: 700; font-size: 14.5px; color: var(--ink); }
+    .chat-area-header-sub { font-size: 12px; color: var(--ink-faint); }
+
+    .chat-area-header-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .chat-area-header-right button {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: none;
+      background: transparent;
+      color: var(--ink-soft);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      transition: background 0.15s ease;
+    }
+    .chat-area-header-right button:hover { background: var(--surface-sunken); }
+    .chat-area-header-right .live-btn {
+      background: var(--navy);
+      color: #fff;
+      border-radius: var(--radius-pill);
+      padding: 0 14px;
+      font-size: 12px;
+      font-weight: 600;
+      gap: 6px;
+      width: auto;
+    }
+    .chat-area-header-right .live-btn:hover { background: var(--navy-soft); }
+
+    .schedule-banner {
+      padding: 8px 20px;
+      background: var(--accent-wash);
+      color: var(--accent-dark);
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 20px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .msg { display: flex; gap: 10px; max-width: 70%; animation: msgIn 0.18s ease-out; }
+    .msg-theirs { align-self: flex-start; }
+    .msg-mine { align-self: flex-end; flex-direction: row-reverse; }
+
+    @keyframes msgIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+    .msg .avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; color: #fff; flex-shrink: 0; }
+    .msg .avatar-admin { background: linear-gradient(155deg, var(--role-admin), #7A70F0); }
+    .msg .avatar-teacher { background: linear-gradient(155deg, var(--role-teacher), #3FC98C); }
+    .msg .avatar-student { background: linear-gradient(155deg, var(--role-student), #EE79A8); }
+
+    .msg-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .msg-mine .msg-body { align-items: flex-end; }
+
+    .msg-meta { display: flex; align-items: baseline; gap: 8px; }
+    .msg-mine .msg-meta { flex-direction: row-reverse; }
+    .msg-author { font-size: 12px; font-weight: 600; color: var(--role-student); }
+    .msg[data-role="teacher"] .msg-author { color: var(--role-teacher); }
+    .msg[data-role="admin"] .msg-author { color: var(--role-admin); }
+    .msg-time { font-size: 10px; color: var(--ink-faint); }
+
+    .msg-bubble {
+      padding: 8px 13px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.45;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--ink);
+      word-break: break-word;
+      box-shadow: var(--shadow-sm);
+    }
+    .msg-theirs .msg-bubble { border-bottom-left-radius: 3px; }
+    .msg-mine .msg-bubble { background: var(--accent); border-color: var(--accent); color: #fff; border-bottom-right-radius: 3px; }
+
+    .msg-file { font-size: 12px; color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; gap: 5px; margin-top: 2px; }
+    .msg-mine .msg-file { color: #fff; }
+    .msg-file:hover { text-decoration: underline; }
+
+    .msg-ticks { display: inline-flex; align-items: center; gap: 1px; font-size: 11px; color: var(--ink-faint); line-height: 1; }
+    .msg-ticks.seen { color: var(--accent); }
+
+    .msg-reply-quote {
+      border-left: 3px solid var(--accent);
+      background: rgba(0,0,0,0.04);
+      border-radius: 6px;
+      padding: 4px 9px;
+      margin-bottom: 4px;
+      font-size: 12px;
+      max-width: 100%;
+    }
+    .msg-mine .msg-reply-quote { background: rgba(255,255,255,0.2); border-left-color: #fff; }
+    .msg-reply-quote .reply-author { font-weight: 700; display: block; color: var(--accent); }
+    .msg-mine .msg-reply-quote .reply-author { color: #fff; }
+    .msg-reply-quote .reply-text { color: var(--ink-soft); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .msg-mine .msg-reply-quote .reply-text { color: rgba(255,255,255,0.85); }
+
+    .msg-actions { opacity: 0; transition: opacity 0.12s ease; display: flex; align-items: center; gap: 2px; }
+    .msg:hover .msg-actions, .msg:active .msg-actions { opacity: 1; }
+    .msg-reply-btn {
+      width: 22px; height: 22px; border-radius: 50%; border: none;
+      background: var(--surface); color: var(--ink-faint); box-shadow: var(--shadow-sm);
+      cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 9px;
+    }
+    .msg-reply-btn:hover { color: var(--accent); }
+
+    .empty-chat {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--ink-faint);
+      gap: 8px;
+    }
+    .empty-chat i { font-size: 48px; opacity: 0.3; }
+
+    .reply-preview {
+      display: flex; align-items: center; gap: 10px;
+      padding: 6px 16px; background: var(--accent-wash);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .reply-preview .bar { width: 3px; align-self: stretch; background: var(--accent); border-radius: 2px; }
+    .reply-preview .info { flex: 1; min-width: 0; }
+    .reply-preview .info .author { font-size: 11px; font-weight: 700; color: var(--accent-dark); }
+    .reply-preview .info .text { font-size: 12px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .reply-preview .cancel { background: none; border: none; color: var(--ink-faint); cursor: pointer; font-size: 14px; }
+
+    .composer {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .composer .field {
+      flex: 1;
+      padding: 10px 16px;
+      border-radius: var(--radius-pill);
+      border: none;
+      background: var(--surface-sunken);
+      font-size: 14px;
+      color: var(--ink);
+      outline: none;
+      font-family: inherit;
+    }
+    .composer .field::placeholder { color: var(--ink-faint); }
+    .composer .field:focus { box-shadow: 0 0 0 2px var(--accent-wash); }
+
+    .composer .attach-btn {
+      width: 36px; height: 36px; border-radius: 50%; border: none;
+      background: transparent; color: var(--ink-soft); cursor: pointer;
+      display: flex; align-items: center; justify-content: center; font-size: 16px;
+    }
+    .composer .attach-btn:hover { background: var(--surface-sunken); }
+
+    .composer .send-btn {
+      width: 40px; height: 40px; border-radius: 50%;
+      background: var(--accent); color: #fff; border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s ease;
+    }
+    .composer .send-btn:hover { background: var(--accent-dark); }
+    .composer .send-btn i { transform: rotate(45deg); }
+
+    #fileInput { display: none; }
+
+    /* ============================================================
+       PROFILE PANEL (Right)
+       ============================================================ */
+    .profile-panel {
+      width: var(--profile-width);
+      min-width: var(--profile-width);
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow-y: auto;
+    }
+
+    .profile-panel-header {
+      padding: 20px 20px 16px;
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+    }
+    .profile-panel-header .avatar {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 28px;
+      color: #fff;
+      margin: 0 auto 10px;
+    }
+    .profile-panel-header .avatar-admin { background: linear-gradient(155deg, var(--role-admin), #7A70F0); }
+    .profile-panel-header .avatar-teacher { background: linear-gradient(155deg, var(--role-teacher), #3FC98C); }
+    .profile-panel-header .avatar-student { background: linear-gradient(155deg, var(--role-student), #EE79A8); }
+
+    .profile-panel-name { font-weight: 800; font-size: 1.1rem; color: var(--ink); font-family: 'Manrope', sans-serif; }
+    .profile-panel-meta { font-size: 12.5px; color: var(--ink-faint); margin-top: 2px; }
+
+    .profile-panel-body { padding: 16px 18px; flex: 1; overflow-y: auto; }
+
+    .profile-section { margin-bottom: 18px; }
+    .profile-section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--ink-faint);
+      margin-bottom: 8px;
+    }
+
+    .profile-desc { font-size: 13px; color: var(--ink-soft); line-height: 1.55; }
+
+    .profile-member-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 0;
+    }
+    .profile-member-item .avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 11px;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .profile-member-item .avatar-admin { background: linear-gradient(155deg, var(--role-admin), #7A70F0); }
+    .profile-member-item .avatar-teacher { background: linear-gradient(155deg, var(--role-teacher), #3FC98C); }
+    .profile-member-item .avatar-student { background: linear-gradient(155deg, var(--role-student), #EE79A8); }
+    .profile-member-name { font-size: 13px; font-weight: 500; color: var(--ink); }
+    .profile-member-status { font-size: 11px; color: var(--ink-faint); margin-left: auto; }
+    .profile-member-status.online { color: var(--online); }
+
+    .profile-media-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+    .profile-media-grid img {
+      width: 100%;
+      aspect-ratio: 1;
+      object-fit: cover;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-sunken);
+    }
+    .profile-media-grid .empty-note { grid-column: 1 / -1; font-size: 12px; color: var(--ink-faint); text-align: center; padding: 12px 0; }
+
+    .profile-schedule {
+      background: var(--accent-wash);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      font-size: 13px;
+      color: var(--accent-dark);
+    }
+
+    .profile-admin-actions {
+      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .profile-admin-actions button {
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--ink);
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: background 0.15s ease;
+    }
+    .profile-admin-actions button:hover { background: var(--surface-sunken); }
+    .profile-admin-actions button i { color: var(--role-admin); width: 16px; }
+
+    .profile-admin-actions .danger-btn { color: var(--danger); }
+    .profile-admin-actions .danger-btn i { color: var(--danger); }
+
+    .profile-admin-actions input, .profile-admin-actions select {
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      font-size: 12px;
+      font-family: inherit;
+      background: var(--surface);
+      color: var(--ink);
+    }
+    .profile-admin-actions .row { display: flex; gap: 6px; align-items: center; }
+
+    /* ============================================================
+       AUTH OVERLAY
+       ============================================================ */
+    .auth-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(5, 6, 24, 0.7);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .auth-overlay.hidden { display: none; }
+
+    .auth-card {
+      background: var(--surface);
+      border-radius: var(--radius-lg);
+      padding: 40px 36px 32px;
+      width: 380px;
+      max-width: 90%;
+      box-shadow: var(--shadow-md);
+      text-align: center;
+    }
+    .auth-card img {
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
+      object-fit: contain;
+      margin-bottom: 16px;
+    }
+    .auth-card h1 { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 1.4rem; color: var(--ink); }
+    .auth-card p { color: var(--ink-soft); font-size: 13.5px; margin-top: 4px; margin-bottom: 18px; }
+    .auth-card .field {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: var(--radius-sm);
+      border: 1.5px solid var(--border);
+      background: var(--surface);
+      color: var(--ink);
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+    }
+    .auth-card .field:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+    .auth-card .btn {
+      width: 100%;
+      padding: 13px;
+      border: none;
+      border-radius: var(--radius-sm);
+      background: var(--accent);
+      color: #fff;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      margin-top: 12px;
+      transition: background 0.15s ease;
+    }
+    .auth-card .btn:hover { background: var(--accent-dark); }
+    .auth-card .error { color: var(--danger); font-size: 13px; margin-top: 10px; }
+    .auth-card .note { font-size: 11px; color: var(--ink-faint); margin-top: 16px; }
+
+    /* ============================================================
+       RESPONSIVE
+       ============================================================ */
+    @media (max-width: 1024px) {
+      .profile-panel { width: 280px; min-width: 280px; }
+    }
+
+    @media (max-width: 820px) {
+      .profile-panel { display: none; }
+      .app-container { border-radius: 0; max-height: 100vh; }
+    }
+
+    @media (max-width: 640px) {
+      .sidebar { width: 100%; min-width: 0; }
+      .chat-area { display: none; }
+      .chat-area.active { display: flex; position: fixed; inset: 0; z-index: 10; background: var(--chat-bg); border-radius: 0; }
+      .app-container { border-radius: 0; max-height: 100vh; }
+      .back-to-chats { display: flex !important; }
+    }
+
+    .back-to-chats {
+      display: none;
+      background: none;
+      border: none;
+      color: var(--ink-soft);
+      font-size: 18px;
+      cursor: pointer;
+      padding: 4px 8px;
+    }
+    .back-to-chats:hover { color: var(--ink); }
+
+    /* Misc */
+    .hidden { display: none !important; }
+    .empty-note { font-size: 12px; color: var(--ink-faint); padding: 6px 0; }
+    .role-chip { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.03em; }
+    .role-chip.admin { color: var(--role-admin); background: var(--role-admin-wash); }
+    .role-chip.teacher { color: var(--role-teacher); background: var(--role-teacher-wash); }
+    .role-chip.student { color: var(--role-student); background: var(--role-student-wash); }
+    .online-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--online); margin-right: 4px; }
+
+    .video-overlay {
+      position: fixed; inset: 0; z-index: 50;
+      background: #05061a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .video-overlay iframe { width: 100%; height: 100%; border: 0; }
+    .video-overlay .close-video {
+      position: absolute; top: 16px; right: 16px;
+      width: 40px; height: 40px; border-radius: 50%;
+      background: rgba(255,255,255,0.1);
+      color: #fff; border: none; cursor: pointer;
+      font-size: 20px; display: flex; align-items: center; justify-content: center;
+    }
+    .video-overlay .close-video:hover { background: rgba(255,255,255,0.2); }
+  </style>
 </head>
 <body>
 
-<div id="app" class="app-shell">
-  <div class="phone-frame">
-
-    <!-- ===== AUTH CARD ===== -->
-    <div id="authCard" class="auth-wrap">
-      <div class="auth-card">
-        <img src="nouscomplex.png" alt="Nous Complex Orbit" class="auth-emblem" id="authLogo">
-        <h1 class="auth-title">Welcome back</h1>
-        <p class="auth-sub">Sign in with your School ID to continue</p>
-
-        <input id="usernameInput" type="text" placeholder="e.g. student042 or teacher005" class="field" autocomplete="off">
-        <button id="loginBtn" class="btn btn-primary btn-block" style="margin-top: 12px;">
-          <i class="fas fa-arrow-right-to-bracket"></i> Enter Hub
-        </button>
-        <p id="authError" class="error-text hidden">
-          <i class="fas fa-circle-exclamation"></i> <span id="authErrorText"></span>
-        </p>
-
-        <p class="auth-note">Simulated login · email confirmation off</p>
-      </div>
-    </div>
-
-    <!-- ===== APP BODY (mobile screens) ===== -->
-    <div id="dashboard" class="hidden app-body">
-
-      <!-- ============================================================
-           SCREEN: CHATS
-      ============================================================ -->
-      <section id="screenChats" class="screen">
-        <header class="brand-header">
-          <div class="brand-lockup">
-            <img src="nouscomplex.png" alt="" class="brand-mark" id="sidebarLogo">
-          </div>
-          <span class="brand-word">Orbit</span>
-        </header>
-
-        <div class="search-bar">
-          <i class="fas fa-magnifying-glass"></i>
-          <input id="chatSearchInput" type="text" placeholder="Search Sessions or Messages" autocomplete="off">
-        </div>
-
-        <div id="channelList" class="chat-list">
-          <!-- dynamic chat rows -->
-        </div>
-
-        <button id="createChannelFab" class="fab hidden" title="New channel">
-          <i class="fas fa-plus"></i>
-        </button>
-      </section>
-
-      <!-- ============================================================
-           SCREEN: UPDATES
-      ============================================================ -->
-      <section id="screenUpdates" class="screen hidden">
-        <header class="screen-header">
-          <span class="screen-title">Updates</span>
-          <span id="userBadge" class="role-chip"></span>
-        </header>
-
-        <div id="statusTray" class="updates-list">
-          <div id="statusPlaceholder" class="empty-note">No updates yet</div>
-        </div>
-
-        <div id="statusAddBtn" class="hidden status-add-wrap">
-          <button id="postStatusBtn" class="btn btn-ghost btn-block">
-            <i class="fas fa-plus"></i> Post an update
-          </button>
-        </div>
-      </section>
-
-      <!-- ============================================================
-           SCREEN: SETTINGS
-      ============================================================ -->
-      <section id="screenSettings" class="screen hidden">
-        <header class="screen-header">
-          <span class="screen-title">Settings</span>
-        </header>
-
-        <div class="settings-profile-card">
-          <div class="avatar avatar-student lg" id="settingsAvatar">?</div>
-          <div class="settings-profile-info">
-            <div class="settings-profile-name" id="settingsName">—</div>
-            <div class="settings-profile-email" id="settingsEmail">—</div>
-          </div>
-        </div>
-
-        <div class="settings-list">
-          <div class="settings-row">
-            <div class="settings-row-icon"><i class="fas fa-bell"></i></div>
-            <div class="settings-row-text">
-              <div class="settings-row-title">Notifications</div>
-              <div class="settings-row-sub">Push alerts, sound, vibration</div>
-            </div>
-            <label class="toggle">
-              <input type="checkbox" id="notifToggle">
-              <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            </label>
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-icon"><i class="fas fa-moon"></i></div>
-            <div class="settings-row-text">
-              <div class="settings-row-title">Dark Theme</div>
-              <div class="settings-row-sub">Toggle between light and dark UI</div>
-            </div>
-            <label class="toggle">
-              <input type="checkbox" id="darkToggle">
-              <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            </label>
-          </div>
-        </div>
-
-        <div id="adminSettingsCard" class="hidden settings-list" style="margin-top:14px;">
-          <div class="settings-list-label"><i class="fas fa-user-shield"></i> Admin tools</div>
-          <button id="createChannelBtn" class="settings-action-row">
-            <i class="fas fa-plus"></i> New channel
-          </button>
-          <button id="rosterGenBtn" class="settings-action-row">
-            <i class="fas fa-users"></i> Generate roster
-          </button>
-          <button id="exportAttendanceBtn" class="settings-action-row">
-            <i class="fas fa-file-export"></i> Export attendance
-          </button>
-        </div>
-
-        <button id="signOutBtn" class="logout-btn">
-          <i class="fas fa-arrow-right-from-bracket"></i> Log out
-        </button>
-      </section>
-
-      <!-- ============================================================
-           SCREEN: CHAT DETAIL
-      ============================================================ -->
-      <section id="screenChatDetail" class="screen hidden">
-        <header class="chat-detail-header">
-          <button id="backFromChat" class="icon-btn back-btn"><i class="fas fa-arrow-left"></i></button>
-          <button id="chatDetailTitleBtn" class="chat-detail-title">
-            <span class="title-name" id="chatDetailName">Select a channel</span>
-            <span class="title-sub" id="chatDetailSub"></span>
-          </button>
-          <button id="joinLiveBtn" class="btn-live-pill">
-            <i class="fas fa-tower-broadcast"></i> <span id="liveBtnText">Join Live Session</span>
-          </button>
-        </header>
-
-        <div id="scheduleBanner" class="hidden schedule-banner">
-          <i class="fas fa-calendar-day"></i>
-          <span id="scheduleBannerText"></span>
-        </div>
-
-        <div class="chat-scroll" id="chatContainer">
-          <div id="chatMessages">
-            <div class="empty-note center-text" style="width:100%;">Select a channel to start</div>
-          </div>
-        </div>
-
-        <div id="fileUploadStatus" class="hidden"></div>
-
-        <!-- Reply preview -->
-        <div id="replyPreview" class="hidden reply-preview">
-          <div class="bar"></div>
-          <div class="info">
-            <div class="author" id="replyPreviewAuthor"></div>
-            <div class="text" id="replyPreviewText"></div>
-          </div>
-          <button id="replyPreviewCancel" class="icon-btn" title="Cancel reply">
-            <i class="fas fa-xmark"></i>
-          </button>
-        </div>
-
-        <!-- File preview -->
-        <div id="filePreview" class="hidden file-preview-bar">
-          <i class="fas fa-paperclip"></i>
-          <span id="filePreviewName"></span>
-          <button id="filePreviewRemove" class="icon-btn" title="Remove attachment">
-            <i class="fas fa-xmark"></i>
-          </button>
-        </div>
-
-        <!-- Composer -->
-        <div class="composer">
-          <label for="fileInput" class="icon-btn" title="Attach a file">
-            <i class="fas fa-paperclip"></i>
-          </label>
-          <input id="fileInput" type="file" class="hidden" accept="image/*,.pdf,.doc,.docx,.txt,.png,.jpg,.jpeg">
-          <input id="messageInput" type="text" placeholder="Message group…" class="field" autocomplete="off">
-          <button id="sendMsgBtn" class="btn-send" title="Send">
-            <i class="fas fa-arrow-up"></i>
-          </button>
-        </div>
-
-        <!-- Video -->
-        <div id="videoContainer" class="hidden video-panel">
-          <iframe id="videoIframe" src="" allow="camera; microphone; display-capture; autoplay; encrypted-media" allowfullscreen></iframe>
-          <button id="closeVideoBtn" class="video-close"><i class="fas fa-xmark"></i></button>
-        </div>
-      </section>
-
-      <!-- ============================================================
-           SCREEN: MEMBERS
-      ============================================================ -->
-      <section id="screenMembers" class="screen hidden">
-        <header class="screen-header">
-          <button id="backFromMembers" class="icon-btn back-btn"><i class="fas fa-arrow-left"></i></button>
-          <span class="screen-title">Members</span>
-        </header>
-
-        <div class="search-bar">
-          <i class="fas fa-magnifying-glass"></i>
-          <input id="memberSearchInput" type="text" placeholder="Search Member" autocomplete="off">
-        </div>
-
-        <div id="adminAddMemberRow" class="hidden admin-add-row">
-          <input id="assignStudentInput" placeholder="Username" class="field-sm">
-          <select id="assignRoleSelect" class="field-sm" style="flex:0 0 96px;">
-            <option value="student">Student</option>
-            <option value="teacher">Teacher</option>
-          </select>
-          <button id="assignStudentBtn" class="btn-admin-sm">Add</button>
-        </div>
-
-        <div class="members-wrap">
-          <div id="channelMembersList" class="member-list">
-            <div class="empty-note">Select a channel</div>
-          </div>
-          <div id="alphaIndex" class="alpha-index"></div>
-        </div>
-      </section>
-
-      <!-- ============================================================
-           SCREEN: PROFILE (group info)
-      ============================================================ -->
-      <section id="screenProfile" class="screen hidden">
-        <header class="screen-header">
-          <button id="backFromProfile" class="icon-btn back-btn"><i class="fas fa-arrow-left"></i></button>
-          <span class="screen-title">Profile</span>
-        </header>
-
-        <div class="profile-card">
-          <div class="profile-card-name" id="profileChannelName">—</div>
-          <div class="profile-card-meta" id="profileChannelMeta">—</div>
-          <p class="profile-card-desc" id="profileChannelDesc"></p>
-        </div>
-
-        <button id="profileMembersBtn" class="btn-navy-pill">
-          <i class="fas fa-people-group"></i> Members
-        </button>
-
-        <div class="profile-section-row">
-          <span class="section-label">Shared media</span>
-          <a href="#" id="profileSeeAllMedia" class="see-all-link hidden">See all</a>
-        </div>
-        <div id="sharedMediaGrid" class="shared-media-grid">
-          <div class="empty-note">No shared media yet</div>
-        </div>
-
-        <div id="adminProfileSchedule" class="hidden schedule-card">
-          <div class="section-label"><i class="fas fa-calendar-clock"></i> Schedule class time</div>
-          <input id="scheduleTeacherInput" placeholder="Teacher username" class="field-sm" style="width:100%; margin-bottom:6px;">
-          <input id="scheduleTimeInput" type="datetime-local" class="field-sm" style="width:100%; margin-bottom:6px;">
-          <div class="admin-row">
-            <input id="scheduleDurationInput" type="number" min="10" max="240" value="45" class="field-sm" style="flex:0 0 90px;" title="Duration (minutes)">
-            <button id="setScheduleBtn" class="btn-admin-sm" style="flex:1;">
-              <i class="fas fa-clock"></i> Set time
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <!-- ============================================================
-           BOTTOM NAVIGATION
-      ============================================================ -->
-      <nav class="bottom-nav" id="bottomNav">
-        <button class="nav-btn active" data-tab="chats">
-          <span class="nav-icon-wrap"><i class="fas fa-comment-dots"></i><span id="navChatsBadge" class="nav-badge hidden">0</span></span>
-          <span>Chats</span>
-        </button>
-        <button class="nav-btn" data-tab="updates">
-          <span class="nav-icon-wrap"><i class="fas fa-arrows-rotate"></i></span>
-          <span>Updates</span>
-        </button>
-        <button class="nav-btn" data-tab="settings">
-          <span class="nav-icon-wrap"><i class="fas fa-gear"></i></span>
-          <span>Settings</span>
-        </button>
-      </nav>
-
-    </div>
-  </div>
-
-  <!-- ===== STATUS / UPDATE VIEWER (dark full-screen) ===== -->
-  <div id="statusModal" class="hidden status-viewer">
-    <div class="status-viewer-inner">
-      <div class="status-segments" id="statusSegments">
-        <div class="segment"><div id="statusProgress" class="segment-fill"></div></div>
-      </div>
-      <div class="status-viewer-header">
-        <button id="closeStatusModal" class="icon-btn back-btn"><i class="fas fa-arrow-left"></i></button>
-        <div class="avatar sm status-viewer-avatar" id="statusViewerAvatar">?</div>
-        <div class="status-viewer-meta">
-          <div id="statusModalTitle" class="status-viewer-name"></div>
-          <div id="statusModalTime" class="status-viewer-time"></div>
-        </div>
-      </div>
-      <div class="status-viewer-body">
-        <p id="statusModalContent"></p>
-      </div>
-    </div>
+<!-- ===== AUTH OVERLAY ===== -->
+<div id="authOverlay" class="auth-overlay">
+  <div class="auth-card">
+    <img src="nouscomplex.png" alt="Nous Complex Orbit" id="authLogo">
+    <h1>Welcome back</h1>
+    <p>Sign in with your School ID to continue</p>
+    <input id="usernameInput" type="text" placeholder="e.g. student042 or teacher005" class="field" autocomplete="off">
+    <button id="loginBtn" class="btn">Enter Hub</button>
+    <div id="authError" class="error hidden"><i class="fas fa-circle-exclamation"></i> <span id="authErrorText"></span></div>
+    <p class="note">Simulated login · email confirmation off</p>
   </div>
 </div>
 
-<!-- JavaScript -->
-<script src="app.js"></script>
+<!-- ===== APP CONTAINER ===== -->
+<div id="app" class="app-container">
+
+  <!-- ===== SIDEBAR ===== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-brand">
+        <img src="nouscomplex.png" alt="Orbit">
+        <span>Orbit</span>
+      </div>
+      <div class="sidebar-actions">
+        <button id="newChannelBtn" title="New Channel"><i class="fas fa-plus"></i></button>
+        <button id="updatesBtn" title="Updates"><i class="fas fa-arrows-rotate"></i></button>
+        <button id="settingsBtn" title="Settings"><i class="fas fa-gear"></i></button>
+      </div>
+    </div>
+
+    <div class="sidebar-search">
+      <div class="search-icon">
+        <i class="fas fa-magnifying-glass"></i>
+        <input id="chatSearchInput" type="text" placeholder="Search or start new chat">
+      </div>
+    </div>
+
+    <div class="sidebar-list" id="channelList">
+      <div class="empty-note" style="text-align:center;padding:40px 0;">Loading channels…</div>
+    </div>
+  </aside>
+
+  <!-- ===== CHAT AREA ===== -->
+  <main class="chat-area" id="chatArea">
+    <!-- Chat Header -->
+    <div class="chat-area-header">
+      <div class="chat-area-header-left" id="chatHeaderClick">
+        <button class="back-to-chats" id="backToChats"><i class="fas fa-arrow-left"></i></button>
+        <div id="chatHeaderAvatar" class="avatar avatar-student" style="width:36px;height:36px;font-size:14px;">?</div>
+        <div class="chat-area-header-info">
+          <div class="chat-area-header-name" id="chatHeaderName">Select a channel</div>
+          <div class="chat-area-header-sub" id="chatHeaderSub"></div>
+        </div>
+      </div>
+      <div class="chat-area-header-right">
+        <button id="joinLiveBtn" class="live-btn"><i class="fas fa-tower-broadcast"></i> Live</button>
+        <button id="profileToggleBtn"><i class="fas fa-address-card"></i></button>
+      </div>
+    </div>
+
+    <!-- Schedule banner -->
+    <div id="scheduleBanner" class="schedule-banner hidden">
+      <i class="fas fa-calendar-day"></i>
+      <span id="scheduleBannerText"></span>
+    </div>
+
+    <!-- Messages -->
+    <div class="chat-messages" id="chatMessages">
+      <div class="empty-chat">
+        <i class="fas fa-comment-dots"></i>
+        <span>Select a channel to start messaging</span>
+      </div>
+    </div>
+
+    <!-- Reply preview -->
+    <div id="replyPreview" class="reply-preview hidden">
+      <div class="bar"></div>
+      <div class="info">
+        <div class="author" id="replyPreviewAuthor"></div>
+        <div class="text" id="replyPreviewText"></div>
+      </div>
+      <button class="cancel" id="replyPreviewCancel"><i class="fas fa-xmark"></i></button>
+    </div>
+
+    <!-- Composer -->
+    <div class="composer">
+      <button class="attach-btn" id="attachBtn" title="Attach file"><i class="fas fa-paperclip"></i></button>
+      <input id="fileInput" type="file" accept="image/*,.pdf,.doc,.docx,.txt,.png,.jpg,.jpeg">
+      <input id="messageInput" type="text" placeholder="Type a message…" class="field" autocomplete="off">
+      <button class="send-btn" id="sendMsgBtn"><i class="fas fa-arrow-up"></i></button>
+    </div>
+  </main>
+
+  <!-- ===== PROFILE PANEL ===== -->
+  <aside class="profile-panel" id="profilePanel">
+    <div class="profile-panel-header">
+      <div id="profileAvatar" class="avatar avatar-student" style="width:72px;height:72px;font-size:28px;margin:0 auto 10px;">?</div>
+      <div class="profile-panel-name" id="profileName">—</div>
+      <div class="profile-panel-meta" id="profileMeta">—</div>
+    </div>
+
+    <div class="profile-panel-body">
+      <!-- Description -->
+      <div class="profile-section">
+        <div class="profile-section-title">About</div>
+        <div class="profile-desc" id="profileDesc">Group workspace for collaboration.</div>
+      </div>
+
+      <!-- Members -->
+      <div class="profile-section">
+        <div class="profile-section-title">Members</div>
+        <div id="profileMembersList">
+          <div class="empty-note">Select a channel</div>
+        </div>
+      </div>
+
+      <!-- Shared Media -->
+      <div class="profile-section">
+        <div class="profile-section-title">Shared Media</div>
+        <div class="profile-media-grid" id="profileMediaGrid">
+          <div class="empty-note">No media yet</div>
+        </div>
+      </div>
+
+      <!-- Schedule (admin only) -->
+      <div id="profileSchedule" class="profile-section hidden">
+        <div class="profile-section-title">Class Schedule</div>
+        <div class="profile-schedule" id="profileScheduleContent">No class scheduled</div>
+      </div>
+
+      <!-- Admin actions -->
+      <div id="profileAdminActions" class="profile-section hidden">
+        <div class="profile-section-title">Admin Tools</div>
+        <div class="profile-admin-actions">
+          <div class="row">
+            <input id="assignStudentInput" placeholder="Username" style="flex:1;">
+            <select id="assignRoleSelect">
+              <option value="student">Student</option>
+              <option value="teacher">Teacher</option>
+            </select>
+            <button id="assignStudentBtn"><i class="fas fa-user-plus"></i></button>
+          </div>
+          <div class="row">
+            <input id="scheduleTeacherInput" placeholder="Teacher" style="flex:1;">
+            <input id="scheduleTimeInput" type="datetime-local" style="flex:1.5;">
+            <input id="scheduleDurationInput" type="number" value="45" min="10" max="240" style="width:60px;">
+            <button id="setScheduleBtn"><i class="fas fa-clock"></i></button>
+          </div>
+          <button id="rosterGenBtn"><i class="fas fa-users"></i> Generate roster</button>
+          <button id="exportAttendanceBtn"><i class="fas fa-file-export"></i> Export attendance</button>
+          <button id="signOutBtn" class="danger-btn"><i class="fas fa-sign-out-alt"></i> Log out</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- ===== VIDEO OVERLAY ===== -->
+<div id="videoOverlay" class="video-overlay hidden">
+  <iframe id="videoIframe" src="" allow="camera; microphone; display-capture; autoplay; encrypted-media" allowfullscreen></iframe>
+  <button class="close-video" id="closeVideoBtn"><i class="fas fa-xmark"></i></button>
+</div>
+
+<!-- ============================================================
+   APPLICATION LOGIC
+   ============================================================ -->
 <script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch((e) => console.warn('Service worker registration failed:', e));
+  (function() {
+    "use strict";
+
+    // ===== CONFIG (inline for simplicity) =====
+    const CONFIG = window.CONFIG || {
+      BRANDING: { NAME: 'Nous Complex Orbit', VERSION: '1.0', LOGO: { PATH: 'nouscomplex.png', ALT: 'Orbit' } },
+      ENV: 'development',
+      SUPABASE: { URL: 'https://your-project.supabase.co', ANON_KEY: 'your-anon-key' },
+      AUTH: { ROLES: { ADMIN: 'admin', TEACHER: 'teacher', STUDENT: 'student' }, EMAIL_SUFFIX: '@school.edu', DEFAULT_PASSWORD: 'password123' },
+      UPLOAD: { MAX_FILE_SIZE: 10 * 1024 * 1024, STORAGE_PATH: 'channels/{channelId}/{timestamp}_{filename}' },
+      FEATURES: { ENABLE_ADMIN_CONSOLE: true, ENABLE_VIDEO_CONFERENCE: true, ENABLE_STATUS_UPDATES: true, ENABLE_ATTENDANCE_LOGGING: true },
+      LIVEKIT: { URL: 'https://meet.jit.si/Orbit', ROOM_SETTINGS: {} },
+      PUSH: { VAPID_PUBLIC_KEY: '' }
+    };
+
+    const supabase = window.supabase.createClient(CONFIG.SUPABASE.URL, CONFIG.SUPABASE.ANON_KEY);
+
+    // ===== STATE =====
+    const state = {
+      currentUser: null,
+      currentChannel: null,
+      currentMembers: [],
+      messages: [],
+      channelPreviews: {},
+      isAdmin: false,
+      isTeacher: false,
+      replyingTo: null,
+      unreadByChannel: {},
+      roleCache: {},
+      onlineUsers: new Set(),
+      allChannels: [],
+      messagesSubscription: null,
+      scheduleSubscription: null,
+    };
+
+    // ===== DOM REFS =====
+    const $ = (id) => document.getElementById(id);
+    const DOM = {
+      authOverlay: $('authOverlay'),
+      usernameInput: $('usernameInput'),
+      loginBtn: $('loginBtn'),
+      authError: $('authError'),
+      authErrorText: $('authErrorText'),
+      authLogo: $('authLogo'),
+
+      channelList: $('channelList'),
+      chatSearchInput: $('chatSearchInput'),
+      newChannelBtn: $('newChannelBtn'),
+      updatesBtn: $('updatesBtn'),
+      settingsBtn: $('settingsBtn'),
+
+      chatArea: $('chatArea'),
+      backToChats: $('backToChats'),
+      chatHeaderClick: $('chatHeaderClick'),
+      chatHeaderAvatar: $('chatHeaderAvatar'),
+      chatHeaderName: $('chatHeaderName'),
+      chatHeaderSub: $('chatHeaderSub'),
+      chatMessages: $('chatMessages'),
+      messageInput: $('messageInput'),
+      sendMsgBtn: $('sendMsgBtn'),
+      attachBtn: $('attachBtn'),
+      fileInput: $('fileInput'),
+
+      replyPreview: $('replyPreview'),
+      replyPreviewAuthor: $('replyPreviewAuthor'),
+      replyPreviewText: $('replyPreviewText'),
+      replyPreviewCancel: $('replyPreviewCancel'),
+
+      scheduleBanner: $('scheduleBanner'),
+      scheduleBannerText: $('scheduleBannerText'),
+
+      joinLiveBtn: $('joinLiveBtn'),
+      profileToggleBtn: $('profileToggleBtn'),
+      videoOverlay: $('videoOverlay'),
+      videoIframe: $('videoIframe'),
+      closeVideoBtn: $('closeVideoBtn'),
+
+      profilePanel: $('profilePanel'),
+      profileAvatar: $('profileAvatar'),
+      profileName: $('profileName'),
+      profileMeta: $('profileMeta'),
+      profileDesc: $('profileDesc'),
+      profileMembersList: $('profileMembersList'),
+      profileMediaGrid: $('profileMediaGrid'),
+      profileSchedule: $('profileSchedule'),
+      profileScheduleContent: $('profileScheduleContent'),
+      profileAdminActions: $('profileAdminActions'),
+
+      assignStudentInput: $('assignStudentInput'),
+      assignRoleSelect: $('assignRoleSelect'),
+      assignStudentBtn: $('assignStudentBtn'),
+      scheduleTeacherInput: $('scheduleTeacherInput'),
+      scheduleTimeInput: $('scheduleTimeInput'),
+      scheduleDurationInput: $('scheduleDurationInput'),
+      setScheduleBtn: $('setScheduleBtn'),
+      rosterGenBtn: $('rosterGenBtn'),
+      exportAttendanceBtn: $('exportAttendanceBtn'),
+      signOutBtn: $('signOutBtn'),
+    };
+
+    // ===== UTILITY =====
+    function getRoleFromUsername(username) {
+      if (!username) return CONFIG.AUTH.ROLES.STUDENT;
+      const key = username.toLowerCase();
+      if (state.roleCache[key]) return state.roleCache[key];
+      if (key.includes(CONFIG.AUTH.ROLES.ADMIN)) return CONFIG.AUTH.ROLES.ADMIN;
+      if (key.includes(CONFIG.AUTH.ROLES.TEACHER)) return CONFIG.AUTH.ROLES.TEACHER;
+      return CONFIG.AUTH.ROLES.STUDENT;
+    }
+
+    function roleKey(username) {
+      const role = getRoleFromUsername(username);
+      if (role === CONFIG.AUTH.ROLES.ADMIN) return 'admin';
+      if (role === CONFIG.AUTH.ROLES.TEACHER) return 'teacher';
+      return 'student';
+    }
+
+    function avatarClass(role) {
+      return 'avatar-' + roleKey(role);
+    }
+
+    function avatarHtml(username, size) {
+      const role = roleKey(username);
+      const initial = (username || '?').charAt(0).toUpperCase();
+      const online = state.onlineUsers.has((username || '').toLowerCase());
+      const sizeClass = size === 'sm' ? 'sm' : size === 'lg' ? 'lg' : '';
+      return `<div class="avatar avatar-${role} ${sizeClass}">${initial}<span class="avatar-dot${online ? ' online' : ''}"></span></div>`;
+    }
+
+    function channelColorKey(ch) {
+      const keys = ['admin', 'teacher', 'student'];
+      let hash = 0;
+      for (const c of String(ch.id)) hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
+      return keys[hash % keys.length];
+    }
+
+    function formatTimeAgo(ts) {
+      if (!ts) return '';
+      const diffMs = Date.now() - new Date(ts).getTime();
+      const min = Math.floor(diffMs / 60000);
+      if (min < 1) return 'now';
+      if (min < 60) return `${min}m`;
+      const hr = Math.floor(min / 60);
+      if (hr < 24) return `${hr}h`;
+      const day = Math.floor(hr / 24);
+      if (day < 7) return `${day}d`;
+      return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+
+    function formatDate(ts) {
+      return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function truncate(str, n = 30) {
+      if (!str) return '';
+      return str.length > n ? str.substr(0, n) + '…' : str;
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str ?? '';
+      return div.innerHTML;
+    }
+
+    function isImageFile(url) {
+      return !!url && /\.(png|jpe?g|gif|webp|svg)$/i.test(url.split('?')[0]);
+    }
+
+    function generateEmail(username) {
+      return `${username}${CONFIG.AUTH.EMAIL_SUFFIX}`;
+    }
+
+    function generateStoragePath(channelId, filename) {
+      const timestamp = Date.now();
+      return CONFIG.UPLOAD.STORAGE_PATH
+        .replace('{channelId}', channelId)
+        .replace('{timestamp}', timestamp)
+        .replace('{filename}', filename);
+    }
+
+    // ===== AUTH =====
+    async function loginWithUsername(username) {
+      const email = generateEmail(username);
+      const password = CONFIG.AUTH.DEFAULT_PASSWORD;
+      try {
+        const { error: signUpError } = await supabase.auth.signUp({ email, password });
+        const isAlreadyRegistered = signUpError && (signUpError.status === 400 || signUpError.status === 409 || /already registered/i.test(signUpError.message || ''));
+        if (signUpError && !isAlreadyRegistered) throw signUpError;
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        return data.user;
+      } catch (e) {
+        throw new Error('Login failed. Please check your School ID.');
+      }
+    }
+
+    async function loadRoleCache() {
+      const { data, error } = await supabase.from('user_roles').select('username, role');
+      if (!error) (data || []).forEach((row) => { state.roleCache[row.username.toLowerCase()] = row.role; });
+    }
+
+    // ===== PRESENCE =====
+    let presenceChannel = null;
+    function setupPresence() {
+      if (!state.currentUser) return;
+      presenceChannel = supabase.channel('presence:orbit', {
+        config: { presence: { key: state.currentUser.username.toLowerCase() } },
+      });
+      presenceChannel
+        .on('presence', { event: 'sync' }, () => {
+          const s = presenceChannel.presenceState();
+          state.onlineUsers = new Set(Object.keys(s));
+          renderSidebar();
+          updateChatHeader();
+          updateProfile();
+        })
+        .subscribe(async (status) => {
+          if (status === 'SUBSCRIBED') {
+            await presenceChannel.track({ username: state.currentUser.username, online_at: new Date().toISOString() });
+          }
+        });
+    }
+
+    function teardownPresence() {
+      if (presenceChannel) { supabase.removeChannel(presenceChannel); presenceChannel = null; }
+      state.onlineUsers = new Set();
+    }
+
+    // ===== CHANNELS =====
+    async function loadChannels() {
+      if (!state.currentUser) return [];
+      if (state.isAdmin) {
+        const { data, error } = await supabase.from('channels').select('*').order('name');
+        if (error) return [];
+        return data || [];
+      }
+      const { data: memberships, error: memberError } = await supabase
+        .from('members')
+        .select('channel_id')
+        .eq('username', state.currentUser.username);
+      if (memberError || !memberships || !memberships.length) return [];
+      const channelIds = memberships.map(m => m.channel_id);
+      const { data: channels, error: channelError } = await supabase
+        .from('channels')
+        .select('*')
+        .in('id', channelIds)
+        .order('name');
+      if (channelError) return [];
+      return channels || [];
+    }
+
+    async function loadChannelPreviews(channelIds) {
+      if (!channelIds.length) return {};
+      const { data, error } = await supabase
+        .from('messages')
+        .select('channel_id, content, username, created_at, file_url')
+        .in('channel_id', channelIds)
+        .order('created_at', { ascending: false })
+        .limit(300);
+      if (error) return {};
+      const map = {};
+      (data || []).forEach(m => { if (!map[m.channel_id]) map[m.channel_id] = m; });
+      return map;
+    }
+
+    async function refreshUnreadBadges() {
+      if (!state.currentUser) return;
+      const { data, error } = await supabase
+        .from('messages')
+        .select('channel_id')
+        .is('seen_at', null)
+        .neq('username', state.currentUser.username);
+      if (error) return;
+      const counts = {};
+      (data || []).forEach(row => { counts[row.channel_id] = (counts[row.channel_id] || 0) + 1; });
+      state.unreadByChannel = counts;
+      renderSidebar();
+    }
+
+    async function renderSidebar() {
+      const channels = await loadChannels();
+      state.allChannels = channels;
+      state.channelPreviews = await loadChannelPreviews(channels.map(c => c.id));
+
+      DOM.channelList.innerHTML = '';
+      if (!channels || channels.length === 0) {
+        DOM.channelList.innerHTML = state.isAdmin
+          ? '<div class="empty-note" style="text-align:center;padding:40px 0;">No channels — click + to create</div>'
+          : '<div class="empty-note" style="text-align:center;padding:40px 0;">No channels yet</div>';
+        return;
+      }
+
+      channels.forEach(ch => {
+        const preview = state.channelPreviews[ch.id];
+        const unread = state.unreadByChannel[ch.id] || 0;
+        const previewText = preview
+          ? (preview.content ? escapeHtml(truncate(preview.content, 35)) : (preview.file_url ? '📎 Attachment' : ''))
+          : 'No messages';
+        const previewAuthor = preview && preview.username ? `${escapeHtml(preview.username)}: ` : '';
+        const time = preview ? formatTimeAgo(preview.created_at) : '';
+        const active = state.currentChannel?.id === ch.id;
+
+        const key = channelColorKey(ch);
+        const initial = (ch.name || '?').charAt(0).toUpperCase();
+
+        const div = document.createElement('div');
+        div.className = `chat-item${active ? ' active' : ''}`;
+        div.dataset.id = ch.id;
+        div.innerHTML = `
+          <div class="avatar avatar-${key}">
+            ${initial}
+            <span class="avatar-dot"></span>
+          </div>
+          <div class="chat-item-info">
+            <div class="chat-item-top">
+              <span class="chat-item-name">${escapeHtml(ch.name)}</span>
+              <span class="chat-item-time">${time}</span>
+            </div>
+            <div class="chat-item-bottom">
+              <span class="chat-item-preview">${previewAuthor}${previewText}</span>
+              ${unread > 0 ? `<span class="chat-item-unread">${unread > 99 ? '99+' : unread}</span>` : ''}
+            </div>
+          </div>
+          ${state.isAdmin ? `
+            <div class="chat-item-admin-actions">
+              <button data-action="rename" data-id="${ch.id}" title="Rename"><i class="fas fa-pen"></i></button>
+              <button data-action="delete" data-id="${ch.id}" title="Delete"><i class="fas fa-trash"></i></button>
+            </div>
+          ` : ''}
+        `;
+        div.addEventListener('click', (e) => {
+          if (e.target.closest('[data-action]')) return;
+          openChannel(ch);
+        });
+        DOM.channelList.appendChild(div);
+      });
+
+      // Admin actions
+      DOM.channelList.querySelectorAll('[data-action="rename"]').forEach(btn => {
+        btn.addEventListener('click', e => { e.stopPropagation(); renameChannel(btn.dataset.id); });
+      });
+      DOM.channelList.querySelectorAll('[data-action="delete"]').forEach(btn => {
+        btn.addEventListener('click', e => { e.stopPropagation(); deleteChannel(btn.dataset.id); });
+      });
+
+      // Filter
+      filterChatList(DOM.chatSearchInput.value);
+    }
+
+    function filterChatList(query) {
+      const q = query.trim().toLowerCase();
+      DOM.channelList.querySelectorAll('.chat-item').forEach(row => {
+        row.classList.toggle('hidden', !!q && !row.dataset.id && !row.textContent.toLowerCase().includes(q));
+      });
+    }
+
+    async function renameChannel(channelId) {
+      const newName = prompt('New channel name:');
+      if (!newName) return;
+      const { error } = await supabase.from('channels').update({ name: newName }).eq('id', channelId);
+      if (error) { alert('Rename failed: ' + error.message); return; }
+      if (state.currentChannel?.id === channelId) state.currentChannel.name = newName;
+      await renderSidebar();
+      updateChatHeader();
+      updateProfile();
+    }
+
+    async function deleteChannel(channelId) {
+      if (!confirm('Delete this channel? This cannot be undone.')) return;
+      const { error } = await supabase.from('channels').delete().eq('id', channelId);
+      if (error) { alert('Delete failed: ' + error.message); return; }
+      if (state.currentChannel?.id === channelId) {
+        state.currentChannel = null;
+        if (state.messagesSubscription) { supabase.removeChannel(state.messagesSubscription); state.messagesSubscription = null; }
+        state.messages = [];
+        renderMessages();
+      }
+      await renderSidebar();
+      updateChatHeader();
+      updateProfile();
+    }
+
+    async function createChannel(name) {
+      if (!name) return;
+      const { error } = await supabase.from('channels').insert({ name });
+      if (error) { alert('Error: ' + error.message); return; }
+      await renderSidebar();
+    }
+
+    // ===== SELECT CHANNEL =====
+    async function openChannel(channel) {
+      await selectChannel(channel);
+      // On mobile, show chat area
+      if (window.innerWidth <= 640) {
+        DOM.chatArea.classList.add('active');
+      }
+    }
+
+    async function selectChannel(channel) {
+      state.currentChannel = channel;
+      await loadMessages(channel.id);
+      await loadMembers(channel.id);
+      subscribeToMessages(channel.id);
+      await markDelivered(channel.id);
+      await markSeen(channel.id);
+      await loadSchedule(channel.id);
+      subscribeToSchedule(channel.id);
+      renderSidebar();
+      updateChatHeader();
+      updateProfile();
+    }
+
+    // ===== MESSAGES =====
+    async function loadMessages(channelId) {
+      if (!channelId) { state.messages = []; renderMessages(); return; }
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('channel_id', channelId)
+        .order('created_at', { ascending: true });
+      state.messages = (error || !data) ? [] : data;
+      renderMessages();
+    }
+
+    function renderMessages() {
+      DOM.chatMessages.innerHTML = '';
+      if (!state.messages || state.messages.length === 0) {
+        DOM.chatMessages.innerHTML = `
+          <div class="empty-chat">
+            <i class="fas fa-comment-dots"></i>
+            <span>${state.currentChannel ? 'No messages yet — say hello' : 'Select a channel to start'}</span>
+          </div>
+        `;
+        return;
+      }
+
+      state.messages.forEach(msg => {
+        const isMine = msg.username === state.currentUser?.username;
+        const role = roleKey(msg.username);
+        const wrap = document.createElement('div');
+        wrap.className = `msg ${isMine ? 'msg-mine' : 'msg-theirs'}`;
+        wrap.dataset.role = role;
+
+        let replyHtml = '';
+        if (msg.reply_to) {
+          replyHtml = `
+            <div class="msg-reply-quote">
+              <span class="reply-author">${escapeHtml(msg.reply_username || 'Message')}</span>
+              <span class="reply-text">${escapeHtml(truncate(msg.reply_content || '', 60))}</span>
+            </div>
+          `;
+        }
+
+        let bubbleHtml = '';
+        if (msg.content) bubbleHtml += `<div class="msg-bubble">${replyHtml}${escapeHtml(msg.content)}</div>`;
+        else if (replyHtml) bubbleHtml += `<div class="msg-bubble">${replyHtml}</div>`;
+        if (msg.file_url) {
+          bubbleHtml += `<a href="${msg.file_url}" target="_blank" rel="noopener" class="msg-file"><i class="fas fa-paperclip"></i> Attached file</a>`;
+        }
+
+        const footerHtml = isMine
+          ? `<div class="msg-meta">${msg.seen_at ? `<span class="msg-ticks seen"><i class="fas fa-check-double"></i></span>` : `<span class="msg-ticks"><i class="fas fa-check"></i></span>`}</div>`
+          : '';
+
+        const initial = (msg.username || '?').charAt(0).toUpperCase();
+        const avatarRole = roleKey(msg.username);
+
+        wrap.innerHTML = `
+          <div class="avatar avatar-${avatarRole}" style="width:32px;height:32px;font-size:12px;">${initial}</div>
+          <div class="msg-body">
+            <div class="msg-meta">
+              <span class="msg-author">${escapeHtml(msg.username || 'unknown')}</span>
+              <span class="msg-time">${formatDate(msg.created_at)}</span>
+            </div>
+            ${bubbleHtml}
+            ${footerHtml}
+          </div>
+          <div class="msg-actions">
+            <button class="msg-reply-btn" data-reply-id="${msg.id}" title="Reply"><i class="fas fa-reply"></i></button>
+            ${state.isAdmin ? `<button class="msg-reply-btn" data-delete-id="${msg.id}" title="Delete"><i class="fas fa-trash" style="color:var(--danger);"></i></button>` : ''}
+          </div>
+        `;
+        DOM.chatMessages.appendChild(wrap);
+      });
+
+      DOM.chatMessages.scrollTop = DOM.chatMessages.scrollHeight;
+    }
+
+    async function deleteMessage(messageId) {
+      if (!confirm('Delete this message?')) return;
+      const { error } = await supabase.from('messages').delete().eq('id', messageId);
+      if (error) { alert('Delete failed: ' + error.message); return; }
+      state.messages = state.messages.filter(m => m.id !== messageId);
+      renderMessages();
+    }
+
+    DOM.chatMessages.addEventListener('click', (e) => {
+      const btn = e.target.closest('.msg-reply-btn');
+      if (!btn) return;
+      if (btn.dataset.deleteId) { deleteMessage(btn.dataset.deleteId); return; }
+      const id = btn.dataset.replyId;
+      const msg = state.messages.find(m => m.id === id);
+      if (!msg) return;
+      state.replyingTo = msg;
+      DOM.replyPreviewAuthor.textContent = msg.username;
+      DOM.replyPreviewText.textContent = msg.content || (msg.file_url ? 'Attached file' : '');
+      DOM.replyPreview.classList.remove('hidden');
+      DOM.messageInput.focus();
     });
-  }
+
+    DOM.replyPreviewCancel.addEventListener('click', () => {
+      state.replyingTo = null;
+      DOM.replyPreview.classList.add('hidden');
+    });
+
+    async function markDelivered(channelId) {
+      if (!state.currentUser) return;
+      await supabase
+        .from('messages')
+        .update({ delivered_at: new Date().toISOString() })
+        .eq('channel_id', channelId)
+        .neq('username', state.currentUser.username)
+        .is('delivered_at', null);
+    }
+
+    async function markSeen(channelId) {
+      if (!state.currentUser || !document.hasFocus()) return;
+      await supabase
+        .from('messages')
+        .update({ seen_at: new Date().toISOString(), seen_by: state.currentUser.username })
+        .eq('channel_id', channelId)
+        .neq('username', state.currentUser.username)
+        .is('seen_at', null);
+      await refreshUnreadBadges();
+    }
+
+    function subscribeToMessages(channelId) {
+      if (state.messagesSubscription) { supabase.removeChannel(state.messagesSubscription); state.messagesSubscription = null; }
+      state.messagesSubscription = supabase
+        .channel(`messages:${channelId}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `channel_id=eq.${channelId}` }, (payload) => {
+          const exists = state.messages.some(m => m.id === payload.new.id);
+          if (!exists) {
+            state.messages.push(payload.new);
+            renderMessages();
+            refreshUnreadBadges();
+            if (payload.new.username !== state.currentUser?.username) {
+              markDelivered(channelId);
+              markSeen(channelId);
+            }
+          }
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `channel_id=eq.${channelId}` }, (payload) => {
+          const idx = state.messages.findIndex(m => m.id === payload.new.id);
+          if (idx !== -1) { state.messages[idx] = payload.new; renderMessages(); }
+        })
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages', filter: `channel_id=eq.${channelId}` }, (payload) => {
+          state.messages = state.messages.filter(m => m.id !== payload.old.id);
+          renderMessages();
+        })
+        .subscribe();
+    }
+
+    async function sendMessage(content, file) {
+      if (!state.currentChannel || !state.currentUser) return;
+      let fileUrl = null;
+      if (file) {
+        if (file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
+          alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
+          return;
+        }
+        const path = generateStoragePath(state.currentChannel.id, file.name);
+        try {
+          const { error } = await supabase.storage.from('orbit-files').upload(path, file);
+          if (error) throw error;
+          const { data: urlData } = supabase.storage.from('orbit-files').getPublicUrl(path);
+          fileUrl = urlData.publicUrl;
+        } catch (e) {
+          alert('Upload failed: ' + e.message);
+          return;
+        }
+      }
+
+      const replyPayload = state.replyingTo
+        ? { reply_to: state.replyingTo.id, reply_username: state.replyingTo.username, reply_content: state.replyingTo.content || (state.replyingTo.file_url ? '📎 Attached file' : '') }
+        : {};
+
+      const { error } = await supabase.from('messages').insert({
+        channel_id: state.currentChannel.id,
+        username: state.currentUser.username,
+        content: content || '',
+        file_url: fileUrl,
+        created_at: new Date().toISOString(),
+        ...replyPayload,
+      });
+
+      if (error) { alert('Failed to send: ' + error.message); }
+      state.replyingTo = null;
+      DOM.replyPreview.classList.add('hidden');
+      await loadMessages(state.currentChannel.id);
+      await renderSidebar();
+    }
+
+    // ===== MEMBERS =====
+    async function loadMembers(channelId) {
+      const { data, error } = await supabase
+        .from('members')
+        .select('*')
+        .eq('channel_id', channelId)
+        .order('username');
+      state.currentMembers = (error || !data) ? [] : data;
+      updateProfile();
+    }
+
+    async function addMemberToChannel(username, role) {
+      if (!username || !state.currentChannel) return;
+      const { error } = await supabase
+        .from('members')
+        .upsert({ channel_id: state.currentChannel.id, username, role, added_by: state.currentUser.username }, { onConflict: 'channel_id,username' });
+      if (error) { alert('Add failed: ' + error.message); return; }
+      await supabase.from('user_roles').upsert({ username, role, updated_at: new Date().toISOString() }, { onConflict: 'username' });
+      await loadMembers(state.currentChannel.id);
+      updateProfile();
+    }
+
+    // ===== SCHEDULE =====
+    async function loadSchedule(channelId) {
+      const { data, error } = await supabase
+        .from('class_schedule')
+        .select('*')
+        .eq('channel_id', channelId)
+        .gte('scheduled_time', new Date(Date.now() - 60 * 60 * 1000).toISOString())
+        .order('scheduled_time', { ascending: true })
+        .limit(1);
+      if (error || !data || !data.length) {
+        DOM.scheduleBanner.classList.add('hidden');
+        DOM.profileScheduleContent.textContent = 'No class scheduled';
+        return;
+      }
+      const s = data[0];
+      const when = new Date(s.scheduled_time);
+      const formatted = when.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      DOM.scheduleBannerText.textContent = `Class with ${s.teacher_username} scheduled for ${formatted} (${s.duration_minutes} min)`;
+      DOM.scheduleBanner.classList.remove('hidden');
+      DOM.profileScheduleContent.textContent = `${s.teacher_username} · ${formatted} (${s.duration_minutes} min)`;
+    }
+
+    function subscribeToSchedule(channelId) {
+      if (state.scheduleSubscription) { supabase.removeChannel(state.scheduleSubscription); state.scheduleSubscription = null; }
+      state.scheduleSubscription = supabase
+        .channel(`schedule:${channelId}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'class_schedule', filter: `channel_id=eq.${channelId}` }, () => loadSchedule(channelId))
+        .subscribe();
+    }
+
+    async function setClassSchedule(teacherUsername, datetimeLocal, durationMinutes) {
+      if (!state.currentChannel) { alert('Select a channel first.'); return; }
+      if (!teacherUsername || !datetimeLocal) { alert('Enter teacher and time.'); return; }
+      const { error } = await supabase.from('class_schedule').insert({
+        channel_id: state.currentChannel.id,
+        teacher_username: teacherUsername,
+        scheduled_time: new Date(datetimeLocal).toISOString(),
+        duration_minutes: durationMinutes || 45,
+        set_by: state.currentUser.username,
+      });
+      if (error) { alert('Error: ' + error.message); return; }
+      await loadSchedule(state.currentChannel.id);
+    }
+
+    // ===== VIDEO =====
+    function buildLiveUrl() {
+      const settings = { ...CONFIG.LIVEKIT.ROOM_SETTINGS };
+      if (state.isTeacher) { settings.lock_webcam = false; settings.hide_host_management_controls = false; }
+      const params = new URLSearchParams(settings);
+      return `${CONFIG.LIVEKIT.URL}?${params.toString()}`;
+    }
+
+    async function joinLiveClass() {
+      if (!state.currentUser || !state.currentChannel) { alert('Select a channel first.'); return; }
+      if (CONFIG.FEATURES.ENABLE_ATTENDANCE_LOGGING) {
+        await supabase.from('attendance').insert({
+          student_name: state.currentUser.username,
+          channel_id: state.currentChannel.id,
+          join_time: new Date().toISOString(),
+          status: 'Present',
+        });
+      }
+      DOM.videoOverlay.classList.remove('hidden');
+      DOM.videoIframe.src = buildLiveUrl();
+    }
+
+    // ===== ADMIN =====
+    async function generateRoster() {
+      const count = 30;
+      const prefix = 'student';
+      const students = [];
+      for (let i = 1; i <= count; i++) {
+        const uid = `${prefix}${String(i).padStart(3, '0')}`;
+        const pass = Math.random().toString(36).slice(2, 8);
+        students.push({ username: uid, password: pass });
+        try { await supabase.auth.signUp({ email: generateEmail(uid), password: pass }); } catch (e) {}
+      }
+      let csv = 'Username,Password\n';
+      students.forEach(s => csv += `${s.username},${s.password}\n`);
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'roster.csv';
+      document.body.appendChild(link); link.click(); document.body.removeChild(link);
+      alert(`✅ ${count} students generated!`);
+    }
+
+    async function exportAttendance() {
+      const { data, error } = await supabase.from('attendance').select('*');
+      if (error || !data || !data.length) { alert('No attendance data.'); return; }
+      let csv = 'Student,Channel,Join Time,Status\n';
+      data.forEach(r => csv += `${r.student_name},${r.channel_id},${r.join_time},${r.status}\n`);
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'attendance.csv';
+      document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    }
+
+    // ===== CHAT HEADER =====
+    function updateChatHeader() {
+      if (!state.currentChannel) {
+        DOM.chatHeaderName.textContent = 'Select a channel';
+        DOM.chatHeaderSub.textContent = '';
+        DOM.chatHeaderAvatar.textContent = '?';
+        DOM.chatHeaderAvatar.className = 'avatar avatar-student';
+        return;
+      }
+      DOM.chatHeaderName.textContent = state.currentChannel.name;
+      const total = state.currentMembers.length;
+      const online = state.currentMembers.filter(m => state.onlineUsers.has((m.username || '').toLowerCase())).length;
+      DOM.chatHeaderSub.textContent = total ? `${total} members · ${online} online` : '';
+      const initial = state.currentChannel.name.charAt(0).toUpperCase();
+      const key = channelColorKey(state.currentChannel);
+      DOM.chatHeaderAvatar.textContent = initial;
+      DOM.chatHeaderAvatar.className = `avatar avatar-${key}`;
+    }
+
+    // ===== PROFILE PANEL =====
+    function updateProfile() {
+      if (!state.currentChannel) {
+        DOM.profileName.textContent = '—';
+        DOM.profileMeta.textContent = '—';
+        DOM.profileDesc.textContent = 'Select a channel';
+        DOM.profileAvatar.textContent = '?';
+        DOM.profileAvatar.className = 'avatar avatar-student';
+        DOM.profileMembersList.innerHTML = '<div class="empty-note">Select a channel</div>';
+        DOM.profileMediaGrid.innerHTML = '<div class="empty-note">No media yet</div>';
+        DOM.profileAdminActions.classList.add('hidden');
+        DOM.profileSchedule.classList.add('hidden');
+        return;
+      }
+
+      DOM.profileName.textContent = state.currentChannel.name;
+      const total = state.currentMembers.length;
+      const online = state.currentMembers.filter(m => state.onlineUsers.has((m.username || '').toLowerCase())).length;
+      DOM.profileMeta.textContent = total ? `${total} members · ${online} online` : '';
+      DOM.profileDesc.textContent = `Group workspace for ${state.currentChannel.name}.`;
+      const initial = state.currentChannel.name.charAt(0).toUpperCase();
+      const key = channelColorKey(state.currentChannel);
+      DOM.profileAvatar.textContent = initial;
+      DOM.profileAvatar.className = `avatar avatar-${key}`;
+
+      // Members
+      DOM.profileMembersList.innerHTML = '';
+      if (state.currentMembers.length === 0) {
+        DOM.profileMembersList.innerHTML = '<div class="empty-note">No members</div>';
+      } else {
+        state.currentMembers.slice(0, 10).forEach(m => {
+          const role = roleKey(m.username);
+          const initial2 = (m.username || '?').charAt(0).toUpperCase();
+          const isOnline = state.onlineUsers.has((m.username || '').toLowerCase());
+          const div = document.createElement('div');
+          div.className = 'profile-member-item';
+          div.innerHTML = `
+            <div class="avatar avatar-${role}" style="width:28px;height:28px;font-size:11px;">${initial2}</div>
+            <span class="profile-member-name">${escapeHtml(m.username)}</span>
+            <span class="profile-member-status${isOnline ? ' online' : ''}">${isOnline ? '● Online' : ''}</span>
+          `;
+          DOM.profileMembersList.appendChild(div);
+        });
+        if (state.currentMembers.length > 10) {
+          const more = document.createElement('div');
+          more.className = 'empty-note';
+          more.textContent = `+${state.currentMembers.length - 10} more`;
+          DOM.profileMembersList.appendChild(more);
+        }
+      }
+
+      // Media
+      const media = state.messages.filter(m => isImageFile(m.file_url));
+      DOM.profileMediaGrid.innerHTML = '';
+      if (media.length === 0) {
+        DOM.profileMediaGrid.innerHTML = '<div class="empty-note">No media yet</div>';
+      } else {
+        media.slice(-6).forEach(m => {
+          const img = document.createElement('img');
+          img.src = m.file_url;
+          img.alt = 'Shared media';
+          img.loading = 'lazy';
+          DOM.profileMediaGrid.appendChild(img);
+        });
+      }
+
+      // Admin actions
+      DOM.profileAdminActions.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
+      DOM.profileSchedule.classList.remove('hidden');
+    }
+
+    // ===== AUTH =====
+    async function completeLogin(username, user) {
+      await loadRoleCache();
+      const role = getRoleFromUsername(username);
+      state.currentUser = { id: user.id, username, email: user.email, role };
+      state.isAdmin = role === CONFIG.AUTH.ROLES.ADMIN;
+      state.isTeacher = role === CONFIG.AUTH.ROLES.TEACHER || state.isAdmin;
+
+      DOM.authOverlay.classList.add('hidden');
+      setupPresence();
+      await renderSidebar();
+      await refreshUnreadBadges();
+      updateChatHeader();
+      updateProfile();
+
+      // If there's a channel, select it
+      if (state.allChannels.length) {
+        selectChannel(state.allChannels[0]);
+      }
+    }
+
+    async function handleLogin() {
+      const username = DOM.usernameInput.value.trim();
+      if (!username) { DOM.authErrorText.textContent = 'Please enter your School ID.'; DOM.authError.classList.remove('hidden'); return; }
+      DOM.authError.classList.add('hidden');
+      try {
+        const user = await loginWithUsername(username);
+        await completeLogin(username, user);
+      } catch (e) {
+        DOM.authErrorText.textContent = e.message || 'Login failed.';
+        DOM.authError.classList.remove('hidden');
+      }
+    }
+
+    async function restoreSession() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session || !session.user || !session.user.email) return;
+        const suffix = CONFIG.AUTH.EMAIL_SUFFIX;
+        if (!session.user.email.endsWith(suffix)) return;
+        const username = session.user.email.slice(0, -suffix.length);
+        await completeLogin(username, session.user);
+      } catch (e) { console.warn('Session restore failed:', e); }
+    }
+
+    async function signOut() {
+      if (!confirm('Sign out?')) return;
+      try { await supabase.auth.signOut(); } catch (e) {}
+      if (state.messagesSubscription) { supabase.removeChannel(state.messagesSubscription); state.messagesSubscription = null; }
+      if (state.scheduleSubscription) { supabase.removeChannel(state.scheduleSubscription); state.scheduleSubscription = null; }
+      teardownPresence();
+      state.currentUser = null;
+      state.currentChannel = null;
+      state.currentMembers = [];
+      state.messages = [];
+      state.isAdmin = false;
+      state.isTeacher = false;
+      DOM.authOverlay.classList.remove('hidden');
+      DOM.chatArea.classList.remove('active');
+      DOM.chatMessages.innerHTML = '<div class="empty-chat"><i class="fas fa-comment-dots"></i><span>Select a channel to start messaging</span></div>';
+      DOM.profileName.textContent = '—';
+      DOM.profileMeta.textContent = '—';
+      DOM.profileDesc.textContent = 'Select a channel';
+      DOM.profileMembersList.innerHTML = '<div class="empty-note">Select a channel</div>';
+      DOM.profileMediaGrid.innerHTML = '<div class="empty-note">No media yet</div>';
+      DOM.profileAdminActions.classList.add('hidden');
+      DOM.profileSchedule.classList.add('hidden');
+      DOM.chatHeaderName.textContent = 'Select a channel';
+      DOM.chatHeaderSub.textContent = '';
+      DOM.channelList.innerHTML = '<div class="empty-note" style="text-align:center;padding:40px 0;">Sign in to see channels</div>';
+    }
+
+    // ===== EVENT BINDINGS =====
+    DOM.loginBtn.addEventListener('click', handleLogin);
+    DOM.usernameInput.addEventListener('keypress', e => { if (e.key === 'Enter') handleLogin(); });
+
+    DOM.newChannelBtn.addEventListener('click', () => {
+      if (!state.isAdmin) { alert('Only admins can create channels.'); return; }
+      const name = prompt('New channel name:');
+      if (name) createChannel(name);
+    });
+
+    DOM.chatSearchInput.addEventListener('input', () => filterChatList(DOM.chatSearchInput.value));
+
+    DOM.sendMsgBtn.addEventListener('click', async () => {
+      const content = DOM.messageInput.value.trim();
+      const file = DOM.fileInput.files[0];
+      if (!content && !file) return;
+      await sendMessage(content, file);
+      DOM.messageInput.value = '';
+      DOM.fileInput.value = '';
+    });
+
+    DOM.messageInput.addEventListener('keypress', e => { if (e.key === 'Enter') { e.preventDefault(); DOM.sendMsgBtn.click(); } });
+
+    DOM.attachBtn.addEventListener('click', () => DOM.fileInput.click());
+
+    DOM.joinLiveBtn.addEventListener('click', joinLiveClass);
+    DOM.closeVideoBtn.addEventListener('click', () => {
+      DOM.videoOverlay.classList.add('hidden');
+      DOM.videoIframe.src = '';
+    });
+
+    DOM.profileToggleBtn.addEventListener('click', () => {
+      DOM.profilePanel.style.display = DOM.profilePanel.style.display === 'none' ? 'flex' : 'none';
+    });
+
+    DOM.chatHeaderClick.addEventListener('click', () => {
+      if (window.innerWidth <= 640) {
+        DOM.profilePanel.style.display = DOM.profilePanel.style.display === 'none' ? 'flex' : 'none';
+      }
+    });
+
+    DOM.backToChats.addEventListener('click', () => {
+      DOM.chatArea.classList.remove('active');
+    });
+
+    // Admin actions
+    DOM.assignStudentBtn.addEventListener('click', async () => {
+      const username = DOM.assignStudentInput.value.trim();
+      const role = DOM.assignRoleSelect.value;
+      await addMemberToChannel(username, role);
+      DOM.assignStudentInput.value = '';
+    });
+
+    DOM.setScheduleBtn.addEventListener('click', async () => {
+      await setClassSchedule(
+        DOM.scheduleTeacherInput.value.trim(),
+        DOM.scheduleTimeInput.value,
+        parseInt(DOM.scheduleDurationInput.value, 10)
+      );
+      DOM.scheduleTeacherInput.value = '';
+      DOM.scheduleTimeInput.value = '';
+    });
+
+    DOM.rosterGenBtn.addEventListener('click', generateRoster);
+    DOM.exportAttendanceBtn.addEventListener('click', exportAttendance);
+    DOM.signOutBtn.addEventListener('click', signOut);
+
+    DOM.updatesBtn.addEventListener('click', () => {
+      alert('Status updates feature — check the mobile version for full implementation.');
+    });
+
+    DOM.settingsBtn.addEventListener('click', () => {
+      alert('Settings — theme toggle and notification preferences available in mobile version.');
+    });
+
+    // ===== BOOTSTRAP =====
+    // Show auth or restore session
+    DOM.authOverlay.classList.remove('hidden');
+    restoreSession().then(() => {
+      // If no session, show auth
+      if (!state.currentUser) {
+        DOM.authOverlay.classList.remove('hidden');
+      }
+    });
+
+    // Handle window resize for responsive
+    window.addEventListener('resize', () => {
+      if (window.innerWidth > 640) {
+        DOM.chatArea.classList.remove('active');
+        DOM.profilePanel.style.display = 'flex';
+      } else {
+        DOM.profilePanel.style.display = 'none';
+      }
+    });
+
+    console.log('✅ Orbit Desktop initialized.');
+  })();
 </script>
 
 </body>
