@@ -1,98 +1,151 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { Plus, Search } from "lucide-react";
-import { PhoneShell } from "@/components/orbit/PhoneShell";
-import { TabBar } from "@/components/orbit/TabBar";
-import { Avatar } from "@/components/orbit/Avatar";
-import { channels } from "@/lib/orbit-data";
-import nousLogo from "@/assets/nouscomplex.png.asset.json";
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
 
-export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [
-      { title: "Orbit — Nous Complex Class Chats" },
-      {
-        name: "description",
-        content:
-          "Orbit by Nous Complex: class sessions, live classes, updates and shared media in one mobile hub.",
-      },
-      { property: "og:title", content: "Orbit — Nous Complex Class Chats" },
-      {
-        property: "og:description",
-        content: "Class sessions, live classes, updates and shared media in one mobile hub.",
-      },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  }),
-  component: ChatsScreen,
-});
+@custom-variant dark (&:is(.dark *));
 
-function ChatsScreen() {
-  return (
-    <PhoneShell>
-      <header className="flex items-center justify-between px-5 pb-3 pt-2">
-        <img
-          src={nousLogo.url}
-          alt="Nous Complex logo"
-          className="h-9 w-auto object-contain"
-        />
-        <h1 className="font-display text-3xl font-extrabold tracking-tight text-primary">Orbit</h1>
-      </header>
+/*
+ * NOUS COMPLEX ORBIT — design system.
+ * Palette is locked to three colors:
+ *   navy   #0e1b75  -> --primary
+ *   white  #ffffff  -> --surface / --primary-foreground
+ *   sky    #6bb4fa  -> --accent
+ * Neutrals are desaturated mixes of navy + white only.
+ */
 
-      <div className="px-5 pb-3">
-        <label className="flex items-center gap-2.5 rounded-pill bg-sunken px-4 py-3">
-          <Search className="h-4 w-4 text-faint" strokeWidth={2.4} />
-          <input
-            type="text"
-            placeholder="Search Sessions or Messages"
-            className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-faint"
-          />
-        </label>
-      </div>
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --radius-pill: 999px;
 
-      <ul className="scroll-hidden min-h-0 flex-1 overflow-y-auto px-3">
-        {channels.map((channel) => (
-          <li key={channel.id}>
-            <Link
-              to="/chat/$channelId"
-              params={{ channelId: channel.id }}
-              className="flex items-center gap-3 rounded-2xl px-2 py-3 transition-colors hover:bg-sunken"
-            >
-              <span className="relative">
-                <Avatar name={channel.name} variant="channel" size="lg" />
-                {channel.unread > 0 ? (
-                  <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-pill bg-accent px-1 text-[10px] font-bold text-accent-foreground">
-                    {channel.unread}
-                  </span>
-                ) : null}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="flex items-baseline justify-between gap-2">
-                  <span className="truncate font-display text-[15px] font-bold text-foreground">
-                    {channel.name}
-                  </span>
-                  <span className="shrink-0 text-[11px] text-muted-foreground">{channel.ago}</span>
-                </span>
-                <span className="mt-0.5 block truncate text-[13px] text-muted-foreground">
-                  {channel.lastAuthor}: {channel.lastText}
-                </span>
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-wash: var(--accent-wash);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-online: var(--online);
+  --color-shell: var(--shell);
 
-      <div className="flex justify-end px-6 pb-1">
-        <button
-          type="button"
-          className="flex h-12 w-12 items-center justify-center rounded-pill bg-primary text-primary-foreground shadow-card transition-transform hover:scale-105"
-          aria-label="New channel"
-        >
-          <Plus className="h-5 w-5" strokeWidth={2.6} />
-        </button>
-      </div>
+  --font-display: "Atkinson Hyperlegible", system-ui, sans-serif;
+  --font-body: "Atkinson Hyperlegible", system-ui, sans-serif;
 
-      <TabBar />
-    </PhoneShell>
-  );
+  --shadow-soft: 0 1px 2px oklch(0.2915 0.1511 267.52 / 0.06);
+  --shadow-card: 0 8px 24px -10px oklch(0.2915 0.1511 267.52 / 0.18);
+  --shadow-float: 0 20px 44px -18px oklch(0.2915 0.1511 267.52 / 0.42);
+}
+
+:root {
+  --radius: 0.875rem;
+
+  /* navy */
+  --primary: oklch(0.2915 0.1511 267.52);
+  --primary-foreground: oklch(1 0 0);
+  /* sky */
+  --accent: oklch(0.7509 0.1254 248.88);
+  --accent-foreground: oklch(0.2915 0.1511 267.52);
+  --accent-wash: oklch(0.955 0.028 248.88);
+
+  --background: oklch(0.972 0.008 270);
+  --foreground: oklch(0.2915 0.1511 267.52);
+  --surface: oklch(1 0 0);
+  --sunken: oklch(0.958 0.011 270);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.2915 0.1511 267.52);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.2915 0.1511 267.52);
+  --secondary: oklch(0.955 0.012 270);
+  --secondary-foreground: oklch(0.2915 0.1511 267.52);
+  --muted: oklch(0.955 0.012 270);
+  --muted-foreground: oklch(0.558 0.045 270);
+  --faint: oklch(0.7 0.032 270);
+  --destructive: oklch(0.42 0.11 267.52);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.928 0.016 270);
+  --border-strong: oklch(0.868 0.028 270);
+  --input: oklch(0.928 0.016 270);
+  --ring: oklch(0.7509 0.1254 248.88);
+  --online: oklch(0.7509 0.1254 248.88);
+  --shell: oklch(0.93 0.018 270);
+}
+
+.dark {
+  --background: oklch(0.19 0.062 267.52);
+  --foreground: oklch(0.98 0.005 270);
+  --surface: oklch(0.245 0.078 267.52);
+  --sunken: oklch(0.225 0.07 267.52);
+  --card: oklch(0.245 0.078 267.52);
+  --card-foreground: oklch(0.98 0.005 270);
+  --popover: oklch(0.245 0.078 267.52);
+  --popover-foreground: oklch(0.98 0.005 270);
+  --primary: oklch(0.7509 0.1254 248.88);
+  --primary-foreground: oklch(0.19 0.062 267.52);
+  --secondary: oklch(0.29 0.085 267.52);
+  --secondary-foreground: oklch(0.98 0.005 270);
+  --muted: oklch(0.29 0.085 267.52);
+  --muted-foreground: oklch(0.74 0.04 270);
+  --faint: oklch(0.62 0.045 270);
+  --accent: oklch(0.7509 0.1254 248.88);
+  --accent-foreground: oklch(0.19 0.062 267.52);
+  --accent-wash: oklch(0.3 0.09 260);
+  --border: oklch(0.34 0.08 267.52);
+  --border-strong: oklch(0.42 0.09 267.52);
+  --input: oklch(0.34 0.08 267.52);
+  --shell: oklch(0.13 0.05 267.52);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-shell);
+    color: var(--color-foreground);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: var(--font-display);
+  }
+}
+
+/* Hide scrollbars inside the phone frame while keeping scroll */
+@utility scroll-hidden {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
