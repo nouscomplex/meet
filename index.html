@@ -2,12 +2,43 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
-  <title>Ping · message app</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400&display=swap" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <title>Ping - Messaging</title>
+  
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap" rel="stylesheet">
+  
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  
   <style>
+    /* ============================================================
+       ROOT VARIABLES
+       ============================================================ */
+    :root {
+      --primary: #0e1b75;
+      --primary-dark: #0a1555;
+      --primary-light: #1a2d95;
+      --secondary: #6bb4fa;
+      --secondary-light: #8ec8fc;
+      --secondary-dark: #4a9ae0;
+      --bg: #f0f2f8;
+      --surface: #ffffff;
+      --border: #DBD9D9;
+      --text-primary: #1a1a2e;
+      --text-secondary: #6b6b80;
+      --text-light: #9999aa;
+      --shadow: 0 2px 16px rgba(14, 27, 117, 0.08);
+      --shadow-lg: 0 8px 40px rgba(14, 27, 117, 0.12);
+      --radius: 16px;
+      --radius-sm: 10px;
+      --radius-lg: 24px;
+      --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* ============================================================
+       RESET & BASE
+       ============================================================ */
     * {
       margin: 0;
       padding: 0;
@@ -15,735 +46,1204 @@
     }
 
     body {
-      background: #eef2f7;
       font-family: 'Lato', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text-primary);
+      min-height: 100vh;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ============================================================
+       APP LAYOUT
+       ============================================================ */
+    .app-container {
+      display: flex;
+      min-height: 100vh;
+      max-width: 1400px;
+      margin: 0 auto;
+      background: var(--bg);
+    }
+
+    /* ============================================================
+       SIDEBAR (Desktop)
+       ============================================================ */
+    .sidebar {
+      width: 72px;
+      background: var(--primary);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      flex-shrink: 0;
+      transition: var(--transition);
+      z-index: 100;
+    }
+
+    .sidebar-logo {
+      width: 44px;
+      height: 44px;
+      background: var(--secondary);
+      border-radius: 14px;
       display: flex;
       align-items: center;
       justify-content: center;
-      min-height: 100vh;
-      padding: 1.5rem;
-    }
-
-    /* ---------- main app card ---------- */
-    .app {
-      max-width: 1300px;
-      width: 100%;
-      background: #ffffff;
-      border-radius: 2rem;
-      box-shadow: 0 20px 60px rgba(14, 27, 117, 0.12);
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      transition: all 0.2s;
-    }
-
-    /* ---------- top bar (global) ---------- */
-    .topbar {
-      background: #0e1b75;
-      padding: 0.9rem 2rem;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    }
-
-    .topbar-brand {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      color: #ffffff;
-      font-weight: 900;
-      font-size: 1.35rem;
-      letter-spacing: -0.3px;
-    }
-    .topbar-brand i {
-      font-size: 1.5rem;
-      color: #6bb4fa;
-    }
-
-    .topbar-actions {
-      display: flex;
-      align-items: center;
-      gap: 1.5rem;
-      color: rgba(255,255,255,0.8);
-      font-size: 0.95rem;
-    }
-    .topbar-actions i {
-      font-size: 1.2rem;
-      color: #6bb4fa;
-      cursor: default;
-    }
-    .topbar-actions span {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      background: rgba(255,255,255,0.08);
-      padding: 0.3rem 1rem 0.3rem 0.8rem;
-      border-radius: 40px;
       color: #fff;
-      font-weight: 400;
+      font-weight: 900;
+      font-size: 20px;
+      margin-bottom: 32px;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .sidebar-logo:hover {
+      transform: scale(1.05);
+      box-shadow: 0 4px 20px rgba(107, 180, 250, 0.3);
     }
 
-    /* ---------- layout: 3 columns (desktop) ---------- */
-    .columns {
-      display: flex;
-      flex-direction: row;
-      min-height: 620px;
-      background: #ffffff;
-    }
-
-    /* ----- left column (chat list) ----- */
-    .col-chats {
-      width: 100%;
-      max-width: 340px;
-      border-right: 1px solid #dbd9d9;
-      background: #ffffff;
+    .sidebar-nav {
       display: flex;
       flex-direction: column;
+      gap: 8px;
+      flex: 1;
     }
 
-    .search-wrap {
-      padding: 1rem 1.2rem 0.6rem;
-      border-bottom: 1px solid #dbd9d9;
+    .sidebar-btn {
+      width: 48px;
+      height: 48px;
+      border: none;
+      border-radius: 14px;
+      background: transparent;
+      color: rgba(255,255,255,0.5);
+      font-size: 20px;
+      cursor: pointer;
+      transition: var(--transition);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
     }
-    .search-wrap input {
+    .sidebar-btn:hover {
+      background: rgba(255,255,255,0.08);
+      color: #fff;
+    }
+    .sidebar-btn.active {
+      background: rgba(107, 180, 250, 0.2);
+      color: var(--secondary);
+    }
+    .sidebar-btn .badge {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 18px;
+      height: 18px;
+      background: var(--secondary);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .sidebar-bottom {
+      margin-top: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .sidebar-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--secondary);
+      color: var(--primary);
+      font-weight: 700;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: var(--transition);
+    }
+    .sidebar-avatar:hover {
+      border-color: var(--secondary);
+      transform: scale(1.05);
+    }
+
+    /* ============================================================
+       MAIN CONTENT
+       ============================================================ */
+    .main-content {
+      flex: 1;
+      display: flex;
+      min-width: 0;
+      background: var(--bg);
+    }
+
+    /* ============================================================
+       CHAT LIST (Left Panel)
+       ============================================================ */
+    .chat-list-panel {
+      width: 380px;
+      min-width: 320px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      position: sticky;
+      top: 0;
+      overflow: hidden;
+    }
+
+    .chat-list-header {
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .chat-list-header h1 {
+      font-size: 28px;
+      font-weight: 900;
+      color: var(--primary);
+      letter-spacing: -0.5px;
+    }
+
+    .chat-list-header h1 span {
+      color: var(--secondary);
+    }
+
+    .search-bar {
+      position: relative;
+      margin-top: 12px;
+    }
+    .search-bar i {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-light);
+      font-size: 14px;
+    }
+    .search-bar input {
       width: 100%;
-      padding: 0.6rem 1rem 0.6rem 2.6rem;
-      background: #f5f6fa;
-      border: 1px solid #dbd9d9;
-      border-radius: 40px;
+      padding: 10px 14px 10px 42px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
       font-family: 'Lato', sans-serif;
-      font-size: 0.9rem;
-      color: #0e1b75;
+      font-size: 14px;
+      background: var(--bg);
+      color: var(--text-primary);
+      transition: var(--transition);
       outline: none;
-      transition: 0.2s;
-      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%236bb4fa" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>');
-      background-repeat: no-repeat;
-      background-position: 0.9rem center;
-      background-size: 1.1rem;
     }
-    .search-wrap input::placeholder {
-      color: #a0a5b5;
-      font-weight: 400;
+    .search-bar input:focus {
+      border-color: var(--secondary);
+      box-shadow: 0 0 0 4px rgba(107, 180, 250, 0.1);
     }
-    .search-wrap input:focus {
-      border-color: #6bb4fa;
-      background-color: #ffffff;
+    .search-bar input::placeholder {
+      color: var(--text-light);
     }
 
-    .chat-list {
+    .chat-list-scroll {
       flex: 1;
       overflow-y: auto;
-      padding: 0.6rem 0.2rem 1rem 0.2rem;
+      padding: 8px 8px 20px;
     }
 
+    /* Chat items */
     .chat-item {
       display: flex;
       align-items: center;
-      gap: 0.8rem;
-      padding: 0.7rem 1.2rem;
-      cursor: default;
-      border-radius: 0 30px 30px 0;
-      transition: 0.1s ease;
-      border-left: 3px solid transparent;
+      gap: 14px;
+      padding: 12px 16px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: var(--transition);
+      position: relative;
     }
     .chat-item:hover {
-      background: #f2f6fe;
-      border-left-color: #6bb4fa;
+      background: var(--bg);
     }
     .chat-item.active {
-      background: #eef4ff;
-      border-left-color: #0e1b75;
+      background: rgba(107, 180, 250, 0.08);
+    }
+    .chat-item.active::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 12px;
+      bottom: 12px;
+      width: 4px;
+      background: var(--secondary);
+      border-radius: 0 4px 4px 0;
     }
 
-    .avatar {
+    .chat-avatar {
       width: 48px;
       height: 48px;
       border-radius: 50%;
-      background: #6bb4fa;
-      color: #0e1b75;
+      flex-shrink: 0;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-weight: 900;
-      font-size: 1.1rem;
-      flex-shrink: 0;
-      background: #dbeafe;
-      color: #0e1b75;
+      font-weight: 700;
+      font-size: 18px;
+      color: #fff;
     }
-    .avatar.alt {
-      background: #ffd9d9;
-      color: #a13d3d;
-    }
-    .avatar.green {
-      background: #d4f0e0;
-      color: #0a5c3a;
-    }
+    .chat-avatar.blue { background: #4a9ae0; }
+    .chat-avatar.purple { background: #7c6bc4; }
+    .chat-avatar.green { background: #4caf84; }
+    .chat-avatar.orange { background: #e8945a; }
+    .chat-avatar.pink { background: #d97a9a; }
+    .chat-avatar.teal { background: #4db6ac; }
+    .chat-avatar.red { background: #e57373; }
+    .chat-avatar.grey { background: #90a4ae; }
 
     .chat-info {
       flex: 1;
       min-width: 0;
     }
-    .chat-info .name {
+    .chat-name {
       font-weight: 700;
-      color: #0e1b75;
-      font-size: 0.95rem;
+      font-size: 15px;
+      color: var(--text-primary);
       display: flex;
-      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
     }
-    .chat-info .name small {
-      font-weight: 400;
-      color: #7b7f93;
-      font-size: 0.7rem;
+    .chat-name .group-badge {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-light);
+      background: var(--bg);
+      padding: 1px 8px;
+      border-radius: 12px;
     }
-    .chat-info .preview {
-      font-size: 0.85rem;
-      color: #5c6077;
+    .chat-preview {
+      font-size: 13px;
+      color: var(--text-secondary);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      margin-top: 0.1rem;
+      margin-top: 1px;
     }
-    .chat-info .preview i {
-      color: #6bb4fa;
-      font-style: normal;
-    }
-    .badge {
-      background: #0e1b75;
-      color: #fff;
-      font-size: 0.65rem;
+    .chat-preview .sender {
       font-weight: 700;
-      padding: 0.1rem 0.6rem;
-      border-radius: 30px;
-      margin-left: 0.3rem;
+      color: var(--text-primary);
     }
 
-    /* ----- middle column (messages) ----- */
-    .col-messages {
+    .chat-meta {
+      flex-shrink: 0;
+      text-align: right;
+      margin-left: 8px;
+    }
+    .chat-time {
+      font-size: 11px;
+      color: var(--text-light);
+    }
+    .chat-unread {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 20px;
+      height: 20px;
+      background: var(--secondary);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      border-radius: 12px;
+      padding: 0 6px;
+      margin-top: 4px;
+    }
+
+    /* ============================================================
+       CHAT VIEW (Right Panel)
+       ============================================================ */
+    .chat-view {
       flex: 1;
-      background: #ffffff;
       display: flex;
       flex-direction: column;
+      background: var(--surface);
       min-width: 0;
-      border-right: 1px solid #dbd9d9;
     }
 
-    .msg-header {
-      padding: 0.8rem 1.5rem;
-      border-bottom: 1px solid #dbd9d9;
+    .chat-view-header {
       display: flex;
       align-items: center;
-      gap: 0.8rem;
-      background: #fafbff;
+      gap: 14px;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
     }
-    .msg-header .back {
+
+    .chat-view-back {
       display: none;
       background: none;
       border: none;
-      font-size: 1.2rem;
-      color: #0e1b75;
+      font-size: 20px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 4px;
     }
-    .msg-header .name {
-      font-weight: 900;
-      color: #0e1b75;
-      font-size: 1.1rem;
-    }
-    .msg-header .status {
-      font-size: 0.75rem;
-      color: #6bb4fa;
-      font-weight: 400;
-      margin-left: 0.4rem;
+    .chat-view-back:hover {
+      color: var(--primary);
     }
 
-    .messages-area {
-      flex: 1;
-      padding: 1.2rem 1.5rem;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 0.8rem;
-      background: #ffffff;
-    }
-
-    .message {
-      max-width: 75%;
-      padding: 0.55rem 1rem 0.55rem 1rem;
-      border-radius: 18px;
-      font-size: 0.9rem;
-      line-height: 1.5;
-      background: #f2f6fc;
-      color: #0e1b75;
-      align-self: flex-start;
-      word-break: break-word;
-      border: 1px solid #dbd9d9;
-    }
-    .message.mine {
-      align-self: flex-end;
-      background: #0e1b75;
-      color: #ffffff;
-      border-color: #0e1b75;
-    }
-    .message .time {
-      font-size: 0.6rem;
-      opacity: 0.7;
-      display: block;
-      text-align: right;
-      margin-top: 0.2rem;
-      font-weight: 400;
-      color: inherit;
-    }
-    .message.mine .time {
-      color: #b3c9ff;
-    }
-    .message .sender {
-      font-weight: 700;
-      font-size: 0.75rem;
-      color: #6bb4fa;
-      margin-bottom: 0.1rem;
-      display: block;
-    }
-
-    .composer {
-      border-top: 1px solid #dbd9d9;
-      padding: 0.7rem 1.2rem;
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-      background: #ffffff;
-    }
-    .composer input {
-      flex: 1;
-      border: 1px solid #dbd9d9;
-      border-radius: 40px;
-      padding: 0.6rem 1.2rem;
-      font-family: 'Lato', sans-serif;
-      font-size: 0.9rem;
-      outline: none;
-      background: #fafbff;
-      color: #0e1b75;
-    }
-    .composer input::placeholder {
-      color: #9aa0b5;
-    }
-    .composer input:focus {
-      border-color: #6bb4fa;
-      background: #ffffff;
-    }
-    .composer button {
-      background: #0e1b75;
-      border: none;
-      color: #fff;
-      width: 42px;
-      height: 42px;
-      border-radius: 42px;
-      font-size: 1.1rem;
+    .chat-view-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      flex-shrink: 0;
       display: flex;
       align-items: center;
       justify-content: center;
-      cursor: default;
-      transition: 0.1s;
-    }
-    .composer button i {
-      color: #6bb4fa;
-    }
-
-    /* ----- right column (settings / details) ----- */
-    .col-details {
-      width: 100%;
-      max-width: 280px;
-      background: #ffffff;
-      padding: 1.2rem 1.2rem 2rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1.2rem;
-      overflow-y: auto;
-    }
-
-    .profile-card {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      border-bottom: 1px solid #dbd9d9;
-      padding-bottom: 1.2rem;
-    }
-    .profile-card .avatar {
-      width: 72px;
-      height: 72px;
-      font-size: 1.8rem;
-      margin-bottom: 0.4rem;
-    }
-    .profile-card h4 {
-      color: #0e1b75;
-      font-weight: 900;
-      font-size: 1.1rem;
-    }
-    .profile-card .sub {
-      color: #6f7490;
-      font-size: 0.8rem;
-    }
-
-    .detail-group {
-      display: flex;
-      flex-direction: column;
-      gap: 0.4rem;
-    }
-    .detail-group .label {
       font-weight: 700;
-      font-size: 0.7rem;
-      letter-spacing: 0.5px;
-      color: #8d93ab;
-      text-transform: uppercase;
+      font-size: 16px;
+      color: #fff;
     }
-    .detail-item {
+
+    .chat-view-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .chat-view-name {
+      font-weight: 700;
+      font-size: 16px;
+      color: var(--text-primary);
+    }
+    .chat-view-status {
+      font-size: 12px;
+      color: var(--text-light);
+    }
+    .chat-view-status .online-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      background: #4caf84;
+      border-radius: 50%;
+      margin-right: 4px;
+    }
+
+    .chat-view-actions {
+      display: flex;
+      gap: 4px;
+    }
+    .chat-view-actions button {
+      width: 36px;
+      height: 36px;
+      border: none;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 16px;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .chat-view-actions button:hover {
+      background: var(--bg);
+      color: var(--primary);
+    }
+
+    /* Messages */
+    .messages-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: var(--bg);
+    }
+
+    .message-date-divider {
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-light);
+      padding: 8px 0;
+      position: relative;
+    }
+    .message-date-divider::before {
+      content: '';
+      position: absolute;
+      left: 20%;
+      right: 20%;
+      top: 50%;
+      height: 1px;
+      background: var(--border);
+    }
+    .message-date-divider span {
+      background: var(--bg);
+      padding: 0 12px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .message {
+      max-width: 70%;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .message.sent {
+      align-self: flex-end;
+      align-items: flex-end;
+    }
+    .message.received {
+      align-self: flex-start;
+    }
+
+    .message-bubble {
+      padding: 10px 16px;
+      border-radius: var(--radius);
+      font-size: 14px;
+      line-height: 1.5;
+      word-wrap: break-word;
+    }
+    .message.sent .message-bubble {
+      background: var(--primary);
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    .message.received .message-bubble {
+      background: var(--surface);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 4px;
+    }
+
+    .message-meta {
       display: flex;
       align-items: center;
-      gap: 0.8rem;
-      padding: 0.45rem 0.2rem;
-      border-bottom: 1px solid #f0f0f5;
-      color: #0e1b75;
-      font-size: 0.9rem;
-      cursor: default;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--text-light);
+      margin-top: 2px;
     }
-    .detail-item i {
-      color: #6bb4fa;
-      width: 1.2rem;
-      font-size: 1rem;
+    .message.sent .message-meta {
+      justify-content: flex-end;
     }
-    .detail-item .meta {
-      margin-left: auto;
-      color: #8d93ab;
-      font-size: 0.75rem;
-    }
-    .detail-item .toggle {
-      margin-left: auto;
-      color: #6bb4fa;
-    }
-    .detail-item.logout {
-      color: #b34a4a;
-    }
-    .detail-item.logout i {
-      color: #b34a4a;
+    .message-meta .read-receipt {
+      color: var(--secondary);
     }
 
-    .separator {
-      border-top: 1px solid #dbd9d9;
-      margin: 0.2rem 0;
+    /* Composer */
+    .composer-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 20px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
     }
 
-    /* ---------- responsive ---------- */
+    .composer-container .attach-btn {
+      width: 40px;
+      height: 40px;
+      border: none;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 18px;
+      cursor: pointer;
+      transition: var(--transition);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .composer-container .attach-btn:hover {
+      background: var(--bg);
+      color: var(--primary);
+    }
+
+    .composer-container input[type="text"] {
+      flex: 1;
+      padding: 10px 16px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-lg);
+      font-family: 'Lato', sans-serif;
+      font-size: 14px;
+      outline: none;
+      background: var(--bg);
+      color: var(--text-primary);
+      transition: var(--transition);
+    }
+    .composer-container input[type="text"]:focus {
+      border-color: var(--secondary);
+      box-shadow: 0 0 0 4px rgba(107, 180, 250, 0.08);
+    }
+
+    .composer-container .send-btn {
+      width: 40px;
+      height: 40px;
+      border: none;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      font-size: 16px;
+      cursor: pointer;
+      transition: var(--transition);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .composer-container .send-btn:hover {
+      background: var(--primary-dark);
+      transform: scale(1.05);
+    }
+
+    /* Empty state */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-secondary);
+      text-align: center;
+      padding: 40px;
+    }
+    .empty-state i {
+      font-size: 48px;
+      color: var(--border);
+      margin-bottom: 16px;
+    }
+    .empty-state h3 {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 8px;
+    }
+    .empty-state p {
+      font-size: 14px;
+      max-width: 300px;
+    }
+
+    /* ============================================================
+       RESPONSIVE
+       ============================================================ */
     @media (max-width: 1024px) {
-      .col-details {
-        max-width: 240px;
-        padding: 1rem 0.8rem;
-      }
-      .col-chats {
-        max-width: 280px;
+      .chat-list-panel {
+        width: 340px;
+        min-width: 280px;
       }
     }
 
     @media (max-width: 820px) {
-      .col-details {
-        display: none; /* hide right panel on tablet */
+      .sidebar {
+        width: 60px;
+        padding: 16px 0;
       }
-      .col-chats {
-        max-width: 300px;
+      .sidebar-logo {
+        width: 38px;
+        height: 38px;
+        font-size: 17px;
+      }
+      .sidebar-btn {
+        width: 42px;
+        height: 42px;
+        font-size: 17px;
+      }
+      .sidebar-avatar {
+        width: 36px;
+        height: 36px;
+        font-size: 14px;
+      }
+      .chat-list-panel {
+        width: 300px;
+        min-width: 260px;
       }
     }
 
-    @media (max-width: 640px) {
-      body {
-        padding: 0;
-        background: #ffffff;
-      }
-      .app {
-        border-radius: 0;
-        box-shadow: none;
-        height: 100vh;
-        height: 100dvh;
-      }
-      .columns {
+    @media (max-width: 720px) {
+      .app-container {
         flex-direction: column;
-        height: 100%;
       }
-      .col-chats {
-        max-width: 100%;
-        border-right: none;
-        display: none; /* hidden by default, shown on toggle */
-        height: 100%;
-      }
-      .col-chats.open {
-        display: flex;
-        position: absolute;
-        z-index: 10;
-        background: #fff;
-        width: 100%;
-        height: 100%;
-        border-right: none;
-      }
-      .col-messages {
-        flex: 1;
-        border-right: none;
-        height: 100%;
-      }
-      .msg-header .back {
-        display: inline-block;
-      }
-      .topbar {
-        padding: 0.6rem 1rem;
-      }
-      .topbar-actions span {
+
+      .sidebar {
         display: none;
       }
-      .topbar-actions i {
-        font-size: 1.1rem;
+
+      .mobile-sidebar {
+        display: flex !important;
+        background: var(--primary);
+        padding: 12px 20px;
+        align-items: center;
+        justify-content: space-between;
+        position: sticky;
+        top: 0;
+        z-index: 50;
+      }
+      .mobile-sidebar .logo {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        color: #fff;
+        font-weight: 900;
+        font-size: 20px;
+      }
+      .mobile-sidebar .logo span {
+        color: var(--secondary);
+      }
+      .mobile-sidebar .logo-icon {
+        width: 36px;
+        height: 36px;
+        background: var(--secondary);
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        color: var(--primary);
+        font-weight: 900;
+      }
+      .mobile-sidebar .mobile-actions {
+        display: flex;
+        gap: 8px;
+      }
+      .mobile-sidebar .mobile-actions button {
+        width: 36px;
+        height: 36px;
+        border: none;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.1);
+        color: #fff;
+        font-size: 16px;
+        cursor: pointer;
+        transition: var(--transition);
+      }
+      .mobile-sidebar .mobile-actions button:hover {
+        background: rgba(255,255,255,0.2);
+      }
+
+      .mobile-sidebar {
+        display: flex !important;
+      }
+
+      .main-content {
+        flex-direction: column;
+        height: calc(100vh - 60px);
+      }
+
+      .chat-list-panel {
+        width: 100%;
+        min-width: unset;
+        height: 100%;
+        position: static;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .chat-list-panel.hidden {
+        display: none;
+      }
+
+      .chat-view {
+        height: 100%;
+        display: none;
+      }
+      .chat-view.visible {
+        display: flex;
+      }
+
+      .chat-view-back {
+        display: block;
+      }
+
+      .chat-list-header h1 {
+        font-size: 22px;
+      }
+
+      .chat-item {
+        padding: 10px 14px;
+      }
+      .chat-avatar {
+        width: 42px;
+        height: 42px;
+        font-size: 16px;
+      }
+
+      .messages-container {
+        padding: 14px 16px;
       }
       .message {
         max-width: 85%;
-        font-size: 0.9rem;
-      }
-      .composer {
-        padding: 0.5rem 0.8rem;
-      }
-      .composer input {
-        font-size: 0.9rem;
-      }
-      .chat-list {
-        padding: 0.2rem 0;
-      }
-      .chat-item {
-        padding: 0.6rem 1rem;
       }
 
-      /* hide details column on small */
-      .col-details {
-        display: none;
+      .composer-container {
+        padding: 10px 14px;
       }
     }
 
     @media (max-width: 480px) {
-      .topbar-brand {
-        font-size: 1.1rem;
+      .chat-list-header {
+        padding: 14px 16px 12px;
       }
-      .topbar-brand i {
-        font-size: 1.2rem;
+      .chat-list-header h1 {
+        font-size: 20px;
       }
-      .msg-header {
-        padding: 0.5rem 1rem;
+      .search-bar input {
+        font-size: 13px;
+        padding: 8px 12px 8px 36px;
       }
-      .messages-area {
-        padding: 1rem 0.8rem;
+      .chat-item {
+        padding: 8px 12px;
+        gap: 10px;
       }
-      .message {
-        font-size: 0.85rem;
-        padding: 0.4rem 0.8rem;
+      .chat-avatar {
+        width: 38px;
+        height: 38px;
+        font-size: 14px;
+      }
+      .chat-name {
+        font-size: 14px;
+      }
+      .chat-preview {
+        font-size: 12px;
+      }
+      .message-bubble {
+        font-size: 13px;
+        padding: 8px 14px;
+      }
+      .chat-view-header {
+        padding: 12px 16px;
+      }
+      .messages-container {
+        padding: 12px 14px;
+      }
+      .composer-container input[type="text"] {
+        font-size: 13px;
+        padding: 8px 12px;
       }
     }
 
-    /* ---------- helpers ---------- */
-    .flex-center {
-      display: flex;
-      align-items: center;
-      justify-content: center;
+    /* ============================================================
+       SCROLLBAR STYLING
+       ============================================================ */
+    ::-webkit-scrollbar {
+      width: 4px;
     }
-    .icon {
-      font-style: normal;
-      font-weight: 400;
+    ::-webkit-scrollbar-track {
+      background: transparent;
     }
-    .text-ellipsis {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+    ::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-light);
+    }
+
+    /* ============================================================
+       UTILITY
+       ============================================================ */
+    .hidden {
+      display: none !important;
+    }
+
+    .mobile-sidebar {
+      display: none !important;
+    }
+
+    .no-messages {
+      text-align: center;
+      color: var(--text-light);
+      font-size: 14px;
+      padding: 40px 20px;
+    }
+    .no-messages i {
+      font-size: 32px;
+      color: var(--border);
+      margin-bottom: 12px;
+      display: block;
     }
   </style>
 </head>
 <body>
-<div class="app">
 
-  <!-- top bar -->
-  <div class="topbar">
-    <div class="topbar-brand">
-      <i>💬</i> Ping
+<div class="app-container">
+  
+  <!-- ===== SIDEBAR ===== -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">P</div>
+    <nav class="sidebar-nav">
+      <button class="sidebar-btn active" title="Chats">
+        <i class="fas fa-comment-dots"></i>
+        <span class="badge">3</span>
+      </button>
+      <button class="sidebar-btn" title="Contacts">
+        <i class="fas fa-address-book"></i>
+      </button>
+      <button class="sidebar-btn" title="Settings">
+        <i class="fas fa-gear"></i>
+      </button>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="sidebar-avatar">JD</div>
     </div>
-    <div class="topbar-actions">
-      <i>🔔</i>
-      <span><i>👤</i> Sarah J.</span>
-      <i>⚙️</i>
-    </div>
-  </div>
+  </aside>
 
-  <!-- columns -->
-  <div class="columns">
+  <!-- ===== MAIN CONTENT ===== -->
+  <div class="main-content">
 
-    <!-- left: chat list -->
-    <div class="col-chats" id="chatListCol">
-      <div class="search-wrap">
-        <input type="text" placeholder="Search messages, groups…" />
+    <!-- ===== MOBILE SIDEBAR ===== -->
+    <div class="mobile-sidebar">
+      <div class="logo">
+        <div class="logo-icon">P</div>
+        <span>Ping</span>
       </div>
-      <div class="chat-list">
-        <!-- active -->
-        <div class="chat-item active">
-          <div class="avatar">SJ</div>
-          <div class="chat-info">
-            <div class="name">Sarah Jenkins <small>12:34</small></div>
-            <div class="preview"><i>•</i> Are we still meeting up for coffee today?</div>
-          </div>
-        </div>
-        <div class="chat-item">
-          <div class="avatar alt">AC</div>
-          <div class="chat-info">
-            <div class="name">Alex Rivera <small>11:20</small></div>
-            <div class="preview">Yes! I just went over it. The copy looks really crisp…</div>
-          </div>
-        </div>
-        <div class="chat-item">
-          <div class="avatar green">MC</div>
-          <div class="chat-info">
-            <div class="name">Michael Chang <small>10:05</small></div>
-            <div class="preview">Send you the project update document.</div>
-          </div>
-        </div>
-        <div class="chat-item">
-          <div class="avatar">EW</div>
-          <div class="chat-info">
-            <div class="name">Emma Watson <small>9:12</small></div>
-            <div class="preview">That looks absolutely amazing!</div>
-          </div>
-        </div>
-        <div class="chat-item">
-          <div class="avatar alt">DM</div>
-          <div class="chat-info">
-            <div class="name">David Miller <small>yesterday</small></div>
-            <div class="preview">I uploaded the new design directions…</div>
-          </div>
-        </div>
-        <div class="chat-item">
-          <div class="avatar">JD</div>
-          <div class="chat-info">
-            <div class="name">Jane Doe <small>yesterday</small></div>
-            <div class="preview">Design at Studio</div>
-          </div>
-        </div>
-        <div class="chat-item">
-          <div class="avatar green">AB</div>
-          <div class="chat-info">
-            <div class="name">Alex Brown <small>2d</small></div>
-            <div class="preview">Let's sync tomorrow</div>
-          </div>
-        </div>
+      <div class="mobile-actions">
+        <button onclick="toggleChatList()"><i class="fas fa-search"></i></button>
+        <button onclick="toggleChatList()"><i class="fas fa-ellipsis-vertical"></i></button>
       </div>
     </div>
 
-    <!-- middle: messages -->
-    <div class="col-messages">
-      <div class="msg-header">
-        <button class="back" id="mobileBackBtn" aria-label="back">←</button>
-        <div class="avatar" style="width:38px;height:38px;font-size:0.9rem;">SJ</div>
-        <div>
-          <span class="name">Sarah Jenkins</span>
-          <span class="status">● online</span>
+    <!-- ===== CHAT LIST ===== -->
+    <div class="chat-list-panel" id="chatListPanel">
+      <div class="chat-list-header">
+        <h1>Ping</h1>
+        <div class="search-bar">
+          <i class="fas fa-search"></i>
+          <input type="text" placeholder="Search messages, groups..." id="searchInput">
         </div>
       </div>
-
-      <div class="messages-area" id="messageArea">
-        <div class="message"><span class="sender">Sarah Jenkins</span>Hey! Did you have a chance to look at the draft?<span class="time">11:02</span></div>
-        <div class="message mine"><span class="sender" style="color:#b3c9ff;">You</span>I uploaded the new wireframes for review.<span class="time">11:05</span></div>
-        <div class="message"><span class="sender">Alex Rivera</span>Yes! I just went over it. The copy looks really crisp and structured perfectly.<span class="time">11:20</span></div>
-        <div class="message"><span class="sender">Sarah Jenkins</span>Awesome! Let me look over them now.<span class="time">11:22</span></div>
-        <div class="message mine"><span class="sender" style="color:#b3c9ff;">You</span>Looks great. I'll add the feedback document directly there.<span class="time">11:24</span></div>
-        <div class="message"><span class="sender">Sarah Jenkins</span>Are we still meeting up for coffee today?<span class="time">12:34</span></div>
-        <div class="message"><span class="sender">Emma Watson</span>That looks absolutely amazing! 😍<span class="time">12:40</span></div>
-      </div>
-
-      <div class="composer">
-        <input type="text" placeholder="Message Sarah Jenkins…" />
-        <button><i>↑</i></button>
+      <div class="chat-list-scroll" id="chatList">
+        <!-- Chat items rendered by JS -->
       </div>
     </div>
 
-    <!-- right: details / settings -->
-    <div class="col-details">
-      <div class="profile-card">
-        <div class="avatar" style="width:72px;height:72px;font-size:1.8rem;background:#0e1b75;color:#fff;">SJ</div>
-        <h4>Sarah Jenkins</h4>
-        <div class="sub">Design at Studio · <span style="color:#6bb4fa;">online</span></div>
+    <!-- ===== CHAT VIEW ===== -->
+    <div class="chat-view" id="chatView">
+      <div class="chat-view-header">
+        <button class="chat-view-back" onclick="goBack()">
+          <i class="fas fa-arrow-left"></i>
+        </button>
+        <div class="chat-view-avatar blue" id="viewAvatar">SJ</div>
+        <div class="chat-view-info">
+          <div class="chat-view-name" id="viewName">Sarah Jenkins</div>
+          <div class="chat-view-status" id="viewStatus">
+            <span class="online-dot"></span> Online
+          </div>
+        </div>
+        <div class="chat-view-actions">
+          <button title="Call"><i class="fas fa-phone"></i></button>
+          <button title="Video"><i class="fas fa-video"></i></button>
+          <button title="More"><i class="fas fa-ellipsis-vertical"></i></button>
+        </div>
       </div>
 
-      <div class="detail-group">
-        <div class="label">Contacts</div>
-        <div class="detail-item"><i>✉️</i> Alex Rivera <span class="meta">✉</span></div>
-        <div class="detail-item"><i>✉️</i> Emma Watson <span class="meta">✉</span></div>
-        <div class="detail-item"><i>✉️</i> David Miller <span class="meta">✉</span></div>
-        <div class="detail-item"><i>✉️</i> Michael Chang <span class="meta">✉</span></div>
-        <div class="detail-item"><i>✉️</i> Jane Doe <span class="meta" style="color:#6bb4fa;">Design</span></div>
+      <div class="messages-container" id="messagesContainer">
+        <!-- Messages rendered by JS -->
       </div>
 
-      <div class="separator"></div>
-
-      <div class="detail-group">
-        <div class="label">Settings</div>
-        <div class="detail-item"><i>🔐</i> Account <span class="meta">security, backup</span></div>
-        <div class="detail-item"><i>🔔</i> Notification <span class="meta"><span class="toggle">🔊</span></span></div>
-        <div class="detail-item"><i>🌙</i> Dark Theme <span class="meta"><span class="toggle">◐</span></span></div>
-        <div class="detail-item"><i>🛡️</i> Privacy & Security <span class="meta">biometrics</span></div>
-        <div class="detail-item logout"><i>🚪</i> Log out</div>
-        <div class="detail-item logout" style="border-bottom:none;"><i>🗑️</i> Delete Account</div>
+      <div class="composer-container">
+        <button class="attach-btn" title="Attach">
+          <i class="fas fa-paperclip"></i>
+        </button>
+        <input type="text" placeholder="Type a message..." id="messageInput">
+        <button class="send-btn" onclick="sendMessage()">
+          <i class="fas fa-arrow-up"></i>
+        </button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- simple mobile back toggle (chat list appears as overlay) -->
 <script>
-  (function() {
-    const backBtn = document.getElementById('mobileBackBtn');
-    const chatCol = document.getElementById('chatListCol');
-    let isOpen = false;
+  // ============================================================
+  // DATA
+  // ============================================================
+  const chatData = [
+    {
+      id: 1,
+      name: 'Sarah Jenkins',
+      avatar: 'SJ',
+      color: 'blue',
+      preview: 'Are we still meeting up for coffee today?',
+      time: '12:45 PM',
+      unread: 2,
+      online: true,
+      messages: [
+        { id: 1, sender: 'Sarah Jenkins', text: 'Hey! Did you have a chance to look at the draft?', time: '12:30 PM', sent: false },
+        { id: 2, sender: 'Sarah Jenkins', text: 'I uploaded the new design directions to the share folder.', time: '12:35 PM', sent: false },
+        { id: 3, sender: 'Me', text: 'Yes! I just went over it. The copy looks really crisp and structured perfectly.', time: '12:40 PM', sent: true },
+        { id: 4, sender: 'Sarah Jenkins', text: 'Awesome! Let me look over them now.', time: '12:42 PM', sent: false },
+        { id: 5, sender: 'Me', text: 'Looks great. I\'ll add the feedback document directly there.', time: '12:45 PM', sent: true }
+      ]
+    },
+    {
+      id: 2,
+      name: 'Design Critique Group',
+      avatar: 'DC',
+      color: 'purple',
+      preview: 'Alex: I uploaded the new wireframes for review.',
+      time: '11:20 AM',
+      unread: 5,
+      online: false,
+      isGroup: true,
+      messages: [
+        { id: 1, sender: 'Alex Rivera', text: 'I uploaded the new wireframes for review.', time: '11:00 AM', sent: false },
+        { id: 2, sender: 'Me', text: 'Great! I\'ll take a look right away.', time: '11:10 AM', sent: true },
+        { id: 3, sender: 'Emma Watson', text: 'The navigation flow looks much cleaner now.', time: '11:20 AM', sent: false }
+      ]
+    },
+    {
+      id: 3,
+      name: 'Michael Chang',
+      avatar: 'MC',
+      color: 'green',
+      preview: 'Send you the project update document.',
+      time: '10:15 AM',
+      unread: 0,
+      online: false,
+      messages: [
+        { id: 1, sender: 'Michael Chang', text: 'I\'ll send you the project update document.', time: '10:00 AM', sent: false },
+        { id: 2, sender: 'Me', text: 'Thanks Michael! Looking forward to it.', time: '10:15 AM', sent: true }
+      ]
+    },
+    {
+      id: 4,
+      name: 'Emma Watson',
+      avatar: 'EW',
+      color: 'pink',
+      preview: 'That looks absolutely amazing!',
+      time: '9:30 AM',
+      unread: 1,
+      online: true,
+      messages: [
+        { id: 1, sender: 'Emma Watson', text: 'That looks absolutely amazing! The design is incredible.', time: '9:30 AM', sent: false }
+      ]
+    },
+    {
+      id: 5,
+      name: 'Alex Rivera',
+      avatar: 'AR',
+      color: 'orange',
+      preview: 'Yes! I just went over it. The copy looks...',
+      time: 'Yesterday',
+      unread: 0,
+      online: false,
+      messages: [
+        { id: 1, sender: 'Alex Rivera', text: 'Yes! I just went over it. The copy looks really crisp and structured perfectly.', time: 'Yesterday', sent: false }
+      ]
+    },
+    {
+      id: 6,
+      name: 'David Miller',
+      avatar: 'DM',
+      color: 'teal',
+      preview: 'Hey! Did you get my last message?',
+      time: 'Yesterday',
+      unread: 0,
+      online: false,
+      messages: [
+        { id: 1, sender: 'David Miller', text: 'Hey! Did you get my last message?', time: 'Yesterday', sent: false }
+      ]
+    }
+  ];
 
-    // on small screens, click back toggles chat list
-    if (backBtn && chatCol) {
-      backBtn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        if (window.innerWidth <= 640) {
-          isOpen = !isOpen;
-          chatCol.classList.toggle('open', isOpen);
-          if (isOpen) {
-            chatCol.style.display = 'flex';
-          } else {
-            chatCol.style.display = 'none';
-          }
-        }
-      });
+  // ============================================================
+  // STATE
+  // ============================================================
+  let activeChatId = 1;
+  let currentView = 'list'; // 'list' or 'chat'
 
-      // close chat list if click outside on mobile (optional)
-      document.addEventListener('click', function(e) {
-        if (window.innerWidth <= 640 && isOpen) {
-          if (!chatCol.contains(e.target) && !backBtn.contains(e.target)) {
-            chatCol.classList.remove('open');
-            chatCol.style.display = 'none';
-            isOpen = false;
-          }
-        }
-      });
+  // ============================================================
+  // DOM REFS
+  // ============================================================
+  const chatListEl = document.getElementById('chatList');
+  const messagesContainer = document.getElementById('messagesContainer');
+  const viewName = document.getElementById('viewName');
+  const viewAvatar = document.getElementById('viewAvatar');
+  const viewStatus = document.getElementById('viewStatus');
+  const searchInput = document.getElementById('searchInput');
+  const messageInput = document.getElementById('messageInput');
+  const chatListPanel = document.getElementById('chatListPanel');
+  const chatView = document.getElementById('chatView');
+
+  // ============================================================
+  // RENDER FUNCTIONS
+  // ============================================================
+  function renderChatList(filter = '') {
+    const query = filter.toLowerCase().trim();
+    const filtered = chatData.filter(chat => 
+      chat.name.toLowerCase().includes(query) ||
+      chat.preview.toLowerCase().includes(query)
+    );
+
+    if (filtered.length === 0) {
+      chatListEl.innerHTML = `
+        <div style="text-align:center;padding:40px 20px;color:var(--text-light);">
+          <i class="fas fa-search" style="font-size:24px;display:block;margin-bottom:12px;color:var(--border);"></i>
+          No conversations found
+        </div>
+      `;
+      return;
     }
 
-    // ensure chat list visible on desktop
-    function handleResize() {
-      if (window.innerWidth > 640) {
-        chatCol.style.display = 'flex';
-        chatCol.classList.remove('open');
+    chatListEl.innerHTML = filtered.map(chat => `
+      <div class="chat-item ${chat.id === activeChatId ? 'active' : ''}" onclick="openChat(${chat.id})">
+        <div class="chat-avatar ${chat.color}">${chat.avatar}</div>
+        <div class="chat-info">
+          <div class="chat-name">
+            ${chat.name}
+            ${chat.isGroup ? '<span class="group-badge">Group</span>' : ''}
+          </div>
+          <div class="chat-preview">
+            ${chat.preview}
+          </div>
+        </div>
+        <div class="chat-meta">
+          <div class="chat-time">${chat.time}</div>
+          ${chat.unread > 0 ? `<div class="chat-unread">${chat.unread}</div>` : ''}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function renderMessages(chatId) {
+    const chat = chatData.find(c => c.id === chatId);
+    if (!chat) return;
+
+    viewName.textContent = chat.name;
+    viewAvatar.textContent = chat.avatar;
+    viewAvatar.className = `chat-view-avatar ${chat.color}`;
+    viewStatus.innerHTML = chat.online 
+      ? '<span class="online-dot"></span> Online' 
+      : 'Last seen recently';
+
+    if (chat.messages.length === 0) {
+      messagesContainer.innerHTML = `
+        <div class="no-messages">
+          <i class="fas fa-comment"></i>
+          No messages yet
+        </div>
+      `;
+      return;
+    }
+
+    // Group messages by date
+    let html = '';
+    let lastDate = '';
+
+    chat.messages.forEach((msg, index) => {
+      const date = msg.time;
+      if (date !== lastDate) {
+        html += `<div class="message-date-divider"><span>${date}</span></div>`;
+        lastDate = date;
+      }
+
+      const isSent = msg.sent;
+      html += `
+        <div class="message ${isSent ? 'sent' : 'received'}">
+          <div class="message-bubble">${msg.text}</div>
+          <div class="message-meta">
+            ${msg.time}
+            ${isSent ? '<span class="read-receipt"><i class="fas fa-check-double"></i></span>' : ''}
+          </div>
+        </div>
+      `;
+    });
+
+    messagesContainer.innerHTML = html;
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  }
+
+  // ============================================================
+  // ACTIONS
+  // ============================================================
+  function openChat(chatId) {
+    activeChatId = chatId;
+    renderChatList(searchInput.value);
+    renderMessages(chatId);
+    
+    // Mobile: show chat view
+    if (window.innerWidth <= 720) {
+      chatListPanel.classList.add('hidden');
+      chatView.classList.add('visible');
+      currentView = 'chat';
+    }
+  }
+
+  function goBack() {
+    if (window.innerWidth <= 720) {
+      chatListPanel.classList.remove('hidden');
+      chatView.classList.remove('visible');
+      currentView = 'list';
+    }
+  }
+
+  function sendMessage() {
+    const text = messageInput.value.trim();
+    if (!text) return;
+
+    const chat = chatData.find(c => c.id === activeChatId);
+    if (!chat) return;
+
+    chat.messages.push({
+      id: Date.now(),
+      sender: 'Me',
+      text: text,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      sent: true
+    });
+
+    // Update preview
+    chat.preview = text;
+    chat.time = 'Just now';
+
+    messageInput.value = '';
+    renderMessages(activeChatId);
+    renderChatList(searchInput.value);
+  }
+
+  function toggleChatList() {
+    if (window.innerWidth <= 720) {
+      if (currentView === 'chat') {
+        goBack();
       } else {
-        if (!isOpen) {
-          chatCol.style.display = 'none';
-        } else {
-          chatCol.style.display = 'flex';
-        }
+        chatListPanel.classList.toggle('hidden');
       }
     }
-    window.addEventListener('resize', handleResize);
-    handleResize();
-  })();
+  }
+
+  // ============================================================
+  // EVENT LISTENERS
+  // ============================================================
+  searchInput.addEventListener('input', (e) => {
+    renderChatList(e.target.value);
+  });
+
+  messageInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  // Handle resize
+  window.addEventListener('resize', () => {
+    if (window.innerWidth > 720) {
+      chatListPanel.classList.remove('hidden');
+      chatView.classList.remove('visible');
+      currentView = 'list';
+    }
+  });
+
+  // ============================================================
+  // INIT
+  // ============================================================
+  renderChatList();
+  renderMessages(activeChatId);
+
+  console.log('📱 Ping — Messaging App');
+  console.log(`📊 ${chatData.length} conversations loaded`);
 </script>
+
 </body>
 </html>
