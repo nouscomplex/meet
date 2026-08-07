@@ -85,7 +85,7 @@
     authCard: $('authCard'),
     dashboard: $('dashboard'),
     usernameInput: $('usernameInput'),
-    passwordInput: $('passwordInput'), // [NCO-KEEP: restrict-login-without-password]
+    passwordInput: $('passwordInput'),
     loginBtn: $('loginBtn'),
     authError: $('authError'),
     authErrorText: $('authErrorText'),
@@ -113,7 +113,7 @@
     statusPlaceholder: $('statusPlaceholder'),
     statusAddBtn: $('statusAddBtn'),
     postStatusBtn: $('postStatusBtn'),
-    postStatusFab: $('postStatusFab'), // [NCO-KEEP: status-compose-modal] was in HTML but never wired up before
+    postStatusFab: $('postStatusFab'),
 
     // settings
     settingsAvatar: $('settingsAvatar'),
@@ -164,7 +164,7 @@
     memberSearchInput: $('memberSearchInput'),
     adminAddMemberRow: $('adminAddMemberRow'),
     assignStudentInput: $('assignStudentInput'),
-    registeredUsersList: $('registeredUsersList'), // [NCO-KEEP: restrict-add-to-registered-users]
+    registeredUsersList: $('registeredUsersList'),
     assignRoleSelect: $('assignRoleSelect'),
     assignStudentBtn: $('assignStudentBtn'),
     channelMembersList: $('channelMembersList'),
@@ -192,9 +192,9 @@
     statusViewerAvatar: $('statusViewerAvatar'),
     statusModalTitle: $('statusModalTitle'),
     statusModalTime: $('statusModalTime'),
-    statusModalMedia: $('statusModalMedia'), // [NCO-KEEP: status-media]
+    statusModalMedia: $('statusModalMedia'),
     statusModalContent: $('statusModalContent'),
-    statusPauseBtn: $('statusPauseBtn'), // [NCO-KEEP: status-pause-btn]
+    statusPauseBtn: $('statusPauseBtn'),
   };
 
   // ============================================================
@@ -347,15 +347,9 @@
     (data || []).forEach((row) => {
       state.roleCache[row.username.toLowerCase()] = row.role;
     });
-    populateRegisteredUsersDatalist(); // [NCO-KEEP: restrict-add-to-registered-users]
+    populateRegisteredUsersDatalist();
   }
 
-  // [NCO-KEEP: restrict-add-to-registered-users] state.roleCache is the
-  // authoritative registry of real accounts (everyone in user_roles) —
-  // this just mirrors its keys into the <datalist> so admin-facing
-  // username fields (add member, schedule teacher) autocomplete against
-  // real accounts. The actual enforcement lives in addMemberToChannel()
-  // and setClassSchedule(), not here — this is UI convenience only.
   function populateRegisteredUsersDatalist() {
     if (!DOM.registeredUsersList) return;
     DOM.registeredUsersList.innerHTML = Object.keys(state.roleCache)
@@ -379,7 +373,6 @@
     return `<div class="avatar avatar-${key}${sizeClass}">${initial}<span class="avatar-dot${online ? ' online' : ''}"></span></div>`;
   }
 
-  // Deterministic decorative color for a channel avatar (channels aren't role-typed)
   function channelColorKey(ch) {
     const keys = ['admin', 'teacher', 'student'];
     let hash = 0;
@@ -404,15 +397,6 @@
     return `${username}${CONFIG.AUTH.EMAIL_SUFFIX}`;
   }
 
-  // [NCO-KEEP: normalize-username] Always pass usernames through this
-  // before storing, comparing, or querying by them. Supabase Auth
-  // lowercases the local part of the email it stores, so a session
-  // restored after refresh derives a lowercased username from
-  // session.user.email — if a membership/role row was written with a
-  // different case, that lookup silently returns nothing (this was the
-  // "channel disappears after refresh" bug for teachers/students). Apply
-  // this at every entry point: login, admin account creation, adding a
-  // member to a channel, and scheduling a class.
   function normalizeUsername(raw) {
     return (raw || '').trim().toLowerCase();
   }
@@ -460,7 +444,6 @@
     return !!url && /\.(png|jpe?g|gif|webp|svg)$/i.test(url.split('?')[0]);
   }
 
-  // [NCO-KEEP: status-media]
   function isVideoFile(url) {
     return !!url && /\.(mp4|webm|mov|m4v|ogv)$/i.test(url.split('?')[0]);
   }
@@ -495,9 +478,6 @@
     profile: DOM.screenProfile,
   };
 
-  // Screens that are conceptually "inside" the Chats tab — on desktop the
-  // channel list stays visible as a permanent left pane alongside these,
-  // instead of being replaced full-screen like it is on mobile.
   const CHAT_GROUP_SCREENS = ['chats', 'chatDetail', 'members', 'profile'];
   const isDesktopLayout = () => window.matchMedia('(min-width: 1024px)').matches;
 
@@ -506,18 +486,12 @@
 
     Object.entries(SCREEN_EL).forEach(([key, el]) => {
       if (!el) return;
-      if (keepChatsVisible && key === 'chats') return; // leave the groups panel showing
+      if (keepChatsVisible && key === 'chats') return;
       el.classList.add('hidden');
     });
     if (SCREEN_EL[name]) SCREEN_EL[name].classList.remove('hidden');
 
     const isRoot = ROOT_TABS.includes(name);
-    // [NCO-KEEP: nav-rail-desktop] On mobile the bottom nav hides on
-    // sub-screens (chatDetail/members/profile) so the screen gets the full
-    // viewport, with the back button as the way out. On desktop the same
-    // nav becomes a permanent left icon rail (see @media 1024px in
-    // styles.css) and must stay visible there regardless of screen, or
-    // opening a chat wipes out the whole left side of the app.
     const hideNav = !isRoot && !isDesktopLayout();
     DOM.bottomNav.classList.toggle('hidden', hideNav);
     if (isRoot) {
@@ -529,9 +503,6 @@
     state.currentScreen = name;
   }
 
-  // Re-apply the layout when crossing the desktop breakpoint (e.g. resizing
-  // a laptop window), so the groups panel appears/disappears correctly
-  // without needing another click.
   let lastIsDesktop = isDesktopLayout();
   window.addEventListener('resize', () => {
     const nowDesktop = isDesktopLayout();
@@ -544,11 +515,6 @@
   // ============================================================
   // 7. AUTHENTICATION
   // ============================================================
-  // [NCO-KEEP: login-requires-password] Sign-in only — do NOT reintroduce
-  // signUp()-on-login with a shared CONFIG.AUTH.DEFAULT_PASSWORD. That
-  // previously let anyone log in as any username (it silently created the
-  // account on first use). Accounts must now be provisioned by an admin
-  // via createUserAccount() with an individual password.
   async function loginWithUsername(username, password) {
     const email = generateEmail(username);
 
@@ -558,13 +524,6 @@
       return data.user;
     } catch (e) {
       console.error('Auth error:', e);
-      // [NCO-KEEP: surface-email-confirmation-error] Distinguish "wrong
-      // credentials" from "Supabase is waiting on a confirmation email
-      // that can never arrive at a fake @...suffix address" — these need
-      // completely different fixes (retype password, vs. an admin turning
-      // off "Confirm email" in Supabase → Authentication). Do not collapse
-      // these back into one generic message; that's what made this bug
-      // impossible to diagnose from the login screen.
       if (/email not confirmed/i.test(e.message || '')) {
         throw new Error('This account is waiting on an email confirmation that can\'t reach this address. Ask your admin to turn off "Confirm email" in Supabase → Authentication → Sign In / Providers → Email.');
       }
@@ -576,47 +535,32 @@
   // 7a. ADMIN: CREATE TEACHER / STUDENT ACCOUNT
   // ============================================================
   async function createUserAccount(username, role, password) {
-    username = normalizeUsername(username); // [NCO-KEEP: normalize-username]
+    username = normalizeUsername(username);
     if (!username) { alert('Enter a username.'); return; }
     if (!password) { alert('Enter or generate a password.'); return; }
 
     const email = generateEmail(username);
 
     try {
-      // [NCO-KEEP: admin-signup-client] adminAuthClient, not `supabase` —
-      // see the client init above for why.
       const { data: signUpData, error: signUpError } = await adminAuthClient.auth.signUp({ email, password });
-      await adminAuthClient.auth.signOut(); // discard the throwaway session immediately
+      await adminAuthClient.auth.signOut();
 
-      // [NCO-KEEP: strict-already-registered-check] Match on message text
-      // ONLY — do not add back a status-code fallback (400/409/422 are
-      // also returned for signups-disabled, weak password, rate limits,
-      // etc). A false positive here silently continues past a real
-      // signUp() failure and still writes the user_roles row below,
-      // producing a role entry for an account that was never created in
-      // Supabase Auth (the exact "shows in user_roles, missing from
-      // Authentication → Users" bug).
       const isAlreadyRegistered =
         signUpError && /already registered|already exists/i.test(signUpError.message || '');
 
       if (signUpError && !isAlreadyRegistered) throw signUpError;
 
-      // This runs on the primary `supabase` client, i.e. still authenticated
-      // as the admin — required for the RLS policy on user_roles to allow it.
       const { error: roleError } = await supabase
         .from('user_roles')
         .upsert({ username, role }, { onConflict: 'username' });
       if (roleError) throw roleError;
 
       state.roleCache[username.toLowerCase()] = role;
-      populateRegisteredUsersDatalist(); // [NCO-KEEP: restrict-add-to-registered-users]
+      populateRegisteredUsersDatalist();
       DOM.newUserUsername.value = '';
       DOM.newUserPassword.value = '';
       DOM.newUserRole.value = 'student';
 
-      // [NCO-KEEP: signup-warnings] Do not collapse these two cases back
-      // into a plain "Account created" alert — each means the password
-      // just shown to the admin will NOT actually work at login.
       if (isAlreadyRegistered) {
         alert(
           `"${username}" already had an account (e.g. from before self-signup was disabled).\n\n` +
@@ -965,12 +909,9 @@
 
   async function setClassSchedule(teacherUsername, datetimeLocal, durationMinutes) {
     if (!state.currentChannel) { alert('Select a channel first.'); return; }
-    teacherUsername = normalizeUsername(teacherUsername); // [NCO-KEEP: normalize-username]
+    teacherUsername = normalizeUsername(teacherUsername);
     if (!teacherUsername || !datetimeLocal) { alert('Enter a teacher username and a date/time.'); return; }
 
-    // [NCO-KEEP: restrict-add-to-registered-users] Same registered-accounts
-    // check as addMemberToChannel() — don't let a made-up or misspelled
-    // username get scheduled as if it were a real teacher.
     const registeredRole = state.roleCache[teacherUsername.toLowerCase()];
     if (registeredRole !== CONFIG.AUTH.ROLES.TEACHER) {
       alert(`"${teacherUsername}" isn't a registered teacher account. Create it first from Settings → Add teacher or student.`);
@@ -1011,12 +952,6 @@
     updateProfileMeta();
   }
 
-  // [NCO-KEEP: teacher-on-top] Role display order for the member list —
-  // teachers above students. Change this array, not the sort call below,
-  // if the ordering needs to change later.
-  // [NCO-KEEP: teacher-on-top] maps a letter to the id of its first
-  // member-group-letter divider in the currently rendered list; rebuilt on
-  // every renderMembers() call, read by the alpha-index click handler.
   let memberLetterAnchors = {};
 
   const MEMBER_ROLE_ORDER = ['admin', 'teacher', 'student'];
@@ -1044,12 +979,12 @@
     let lastRole = '';
     let lastLetter = '';
     let anchorIdx = 0;
-    memberLetterAnchors = {}; // [NCO-KEEP: teacher-on-top] reset per render, read by the alpha-index click handler below
+    memberLetterAnchors = {};
     members.forEach((m) => {
       if (m.role !== lastRole) {
         html += `<div class="member-group-letter member-role-header">${MEMBER_ROLE_LABEL[m.role] || escapeHtml(m.role)}</div>`;
         lastRole = m.role;
-        lastLetter = ''; // restart the letter dividers within each role section
+        lastLetter = '';
       }
       const letter = m.username.charAt(0).toUpperCase();
       if (letter !== lastLetter) {
@@ -1080,16 +1015,11 @@
       btn.addEventListener('click', () => removeMember(btn.dataset.removeMember));
     });
 
-    // Alphabet index
     const present = new Set(members.map((m) => m.username.charAt(0).toUpperCase()));
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
     DOM.alphaIndex.innerHTML = alphabet.map((l) => `<span data-letter="${l}" class="${present.has(l) ? '' : 'hidden'}">${l}</span>`).join('');
     DOM.alphaIndex.querySelectorAll('span').forEach((span) => {
       span.addEventListener('click', () => {
-        // [NCO-KEEP: teacher-on-top] look up via memberLetterAnchors, not
-        // document.getElementById('memberLetter-' + letter) — with
-        // role-grouping the same letter can appear under more than one
-        // section, so ids are no longer just the bare letter.
         const anchorId = memberLetterAnchors[span.dataset.letter];
         const target = anchorId && document.getElementById(anchorId);
         if (target) target.scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -1098,15 +1028,9 @@
   }
 
   async function addMemberToChannel(username, role) {
-    username = normalizeUsername(username); // [NCO-KEEP: normalize-username]
+    username = normalizeUsername(username);
     if (!username || !state.currentChannel) { alert('Enter a username and select a channel.'); return; }
 
-    // [NCO-KEEP: restrict-add-to-registered-users] Only people with a real,
-    // admin-created account can be added to a group. Do NOT go back to
-    // upserting into user_roles here — that let any typed username get
-    // "registered" with whatever role was picked in the dropdown, with no
-    // actual Supabase Auth account behind it (same phantom-account bug as
-    // the admin create-account flow, just reached a different way).
     const registeredRole = state.roleCache[username.toLowerCase()];
     if (!registeredRole) {
       alert(`No account exists for "${username}". Create it first from Settings → Add teacher or student, then add them here.`);
@@ -1366,9 +1290,6 @@
     const { data, error } = await supabase
       .from(CONFIG.SUPABASE.TABLES.STATUSES)
       .select('*')
-      // [NCO-KEEP: status-expiry] only show statuses with no expiry set, or
-      // whose expiry hasn't passed yet. Requires an `expires_at` (nullable
-      // timestamptz) column on the statuses table — see postStatus() below.
       .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
       .order('created_at', { ascending: false })
       .limit(10);
@@ -1390,8 +1311,6 @@
       state.statuses.forEach((st) => {
         const item = document.createElement('div');
         item.className = 'update-row';
-        // [NCO-KEEP: status-media] media_url is nullable — a status can be
-        // text-only, media-only, or both.
         const preview = st.content
           ? escapeHtml(truncate(st.content, 46))
           : (st.media_url ? '<i class="fas fa-camera"></i> Photo/video' : '');
@@ -1402,28 +1321,38 @@
             <div class="update-row-preview">${preview}</div>
           </div>
           <div class="update-row-time">${formatTimeAgo(st.created_at)}</div>
+          ${state.isAdmin ? `
+            <button class="icon-btn" style="width:26px;height:26px;" title="Delete status" data-delete-status="${st.id}">
+              <i class="fas fa-trash" style="font-size:11px;color:var(--danger);"></i>
+            </button>
+          ` : ''}
         `;
-        item.addEventListener('click', () => showStatusModal(st));
+        item.addEventListener('click', (e) => {
+          if (e.target.closest('[data-delete-status]')) return;
+          showStatusModal(st);
+        });
         DOM.statusTray.appendChild(item);
       });
     }
 
-    DOM.statusAddBtn.classList.toggle('hidden', !(state.isAdmin || state.isTeacher));
-    if (DOM.postStatusFab) DOM.postStatusFab.classList.toggle('hidden', !(state.isAdmin || state.isTeacher)); // [NCO-KEEP: status-compose-modal]
+    const shouldShow = (state.isAdmin || state.isTeacher) && CONFIG.FEATURES.ENABLE_STATUS_UPDATES;
+    DOM.statusAddBtn.classList.toggle('hidden', !shouldShow);
+    if (DOM.postStatusFab) DOM.postStatusFab.classList.add('hidden');
   }
 
-  // [NCO-KEEP: status-media] status uploads aren't tied to a channel, so
-  // they get their own path helper instead of reusing generateStoragePath()
-  // (which is built around CONFIG.UPLOAD.STORAGE_PATH's {channelId} token).
+  async function deleteStatus(statusId) {
+    if (!confirm('Delete this status update?')) return;
+    const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.STATUSES).delete().eq('id', statusId);
+    if (error) { alert('Delete failed: ' + error.message); return; }
+    await loadStatuses();
+  }
+
   function generateStatusStoragePath(username, filename) {
     const ext = (filename.split('.').pop() || 'dat').toLowerCase();
     const rand = Math.random().toString(36).slice(2, 8);
     return `status/${username}/${Date.now()}-${rand}.${ext}`;
   }
 
-  // [NCO-KEEP: status-expiry] durationKey -> milliseconds; 'never' means no
-  // expiry (expires_at stored as null). Keep in sync with the <option>
-  // values in buildStatusComposeModal() below.
   const STATUS_EXPIRY_MS = {
     '1h': 60 * 60 * 1000,
     '6h': 6 * 60 * 60 * 1000,
@@ -1458,9 +1387,6 @@
     const ms = STATUS_EXPIRY_MS[expiryKey];
     const expiresAt = ms ? new Date(Date.now() + ms).toISOString() : null;
 
-    // [NCO-KEEP: status-expiry] requires an `expires_at` (nullable
-    // timestamptz) column, and [NCO-KEEP: status-media] requires a
-    // `media_url` (nullable text) column, on the statuses table.
     const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.STATUSES).insert({
       username: state.currentUser.username,
       content: content || '',
@@ -1472,12 +1398,6 @@
     await loadStatuses();
   }
 
-  // [NCO-KEEP: status-compose-modal] Built in JS (same modal-overlay /
-  // modal-card pattern as the camera/mic permissions dialog) instead of
-  // static HTML, so there's nothing to leave orphaned/unwired in
-  // index.html. Replaces the old prompt()-only flow — text, media, and
-  // expiry all live here now. Don't reintroduce a bare prompt() for
-  // posting a status; wire any new post-status entry point to this.
   function openStatusComposer() {
     if (!CONFIG.FEATURES.ENABLE_STATUS_UPDATES) { alert('Status updates are disabled.'); return; }
 
@@ -1537,9 +1457,6 @@
     });
   }
 
-  // [NCO-KEEP: status-pause-btn] progress/paused state lives outside
-  // showStatusModal so toggleStatusPause() (wired to the pause button) can
-  // reach it without tearing down and restarting the interval.
   let statusProgressValue = 0;
   let statusPaused = false;
 
@@ -1549,7 +1466,6 @@
     DOM.statusModalTime.textContent = formatFullDate(status.created_at);
     DOM.statusModalContent.textContent = status.content || '';
 
-    // [NCO-KEEP: status-media]
     if (status.media_url && isVideoFile(status.media_url)) {
       DOM.statusModalMedia.innerHTML = `<video src="${status.media_url}" controls autoplay muted playsinline></video>`;
     } else if (status.media_url) {
@@ -1560,6 +1476,15 @@
 
     DOM.statusProgress.style.width = '0%';
     DOM.statusModal.classList.remove('hidden');
+    
+    // Make sure the modal takes full viewport height on mobile
+    if (window.innerWidth < 560) {
+      const inner = document.querySelector('.status-viewer-inner');
+      if (inner) {
+        inner.style.maxHeight = '100vh';
+        inner.style.height = '100vh';
+      }
+    }
 
     statusProgressValue = 0;
     statusPaused = false;
@@ -1567,7 +1492,7 @@
     if (state.progressInterval) clearInterval(state.progressInterval);
 
     state.progressInterval = setInterval(() => {
-      if (statusPaused) return; // [NCO-KEEP: status-pause-btn]
+      if (statusPaused) return;
       statusProgressValue += 1.2;
       if (statusProgressValue >= 100) {
         clearInterval(state.progressInterval);
@@ -1578,7 +1503,6 @@
     }, 50);
   }
 
-  // [NCO-KEEP: status-pause-btn] wired to #statusPauseBtn in event bindings below
   function toggleStatusPause() {
     statusPaused = !statusPaused;
     updateStatusPauseIcon();
@@ -1593,8 +1517,8 @@
   function closeStatusViewer() {
     DOM.statusModal.classList.add('hidden');
     if (state.progressInterval) { clearInterval(state.progressInterval); state.progressInterval = null; }
-    statusPaused = false; // [NCO-KEEP: status-pause-btn] don't leak paused state into the next status opened
-    DOM.statusModalMedia.innerHTML = ''; // [NCO-KEEP: status-media] stop any playing video
+    statusPaused = false;
+    DOM.statusModalMedia.innerHTML = '';
   }
 
   // ============================================================
@@ -1761,12 +1685,8 @@
     goToScreen('chats');
   }
 
-  // [NCO-KEEP: restrict-login-without-password] Both fields are required —
-  // do not let this fall through to loginWithUsername with an empty
-  // password; signInWithPassword('') would just surface as a generic auth
-  // error instead of a clear "enter a password" message.
   async function handleLogin() {
-    const username = normalizeUsername(DOM.usernameInput.value); // [NCO-KEEP: normalize-username]
+    const username = normalizeUsername(DOM.usernameInput.value);
     const password = DOM.passwordInput.value;
 
     if (!username || !password) {
@@ -1793,7 +1713,7 @@
       const suffix = CONFIG.AUTH.EMAIL_SUFFIX;
       if (!session.user.email.endsWith(suffix)) return;
 
-      const username = normalizeUsername(session.user.email.slice(0, -suffix.length)); // [NCO-KEEP: normalize-username — fixes channel list disappearing on refresh]
+      const username = normalizeUsername(session.user.email.slice(0, -suffix.length));
       await completeLogin(username, session.user);
     } catch (e) {
       console.warn('Session restore skipped:', e);
@@ -1822,7 +1742,7 @@
     DOM.videoContainer.classList.add('hidden');
     DOM.authCard.classList.remove('hidden');
     DOM.usernameInput.value = '';
-    DOM.passwordInput.value = ''; // [NCO-KEEP: restrict-login-without-password]
+    DOM.passwordInput.value = '';
     hideError();
   }
 
@@ -1833,19 +1753,16 @@
   DOM.usernameInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); handleLogin(); }
   });
-  DOM.passwordInput.addEventListener('keypress', (e) => { // [NCO-KEEP: restrict-login-without-password]
+  DOM.passwordInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); handleLogin(); }
   });
 
-  // Bottom nav
   DOM.bottomNav.querySelectorAll('.nav-btn').forEach((btn) => {
     btn.addEventListener('click', () => goToScreen(btn.dataset.tab));
   });
 
-  // Chat search
   DOM.chatSearchInput.addEventListener('input', () => filterChatList(DOM.chatSearchInput.value));
 
-  // Chat detail navigation
   DOM.backFromChat.addEventListener('click', () => goToScreen('chats'));
   DOM.chatDetailTitleBtn.addEventListener('click', () => {
     if (!state.currentChannel) return;
@@ -1868,7 +1785,7 @@
   });
 
   DOM.postStatusBtn.addEventListener('click', () => openStatusComposer());
-  if (DOM.postStatusFab) DOM.postStatusFab.addEventListener('click', () => openStatusComposer()); // [NCO-KEEP: status-compose-modal]
+  if (DOM.postStatusFab) DOM.postStatusFab.addEventListener('click', () => openStatusComposer());
 
   DOM.joinLiveBtn.addEventListener('click', () => {
     if (!CONFIG.FEATURES.ENABLE_VIDEO_CONFERENCE) { alert('Video conferencing is disabled.'); return; }
@@ -1917,10 +1834,6 @@
     );
   });
 
-  // (rosterGenBtn / exportAttendanceBtn have no corresponding elements in
-  // index.html — generateRoster()/exportAttendance() are kept below in case
-  // a future UI wires them up, but no listener is bound here.)
-
   DOM.setScheduleBtn.addEventListener('click', async () => {
     await setClassSchedule(
       DOM.scheduleTeacherInput.value.trim(),
@@ -1938,7 +1851,6 @@
     DOM.assignStudentInput.value = '';
   });
 
-  // Members screen
   DOM.backFromMembers.addEventListener('click', () => goToScreen('profile'));
   DOM.memberSearchInput.addEventListener('input', () => renderMembers());
   DOM.profileMembersBtn.addEventListener('click', () => {
@@ -1947,7 +1859,6 @@
     goToScreen('members');
   });
 
-  // Profile screen
   DOM.backFromProfile.addEventListener('click', () => goToScreen('chatDetail'));
   DOM.profileSeeAllMedia.addEventListener('click', (e) => {
     e.preventDefault();
@@ -1955,12 +1866,19 @@
     updateProfileScreen();
   });
 
-  // Status viewer
   DOM.closeStatusModal.addEventListener('click', closeStatusViewer);
   DOM.statusModal.addEventListener('click', (e) => { if (e.target === DOM.statusModal) closeStatusViewer(); });
-  DOM.statusPauseBtn.addEventListener('click', toggleStatusPause); // [NCO-KEEP: status-pause-btn]
+  DOM.statusPauseBtn.addEventListener('click', toggleStatusPause);
 
-  // Settings toggles
+  // Status deletion (delegated)
+  DOM.statusTray.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-delete-status]');
+    if (btn) {
+      e.stopPropagation();
+      deleteStatus(btn.dataset.deleteStatus);
+    }
+  });
+
   DOM.notifToggle.addEventListener('change', () => setNotificationsEnabled(DOM.notifToggle.checked));
   DOM.darkToggle.addEventListener('change', () => {
     document.body.classList.toggle('theme-dark', DOM.darkToggle.checked);
