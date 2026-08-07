@@ -109,6 +109,7 @@ body {
   background: #E8E9F2;
   color: var(--ink);
   min-height: 100vh;
+  min-height: 100dvh; /* [NCO-KEEP: mobile-dvh-fix] see note below */
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -134,6 +135,7 @@ button { font-family: inherit; }
    ============================================================ */
 .app-shell {
   min-height: 100vh;
+  min-height: 100dvh; /* [NCO-KEEP: mobile-dvh-fix] */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -144,6 +146,7 @@ button { font-family: inherit; }
   width: 100%;
   max-width: 430px;
   min-height: 100vh;
+  min-height: 100dvh; /* [NCO-KEEP: mobile-dvh-fix] fixes composer/header getting cut off on swipe — see body{} above for the full explanation */
   background: var(--bg);
   display: flex;
   flex-direction: column;
@@ -1092,8 +1095,14 @@ body.theme-dark .brand-word { color: #3A3E63; }
 .status-viewer-meta { flex: 1; min-width: 0; }
 .status-viewer-name { font-weight: 700; font-size: 14px; color: #fff; }
 .status-viewer-time { font-size: 11.5px; color: rgba(255,255,255,0.55); }
-.status-viewer-body { flex: 1; display: flex; align-items: center; padding: 22px; }
-.status-viewer-body p { color: #fff; font-size: 16px; line-height: 1.6; font-weight: 500; }
+.status-viewer-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 22px; gap: 14px; overflow-y: auto; }
+.status-viewer-body p { color: #fff; font-size: 16px; line-height: 1.6; font-weight: 500; text-align: center; }
+.status-viewer-body p:empty { display: none; }
+/* [NCO-KEEP: status-media] */
+.status-viewer-media:empty { display: none; }
+.status-viewer-media img, .status-viewer-media video {
+  max-width: 100%; max-height: 60vh; border-radius: 14px; object-fit: contain; display: block;
+}
 
 /* ============================================================
    MODALS (permissions dialog etc.)
@@ -1140,7 +1149,9 @@ body.theme-dark .brand-word { color: #3A3E63; }
     max-width: none;
     width: 100%;
     height: 100vh;
+    height: 100dvh; /* [NCO-KEEP: mobile-dvh-fix] harmless on desktop, keeps the property consistent everywhere it's set */
     min-height: 100vh;
+    min-height: 100dvh;
     border: none;
     border-radius: 0;
     box-shadow: none;
