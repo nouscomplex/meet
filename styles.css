@@ -454,6 +454,18 @@ button { font-family: inherit; }
 }
 .brand-mark { width: 34px; height: 34px; border-radius: 9px; object-fit: contain; background: transparent; mix-blend-mode: multiply; }
 
+/* Styling for the new text-based logo */
+.text-logo {
+  font-family: 'Helvetica Neue', Arial, sans-serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: #ffffff;
+  text-transform: uppercase;
+  display: inline-block;
+  white-space: nowrap;
+}
+
 /* Dark theme has a dark surface, not white — multiply would hide the logo,
    so give it a small white backing there instead. */
 body.theme-dark .brand-mark,
