@@ -113,6 +113,7 @@
     statusPlaceholder: $('statusPlaceholder'),
     statusAddBtn: $('statusAddBtn'),
     postStatusBtn: $('postStatusBtn'),
+    postStatusFab: $('postStatusFab'), // [NCO-KEEP: status-compose-modal] was in HTML but never wired up before
 
     // settings
     settingsAvatar: $('settingsAvatar'),
@@ -163,6 +164,7 @@
     memberSearchInput: $('memberSearchInput'),
     adminAddMemberRow: $('adminAddMemberRow'),
     assignStudentInput: $('assignStudentInput'),
+    registeredUsersList: $('registeredUsersList'), // [NCO-KEEP: restrict-add-to-registered-users]
     assignRoleSelect: $('assignRoleSelect'),
     assignStudentBtn: $('assignStudentBtn'),
     channelMembersList: $('channelMembersList'),
@@ -190,6 +192,7 @@
     statusViewerAvatar: $('statusViewerAvatar'),
     statusModalTitle: $('statusModalTitle'),
     statusModalTime: $('statusModalTime'),
+    statusModalMedia: $('statusModalMedia'), // [NCO-KEEP: status-media]
     statusModalContent: $('statusModalContent'),
     statusPauseBtn: $('statusPauseBtn'), // [NCO-KEEP: status-pause-btn]
   };
@@ -344,6 +347,21 @@
     (data || []).forEach((row) => {
       state.roleCache[row.username.toLowerCase()] = row.role;
     });
+    populateRegisteredUsersDatalist(); // [NCO-KEEP: restrict-add-to-registered-users]
+  }
+
+  // [NCO-KEEP: restrict-add-to-registered-users] state.roleCache is the
+  // authoritative registry of real accounts (everyone in user_roles) —
+  // this just mirrors its keys into the <datalist> so admin-facing
+  // username fields (add member, schedule teacher) autocomplete against
+  // real accounts. The actual enforcement lives in addMemberToChannel()
+  // and setClassSchedule(), not here — this is UI convenience only.
+  function populateRegisteredUsersDatalist() {
+    if (!DOM.registeredUsersList) return;
+    DOM.registeredUsersList.innerHTML = Object.keys(state.roleCache)
+      .sort()
+      .map((u) => `<option value="${escapeHtml(u)}"></option>`)
+      .join('');
   }
 
   function roleKey(username) {
@@ -440,6 +458,11 @@
 
   function isImageFile(url) {
     return !!url && /\.(png|jpe?g|gif|webp|svg)$/i.test(url.split('?')[0]);
+  }
+
+  // [NCO-KEEP: status-media]
+  function isVideoFile(url) {
+    return !!url && /\.(mp4|webm|mov|m4v|ogv)$/i.test(url.split('?')[0]);
   }
 
   function showError(message) {
@@ -586,6 +609,7 @@
       if (roleError) throw roleError;
 
       state.roleCache[username.toLowerCase()] = role;
+      populateRegisteredUsersDatalist(); // [NCO-KEEP: restrict-add-to-registered-users]
       DOM.newUserUsername.value = '';
       DOM.newUserPassword.value = '';
       DOM.newUserRole.value = 'student';
@@ -944,6 +968,15 @@
     teacherUsername = normalizeUsername(teacherUsername); // [NCO-KEEP: normalize-username]
     if (!teacherUsername || !datetimeLocal) { alert('Enter a teacher username and a date/time.'); return; }
 
+    // [NCO-KEEP: restrict-add-to-registered-users] Same registered-accounts
+    // check as addMemberToChannel() — don't let a made-up or misspelled
+    // username get scheduled as if it were a real teacher.
+    const registeredRole = state.roleCache[teacherUsername.toLowerCase()];
+    if (registeredRole !== CONFIG.AUTH.ROLES.TEACHER) {
+      alert(`"${teacherUsername}" isn't a registered teacher account. Create it first from Settings → Add teacher or student.`);
+      return;
+    }
+
     const { error } = await supabase.from('class_schedule').insert({
       channel_id: state.currentChannel.id,
       teacher_username: teacherUsername,
@@ -1068,24 +1101,30 @@
     username = normalizeUsername(username); // [NCO-KEEP: normalize-username]
     if (!username || !state.currentChannel) { alert('Enter a username and select a channel.'); return; }
 
+    // [NCO-KEEP: restrict-add-to-registered-users] Only people with a real,
+    // admin-created account can be added to a group. Do NOT go back to
+    // upserting into user_roles here — that let any typed username get
+    // "registered" with whatever role was picked in the dropdown, with no
+    // actual Supabase Auth account behind it (same phantom-account bug as
+    // the admin create-account flow, just reached a different way).
+    const registeredRole = state.roleCache[username.toLowerCase()];
+    if (!registeredRole) {
+      alert(`No account exists for "${username}". Create it first from Settings → Add teacher or student, then add them here.`);
+      return;
+    }
+    if (role && registeredRole !== role) {
+      alert(`"${username}" is registered as a ${registeredRole}, not a ${role}. Check the username or the role you selected.`);
+      return;
+    }
+
     const { error } = await supabase
       .from(CONFIG.SUPABASE.TABLES.MEMBERS)
       .upsert(
-        { channel_id: state.currentChannel.id, username, role, added_by: state.currentUser.username },
+        { channel_id: state.currentChannel.id, username, role: registeredRole, added_by: state.currentUser.username },
         { onConflict: 'channel_id,username' }
       );
 
     if (error) { alert('Could not add member: ' + error.message); return; }
-
-    const { error: roleError } = await supabase
-      .from('user_roles')
-      .upsert({ username, role, updated_at: new Date().toISOString() }, { onConflict: 'username' });
-
-    if (roleError) {
-      console.warn('Could not persist authoritative role:', roleError);
-    } else {
-      state.roleCache[username.toLowerCase()] = role;
-    }
 
     await loadMembers(state.currentChannel.id);
   }
@@ -1323,9 +1362,14 @@
   // 10. STATUS UPDATES
   // ============================================================
   async function loadStatuses() {
+    const nowIso = new Date().toISOString();
     const { data, error } = await supabase
       .from(CONFIG.SUPABASE.TABLES.STATUSES)
       .select('*')
+      // [NCO-KEEP: status-expiry] only show statuses with no expiry set, or
+      // whose expiry hasn't passed yet. Requires an `expires_at` (nullable
+      // timestamptz) column on the statuses table — see postStatus() below.
+      .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
       .order('created_at', { ascending: false })
       .limit(10);
 
@@ -1346,11 +1390,16 @@
       state.statuses.forEach((st) => {
         const item = document.createElement('div');
         item.className = 'update-row';
+        // [NCO-KEEP: status-media] media_url is nullable — a status can be
+        // text-only, media-only, or both.
+        const preview = st.content
+          ? escapeHtml(truncate(st.content, 46))
+          : (st.media_url ? '<i class="fas fa-camera"></i> Photo/video' : '');
         item.innerHTML = `
           ${avatarHtml(st.username)}
           <div class="update-row-body">
             <div class="update-row-name">${escapeHtml(st.username || 'User')}</div>
-            <div class="update-row-preview">${escapeHtml(truncate(st.content || '', 46))}</div>
+            <div class="update-row-preview">${preview}</div>
           </div>
           <div class="update-row-time">${formatTimeAgo(st.created_at)}</div>
         `;
@@ -1360,17 +1409,132 @@
     }
 
     DOM.statusAddBtn.classList.toggle('hidden', !(state.isAdmin || state.isTeacher));
+    if (DOM.postStatusFab) DOM.postStatusFab.classList.toggle('hidden', !(state.isAdmin || state.isTeacher)); // [NCO-KEEP: status-compose-modal]
   }
 
-  async function postStatus(content) {
+  // [NCO-KEEP: status-media] status uploads aren't tied to a channel, so
+  // they get their own path helper instead of reusing generateStoragePath()
+  // (which is built around CONFIG.UPLOAD.STORAGE_PATH's {channelId} token).
+  function generateStatusStoragePath(username, filename) {
+    const ext = (filename.split('.').pop() || 'dat').toLowerCase();
+    const rand = Math.random().toString(36).slice(2, 8);
+    return `status/${username}/${Date.now()}-${rand}.${ext}`;
+  }
+
+  // [NCO-KEEP: status-expiry] durationKey -> milliseconds; 'never' means no
+  // expiry (expires_at stored as null). Keep in sync with the <option>
+  // values in buildStatusComposeModal() below.
+  const STATUS_EXPIRY_MS = {
+    '1h': 60 * 60 * 1000,
+    '6h': 6 * 60 * 60 * 1000,
+    '24h': 24 * 60 * 60 * 1000,
+    '3d': 3 * 24 * 60 * 60 * 1000,
+    '7d': 7 * 24 * 60 * 60 * 1000,
+    never: null,
+  };
+
+  async function postStatus({ content, file, expiryKey }) {
     if (!state.currentUser) return;
+
+    let mediaUrl = null;
+    if (file) {
+      if (file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
+        alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
+        return;
+      }
+      const path = generateStatusStoragePath(state.currentUser.username, file.name);
+      try {
+        const { error: uploadError } = await supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).upload(path, file);
+        if (uploadError) throw uploadError;
+        const { data: urlData } = supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).getPublicUrl(path);
+        mediaUrl = urlData.publicUrl;
+      } catch (e) {
+        console.error('Status media upload error:', e);
+        alert(`Media upload failed: ${e.message || 'unknown error — check console for details.'}`);
+        return;
+      }
+    }
+
+    const ms = STATUS_EXPIRY_MS[expiryKey];
+    const expiresAt = ms ? new Date(Date.now() + ms).toISOString() : null;
+
+    // [NCO-KEEP: status-expiry] requires an `expires_at` (nullable
+    // timestamptz) column, and [NCO-KEEP: status-media] requires a
+    // `media_url` (nullable text) column, on the statuses table.
     const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.STATUSES).insert({
       username: state.currentUser.username,
-      content: content,
+      content: content || '',
+      media_url: mediaUrl,
+      expires_at: expiresAt,
       created_at: new Date().toISOString(),
     });
-    if (error) { console.error('Status error:', error); alert('Failed to post status.'); }
+    if (error) { console.error('Status error:', error); alert('Failed to post status: ' + error.message); return; }
     await loadStatuses();
+  }
+
+  // [NCO-KEEP: status-compose-modal] Built in JS (same modal-overlay /
+  // modal-card pattern as the camera/mic permissions dialog) instead of
+  // static HTML, so there's nothing to leave orphaned/unwired in
+  // index.html. Replaces the old prompt()-only flow — text, media, and
+  // expiry all live here now. Don't reintroduce a bare prompt() for
+  // posting a status; wire any new post-status entry point to this.
+  function openStatusComposer() {
+    if (!CONFIG.FEATURES.ENABLE_STATUS_UPDATES) { alert('Status updates are disabled.'); return; }
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="modal-card">
+        <h3 class="modal-title"><i class="fas fa-bullhorn"></i> Post an update</h3>
+        <textarea id="statusComposeText" class="field" rows="3" placeholder="Write something..." style="resize:vertical; margin-bottom:10px;"></textarea>
+
+        <label class="section-label" style="display:block; margin-bottom:6px;">Photo or video (optional)</label>
+        <input id="statusComposeFile" type="file" accept="image/*,video/*" class="field" style="margin-bottom:4px;">
+        <div id="statusComposeFileName" class="modal-body" style="margin:2px 0 10px; font-size:12.5px;"></div>
+
+        <label class="section-label" style="display:block; margin-bottom:6px;">Expires</label>
+        <select id="statusComposeExpiry" class="field" style="margin-bottom:16px;">
+          <option value="1h">In 1 hour</option>
+          <option value="6h">In 6 hours</option>
+          <option value="24h" selected>In 24 hours</option>
+          <option value="3d">In 3 days</option>
+          <option value="7d">In 7 days</option>
+          <option value="never">Never</option>
+        </select>
+
+        <div style="display:flex; gap:10px;">
+          <button id="statusComposeCancel" class="btn btn-ghost" style="flex:1;">Cancel</button>
+          <button id="statusComposePost" class="btn btn-primary" style="flex:1;"><i class="fas fa-paper-plane"></i> Post</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const textEl = modal.querySelector('#statusComposeText');
+    const fileEl = modal.querySelector('#statusComposeFile');
+    const fileNameEl = modal.querySelector('#statusComposeFileName');
+    const expiryEl = modal.querySelector('#statusComposeExpiry');
+
+    fileEl.addEventListener('change', () => {
+      fileNameEl.textContent = fileEl.files[0] ? `📎 ${fileEl.files[0].name}` : '';
+    });
+
+    const close = () => modal.remove();
+    modal.querySelector('#statusComposeCancel').addEventListener('click', close);
+    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+
+    modal.querySelector('#statusComposePost').addEventListener('click', async () => {
+      const content = textEl.value.trim();
+      const file = fileEl.files[0] || null;
+      if (!content && !file) { alert('Add some text or a photo/video first.'); return; }
+
+      const postBtn = modal.querySelector('#statusComposePost');
+      postBtn.disabled = true;
+      postBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Posting...';
+
+      await postStatus({ content, file, expiryKey: expiryEl.value });
+      close();
+    });
   }
 
   // [NCO-KEEP: status-pause-btn] progress/paused state lives outside
@@ -1384,6 +1548,16 @@
     DOM.statusModalTitle.textContent = status.username || 'Announcement';
     DOM.statusModalTime.textContent = formatFullDate(status.created_at);
     DOM.statusModalContent.textContent = status.content || '';
+
+    // [NCO-KEEP: status-media]
+    if (status.media_url && isVideoFile(status.media_url)) {
+      DOM.statusModalMedia.innerHTML = `<video src="${status.media_url}" controls autoplay muted playsinline></video>`;
+    } else if (status.media_url) {
+      DOM.statusModalMedia.innerHTML = `<img src="${status.media_url}" alt="Status media">`;
+    } else {
+      DOM.statusModalMedia.innerHTML = '';
+    }
+
     DOM.statusProgress.style.width = '0%';
     DOM.statusModal.classList.remove('hidden');
 
@@ -1420,6 +1594,7 @@
     DOM.statusModal.classList.add('hidden');
     if (state.progressInterval) { clearInterval(state.progressInterval); state.progressInterval = null; }
     statusPaused = false; // [NCO-KEEP: status-pause-btn] don't leak paused state into the next status opened
+    DOM.statusModalMedia.innerHTML = ''; // [NCO-KEEP: status-media] stop any playing video
   }
 
   // ============================================================
@@ -1692,11 +1867,8 @@
     if (e.key === 'Enter') { e.preventDefault(); DOM.sendMsgBtn.click(); }
   });
 
-  DOM.postStatusBtn.addEventListener('click', async () => {
-    if (!CONFIG.FEATURES.ENABLE_STATUS_UPDATES) { alert('Status updates are disabled.'); return; }
-    const content = prompt('Share a status update:');
-    if (content) await postStatus(content);
-  });
+  DOM.postStatusBtn.addEventListener('click', () => openStatusComposer());
+  if (DOM.postStatusFab) DOM.postStatusFab.addEventListener('click', () => openStatusComposer()); // [NCO-KEEP: status-compose-modal]
 
   DOM.joinLiveBtn.addEventListener('click', () => {
     if (!CONFIG.FEATURES.ENABLE_VIDEO_CONFERENCE) { alert('Video conferencing is disabled.'); return; }
