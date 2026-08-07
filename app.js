@@ -552,7 +552,7 @@
     try {
       // [NCO-KEEP: admin-signup-client] adminAuthClient, not `supabase` —
       // see the client init above for why.
-      const { error: signUpError } = await adminAuthClient.auth.signUp({ email, password });
+      const { data: signUpData, error: signUpError } = await adminAuthClient.auth.signUp({ email, password });
       await adminAuthClient.auth.signOut(); // discard the throwaway session immediately
 
       const isAlreadyRegistered =
@@ -572,11 +572,31 @@
       if (roleError) throw roleError;
 
       state.roleCache[username.toLowerCase()] = role;
-
-      alert(`Account created for "${username}" (${role}).\n\nPassword: ${password}\n\nShare this with them securely — it won't be shown again.`);
       DOM.newUserUsername.value = '';
       DOM.newUserPassword.value = '';
       DOM.newUserRole.value = 'student';
+
+      // [NCO-KEEP: signup-warnings] Do not collapse these two cases back
+      // into a plain "Account created" alert — each means the password
+      // just shown to the admin will NOT actually work at login.
+      if (isAlreadyRegistered) {
+        alert(
+          `"${username}" already had an account (e.g. from before self-signup was disabled).\n\n` +
+          `Role set to ${role}, but the password shown here was NOT applied — a browser-side ` +
+          `signup can't change another account's password. Reset it from the Supabase ` +
+          `dashboard (Authentication → Users) or have them use their existing password.`
+        );
+      } else if (signUpData && !signUpData.session) {
+        alert(
+          `Account created for "${username}" (${role}), but it likely can't log in yet: this ` +
+          `Supabase project requires email confirmation, and confirmation emails can't reach a ` +
+          `fake address like ${email}.\n\n` +
+          `Turn off "Confirm email" in Supabase → Authentication → Sign In / Providers → Email, ` +
+          `then this account (and any others stuck the same way) will be able to log in.`
+        );
+      } else {
+        alert(`Account created for "${username}" (${role}).\n\nPassword: ${password}\n\nShare this with them securely — it won't be shown again.`);
+      }
     } catch (e) {
       console.error('Create user error:', e);
       alert('Could not create account: ' + (e.message || e));
