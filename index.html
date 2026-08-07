@@ -34,13 +34,13 @@
     <div id="authCard" class="auth-wrap">
       <div class="auth-card">
         <img src="nouscomplex.png" alt="Nous Complex Orbit" class="auth-emblem" id="authLogo">
-        <h1 class="auth-title">Welcome back</h1>
-        <p class="auth-sub">Sign in with your School ID and password to continue</p>
+        <h1 class="auth-title">Nous Complex Orbit</h1>
+        <p class="auth-sub">Sign in with your Orbit ID and password to continue</p>
 
         <input id="usernameInput" type="text" placeholder="e.g. student042 or teacher005" class="field" autocomplete="username">
         <input id="passwordInput" type="password" placeholder="Password" class="field" style="margin-top: 10px;" autocomplete="current-password">
         <button id="loginBtn" class="btn btn-primary btn-block" style="margin-top: 12px;">
-          <i class="fas fa-arrow-right-to-bracket"></i> Enter Hub
+          <i class="fas fa-arrow-right-to-bracket"></i> Enter Orbit
         </button>
         <p id="authError" class="error-text hidden">
           <i class="fas fa-circle-exclamation"></i> <span id="authErrorText"></span>
@@ -64,14 +64,14 @@
       <section id="screenChats" class="screen">
         <header class="brand-header">
           <div class="brand-lockup">
-            <img src="nouscomplex.png" alt="" class="brand-mark" id="sidebarLogo">
+           <span class="brand-mark text-logo" id="sidebarLogo">Nous Complex</span>
           </div>
           <span class="brand-word">Orbit</span>
         </header>
 
         <div class="search-bar">
           <i class="fas fa-magnifying-glass"></i>
-          <input id="chatSearchInput" type="text" placeholder="Search Sessions or Messages" autocomplete="off">
+          <input id="chatSearchInput" type="text" placeholder="Search Sessions" autocomplete="off">
         </div>
 
         <div id="channelList" class="chat-list">
@@ -263,13 +263,20 @@
         </div>
 
         <div id="adminAddMemberRow" class="hidden admin-add-row">
-          <input id="assignStudentInput" placeholder="Username" class="field-sm">
+          <!-- [NCO-KEEP: restrict-add-to-registered-users] list= gives
+               autocomplete suggestions of real accounts; the actual
+               enforcement (rejecting anyone not in that list) happens in
+               addMemberToChannel() in app.js — don't remove the list
+               attribute or the datalist below, and don't rely on the
+               datalist alone for the restriction, it's only a UI hint. -->
+          <input id="assignStudentInput" placeholder="Username" class="field-sm" list="registeredUsersList" autocomplete="off">
           <select id="assignRoleSelect" class="field-sm" style="flex:0 0 96px;">
             <option value="student">Student</option>
             <option value="teacher">Teacher</option>
           </select>
           <button id="assignStudentBtn" class="btn-admin-sm">Add</button>
         </div>
+        <datalist id="registeredUsersList"></datalist>
 
         <div class="members-wrap">
           <div id="channelMembersList" class="member-list">
@@ -308,7 +315,7 @@
 
         <div id="adminProfileSchedule" class="hidden schedule-card">
           <div class="section-label"><i class="fas fa-calendar-clock"></i> Schedule class time</div>
-          <input id="scheduleTeacherInput" placeholder="Teacher username" class="field-sm" style="width:100%; margin-bottom:6px;">
+          <input id="scheduleTeacherInput" placeholder="Teacher username" class="field-sm" list="registeredUsersList" autocomplete="off" style="width:100%; margin-bottom:6px;">
           <input id="scheduleTimeInput" type="datetime-local" class="field-sm" style="width:100%; margin-bottom:6px;">
           <div class="admin-row">
             <input id="scheduleDurationInput" type="number" min="10" max="240" value="45" class="field-sm" style="flex:0 0 90px;" title="Duration (minutes)">
@@ -358,6 +365,8 @@
         <button id="statusPauseBtn" class="icon-btn back-btn" title="Pause"><i class="fas fa-pause"></i></button>
       </div>
       <div class="status-viewer-body">
+        <!-- [NCO-KEEP: status-media] populated by showStatusModal() in app.js -->
+        <div id="statusModalMedia" class="status-viewer-media"></div>
         <p id="statusModalContent"></p>
       </div>
     </div>
