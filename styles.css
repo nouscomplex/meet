@@ -452,15 +452,17 @@ button { font-family: inherit; }
   justify-content: space-between;
   padding: 18px 18px 14px;
 }
-.brand-mark { width: 34px; height: 34px; border-radius: 9px; object-fit: contain; background: transparent; mix-blend-mode: multiply; }
+.brand-mark { 
+  display: none; /* Hide the logo image on logged-in screens */
+}
 
-/* Styling for the new text-based logo */
+/* Styling for the new text-based logo - changed to navy blue */
 .text-logo {
   font-family: 'Helvetica Neue', Arial, sans-serif;
   font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: -0.5px;
-  color: #ffffff;
+  color: #0E1B75; /* Navy blue - matching the brand color */
   text-transform: uppercase;
   display: inline-block;
   white-space: nowrap;
