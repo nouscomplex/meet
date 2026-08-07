@@ -36,6 +36,22 @@
     CONFIG.SUPABASE.ANON_KEY
   );
 
+  // [NCO-KEEP: admin-signup-client] Separate, non-persisting client used
+  // ONLY for admin-triggered account creation (createUserAccount below).
+  // Do NOT call supabase.auth.signUp() on the primary `supabase` client for
+  // this — when email confirmation is off, signUp() returns an active
+  // session immediately and supabase-js replaces whatever session the
+  // client is currently holding with it. That silently logged the admin
+  // out mid-creation and continued as the brand-new account instead,
+  // which is why the role row never made it to Supabase and the admin's
+  // own session broke. This client has persistSession/autoRefreshToken
+  // off so calling signUp() on it never touches the admin's real session.
+  const adminAuthClient = window.supabase.createClient(
+    CONFIG.SUPABASE.URL,
+    CONFIG.SUPABASE.ANON_KEY,
+    { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
+  );
+
   // ============================================================
   // 3. APPLICATION STATE
   // ============================================================
@@ -534,7 +550,10 @@
     const email = generateEmail(username);
 
     try {
-      const { error: signUpError } = await supabase.auth.signUp({ email, password });
+      // [NCO-KEEP: admin-signup-client] adminAuthClient, not `supabase` —
+      // see the client init above for why.
+      const { error: signUpError } = await adminAuthClient.auth.signUp({ email, password });
+      await adminAuthClient.auth.signOut(); // discard the throwaway session immediately
 
       const isAlreadyRegistered =
         signUpError &&
@@ -545,6 +564,8 @@
 
       if (signUpError && !isAlreadyRegistered) throw signUpError;
 
+      // This runs on the primary `supabase` client, i.e. still authenticated
+      // as the admin — required for the RLS policy on user_roles to allow it.
       const { error: roleError } = await supabase
         .from('user_roles')
         .upsert({ username, role }, { onConflict: 'username' });
