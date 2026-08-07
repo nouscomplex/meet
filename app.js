@@ -535,6 +535,16 @@
       return data.user;
     } catch (e) {
       console.error('Auth error:', e);
+      // [NCO-KEEP: surface-email-confirmation-error] Distinguish "wrong
+      // credentials" from "Supabase is waiting on a confirmation email
+      // that can never arrive at a fake @...suffix address" — these need
+      // completely different fixes (retype password, vs. an admin turning
+      // off "Confirm email" in Supabase → Authentication). Do not collapse
+      // these back into one generic message; that's what made this bug
+      // impossible to diagnose from the login screen.
+      if (/email not confirmed/i.test(e.message || '')) {
+        throw new Error('This account is waiting on an email confirmation that can\'t reach this address. Ask your admin to turn off "Confirm email" in Supabase → Authentication → Sign In / Providers → Email.');
+      }
       throw new Error('Incorrect School ID or password.');
     }
   }
@@ -555,12 +565,16 @@
       const { data: signUpData, error: signUpError } = await adminAuthClient.auth.signUp({ email, password });
       await adminAuthClient.auth.signOut(); // discard the throwaway session immediately
 
+      // [NCO-KEEP: strict-already-registered-check] Match on message text
+      // ONLY — do not add back a status-code fallback (400/409/422 are
+      // also returned for signups-disabled, weak password, rate limits,
+      // etc). A false positive here silently continues past a real
+      // signUp() failure and still writes the user_roles row below,
+      // producing a role entry for an account that was never created in
+      // Supabase Auth (the exact "shows in user_roles, missing from
+      // Authentication → Users" bug).
       const isAlreadyRegistered =
-        signUpError &&
-        (signUpError.status === 400 ||
-          signUpError.status === 409 ||
-          signUpError.status === 422 ||
-          /already registered|already exists/i.test(signUpError.message || ''));
+        signUpError && /already registered|already exists/i.test(signUpError.message || '');
 
       if (signUpError && !isAlreadyRegistered) throw signUpError;
 
