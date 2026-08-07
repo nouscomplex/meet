@@ -54,7 +54,7 @@ const CONFIG = {
   // AUTHENTICATION CONFIGURATION
   // ============================================================
   AUTH: {
-    EMAIL_SUFFIX: '@school.internal',
+    EMAIL_SUFFIX: '@orbit.com',
     DEFAULT_PASSWORD: 'password123',
     ROLES: {
       ADMIN: 'admin',
