@@ -34,19 +34,9 @@
   --chat-navy: #0E1B75;
   --chat-white: #FFFFFF;
   --chat-blue: #6BB4FA;
-  --chat-grey: #C9C9C9;  /* Role identity colors (the signature system) */
-  /* [NCO-KEEP: chat-text-vars] Text colors for the chat palette — must stay
-     variables (not hardcoded hex) so they flip in dark mode along with
-     --chat-white. See body.theme-dark override below and msg-bubble /
-     .composer .field usage — do not hardcode #262626-style colors back in,
-     that was the "dark theme text invisible" bug. */
+  --chat-grey: #C9C9C9;
   --chat-ink: #262626;
   --chat-ink-soft: #6A6A6A;
-  /* [NCO-KEEP: chat-accent] Use for navy-colored TEXT/icons/borders inside
-     the chat screen (title, sender name, links, composer icons). Do NOT use
-     --chat-navy for text — that variable is also a solid background
-     (sent-bubble, live pill) and must stay navy in both themes, so text set
-     to --chat-navy goes dark-on-dark in dark mode. See dark override below. */
   --chat-accent: var(--chat-navy);
   --role-admin: #5B4FE9;
   --role-admin-wash: #EEECFF;
@@ -86,17 +76,10 @@ body.theme-dark {
   --ink-soft: #ABAFC9;
   --ink-faint: #6E7395;
   --accent-wash: #23204A;
-  /* The chat screen's "white" surface and grey borders swap to dark
-     equivalents so dark mode is visible there too — navy/blue accents
-     (the two brand colors in the requested chat palette) stay identical
-     in both themes. */
   --chat-white: #15172F;
   --chat-grey: #33375E;
-  /* [NCO-KEEP: chat-text-vars-dark] counterpart to the light-mode values in
-     :root — keep both in sync. */
   --chat-ink: #F1F2FA;
   --chat-ink-soft: #ABAFC9;
-  /* [NCO-KEEP: chat-accent-dark] counterpart to :root — keep in sync. */
   --chat-accent: var(--chat-blue);
 }
 
@@ -109,7 +92,7 @@ body {
   background: #E8E9F2;
   color: var(--ink);
   min-height: 100vh;
-  min-height: 100dvh; /* [NCO-KEEP: mobile-dvh-fix] see note below */
+  min-height: 100dvh;
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -135,7 +118,7 @@ button { font-family: inherit; }
    ============================================================ */
 .app-shell {
   min-height: 100vh;
-  min-height: 100dvh; /* [NCO-KEEP: mobile-dvh-fix] */
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -146,24 +129,19 @@ button { font-family: inherit; }
   width: 100%;
   max-width: 430px;
   min-height: 100vh;
-  min-height: 100dvh; /* [NCO-KEEP: mobile-dvh-fix] fixes composer/header getting cut off on swipe — see body{} above for the full explanation */
+  min-height: 100dvh;
   background: var(--bg);
   display: flex;
   flex-direction: column;
   position: relative;
   overflow: hidden;
-  /* Notch / home-indicator safe areas — the frame's own background (not
-     black) shows through, so the app's color reaches right to the edges
-     of a notched device instead of leaving a bare strip. */
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
 }
 
-/* Tablet-ish widths: show the phone as a framed mockup, centered.
-   Capped below the desktop breakpoint so it doesn't fight the
-   full-screen desktop layout further down. */
+/* Tablet-ish widths: show the phone as a framed mockup, centered */
 @media (min-width: 560px) and (max-width: 1023.98px) {
   .app-shell { padding: 28px 12px; }
   .phone-frame {
@@ -174,10 +152,6 @@ button { font-family: inherit; }
     border: 8px solid var(--navy);
   }
 }
-
-/* Desktop two-pane layout lives at the bottom of this file (after all
-   base component rules) so its overrides reliably win the cascade —
-   see DESKTOP section near the end. */
 
 .hidden { display: none !important; }
 .center-text { text-align: center; }
@@ -212,8 +186,6 @@ button { font-family: inherit; }
   object-fit: contain;
   margin: 0 auto 18px;
   display: block;
-  /* No card/shadow — the logo's own white background sits flush
-     against the app's white surface instead of looking boxed-in. */
   background: transparent;
   mix-blend-mode: multiply;
 }
@@ -451,9 +423,11 @@ button { font-family: inherit; }
   align-items: center;
   justify-content: space-between;
   padding: 18px 18px 14px;
+  background: var(--bg);
+  flex-shrink: 0;
 }
 .brand-mark { 
-  display: none; /* Hide the logo image on logged-in screens */
+  display: none;
 }
 
 /* Styling for the new text-based logo - changed to navy blue */
@@ -462,10 +436,14 @@ button { font-family: inherit; }
   font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: -0.5px;
-  color: #0E1B75; /* Navy blue - matching the brand color */
+  color: #0E1B75;
   text-transform: uppercase;
   display: inline-block;
   white-space: nowrap;
+}
+
+body.theme-dark .text-logo {
+  color: #6BB4FA;
 }
 
 /* Dark theme has a dark surface, not white — multiply would hide the logo,
@@ -485,6 +463,8 @@ body.theme-dark .brand-word { color: #3A3E63; }
   align-items: center;
   gap: 12px;
   padding: 16px 18px 14px;
+  background: var(--bg);
+  flex-shrink: 0;
 }
 .screen-title { font-family: var(--font-display); font-weight: 800; font-size: 1.25rem; color: var(--ink); flex: 1; }
 
@@ -498,6 +478,7 @@ body.theme-dark .brand-word { color: #3A3E63; }
   background: var(--surface-sunken);
   border-radius: var(--radius-pill);
   color: var(--ink-faint);
+  flex-shrink: 0;
 }
 .search-bar input {
   border: none;
@@ -606,12 +587,20 @@ body.theme-dark .brand-word { color: #3A3E63; }
 .update-row-time { font-size: 12px; color: var(--ink-faint); }
 .update-row-preview { font-size: 12.5px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 
-.status-add-wrap { padding: 10px 18px 18px; }
+.status-add-wrap { 
+  padding: 10px 18px 18px; 
+  flex-shrink: 0;
+  background: var(--bg);
+}
 
 /* ============================================================
    SETTINGS
    ============================================================ */
-#screenSettings { overflow-y: auto; padding-bottom: 90px; }
+#screenSettings { 
+  overflow-y: auto; 
+  padding-bottom: 90px; 
+  background: var(--bg);
+}
 
 .settings-profile-card {
   display: flex;
@@ -744,6 +733,7 @@ body.theme-dark .brand-word { color: #3A3E63; }
   position: sticky;
   top: 0;
   z-index: 3;
+  flex-shrink: 0;
 }
 .chat-detail-title {
   flex: 1;
@@ -788,6 +778,7 @@ body.theme-dark .brand-word { color: #3A3E63; }
   color: var(--chat-accent);
   font-size: 12.5px;
   border-bottom: 1px solid var(--chat-grey);
+  flex-shrink: 0;
 }
 
 .chat-scroll {
@@ -823,7 +814,7 @@ body.theme-dark .brand-word { color: #3A3E63; }
   line-height: 1.45;
   background: var(--chat-white);
   border: 1px solid var(--chat-grey);
-  color: var(--chat-ink); /* [NCO-KEEP: was hardcoded #262626 — invisible in dark mode */
+  color: var(--chat-ink);
   word-break: break-word;
 }
 .msg-theirs .msg-bubble { border-bottom-left-radius: 4px; }
@@ -852,7 +843,7 @@ body.theme-dark .brand-word { color: #3A3E63; }
 .msg-reply-quote .reply-text { color: var(--chat-ink-soft); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msg-mine .msg-reply-quote .reply-text { color: rgba(255,255,255,0.85); }
 
-.msg-actions { opacity: 0; transition: opacity 0.12s ease; display: flex; align-items: center; }
+.msg-actions { opacity: 0; transition: opacity 0.12s ease; display: flex; align-items: center; gap: 4px; }
 .msg:hover .msg-actions, .msg:active .msg-actions { opacity: 1; }
 .msg-reply-btn {
   width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--chat-grey);
@@ -865,6 +856,7 @@ body.theme-dark .brand-word { color: #3A3E63; }
   display: flex; align-items: center; gap: 10px;
   padding: 8px 16px; border-top: 1px solid var(--chat-grey); background: rgba(107, 180, 250, 0.14);
   position: sticky; bottom: 0; z-index: 2;
+  flex-shrink: 0;
 }
 .reply-preview .bar { width: 3px; align-self: stretch; background: var(--chat-navy); border-radius: 2px; }
 .reply-preview .info { flex: 1; min-width: 0; }
@@ -876,12 +868,14 @@ body.theme-dark .brand-word { color: #3A3E63; }
   padding: 8px 16px; border-top: 1px solid var(--chat-grey);
   background: var(--chat-white); font-size: 13px; color: var(--chat-ink-soft);
   position: sticky; bottom: 0; z-index: 2;
+  flex-shrink: 0;
 }
 .file-preview-bar span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 #fileUploadStatus {
   font-size: 12px; color: var(--chat-accent); padding: 8px 16px;
   border-top: 1px solid var(--chat-grey); background: rgba(107, 180, 250, 0.14);
+  flex-shrink: 0;
 }
 
 .composer {
@@ -894,8 +888,9 @@ body.theme-dark .brand-word { color: #3A3E63; }
   position: sticky;
   bottom: 0;
   z-index: 3;
+  flex-shrink: 0;
 }
-.composer .field { flex: 1; min-width: 0; border-radius: var(--radius-pill); background: var(--chat-white); border: 1.5px solid var(--chat-grey); color: var(--chat-ink); } /* [NCO-KEEP: was hardcoded #262626 */
+.composer .field { flex: 1; min-width: 0; border-radius: var(--radius-pill); background: var(--chat-white); border: 1.5px solid var(--chat-grey); color: var(--chat-ink); }
 .composer .field:focus { box-shadow: none; border-color: var(--chat-accent); }
 .composer .icon-btn { color: var(--chat-accent); }
 .composer .icon-btn:hover { background: rgba(107, 180, 250, 0.16); color: var(--chat-accent); }
@@ -925,7 +920,7 @@ body.theme-dark .brand-word { color: #3A3E63; }
 /* ============================================================
    MEMBERS
    ============================================================ */
-.admin-add-row { display: flex; gap: 6px; margin: 0 18px 12px; }
+.admin-add-row { display: flex; gap: 6px; margin: 0 18px 12px; flex-shrink: 0; }
 .members-wrap { flex: 1; display: flex; min-height: 0; padding-bottom: 90px; }
 .member-list { flex: 1; overflow-y: auto; padding: 0 8px 18px 18px; display: flex; flex-direction: column; }
 .member-row {
@@ -945,9 +940,6 @@ body.theme-dark .brand-word { color: #3A3E63; }
   font-size: 11px; font-weight: 800; color: var(--ink-faint);
   padding: 10px 6px 4px; letter-spacing: 0.04em;
 }
-/* [NCO-KEEP: member-role-header] role-section divider ("Teachers" /
-   "Students") above the alphabet-letter dividers — see renderMembers() in
-   app.js, which groups + sorts members with teachers first. */
 .member-role-header {
   font-size: 11.5px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;
   color: var(--accent); padding: 14px 6px 6px; border-top: 1px solid var(--border);
@@ -977,7 +969,7 @@ body.theme-dark .brand-word { color: #3A3E63; }
 /* ============================================================
    PROFILE
    ============================================================ */
-#screenProfile { overflow-y: auto; padding-bottom: 90px; }
+#screenProfile { overflow-y: auto; padding-bottom: 90px; background: var(--bg); }
 .profile-card {
   margin: 4px 18px 14px;
   padding: 20px;
@@ -1036,6 +1028,7 @@ body.theme-dark .brand-word { color: #3A3E63; }
   background: var(--surface);
   border-top: 1px solid var(--border);
   z-index: 5;
+  flex-shrink: 0;
 }
 .nav-btn {
   display: flex;
@@ -1087,7 +1080,7 @@ body.theme-dark .brand-word { color: #3A3E63; }
   width: 100%;
   max-width: 430px;
   height: 100%;
-  max-height: 860px;
+  max-height: 100vh;
   background: var(--navy);
   display: flex;
   flex-direction: column;
@@ -1098,11 +1091,11 @@ body.theme-dark .brand-word { color: #3A3E63; }
   .status-viewer-inner { border-radius: 26px; height: 860px; }
 }
 
-.status-segments { display: flex; gap: 4px; padding: 14px 14px 0; }
+.status-segments { display: flex; gap: 4px; padding: 14px 14px 0; flex-shrink: 0; }
 .segment { flex: 1; height: 3px; border-radius: 999px; background: rgba(255,255,255,0.22); overflow: hidden; }
 .segment-fill { height: 100%; width: 0%; background: #fff; transition: width 0.05s linear; }
 
-.status-viewer-header { display: flex; align-items: center; gap: 10px; padding: 14px 14px 10px; }
+.status-viewer-header { display: flex; align-items: center; gap: 10px; padding: 14px 14px 10px; flex-shrink: 0; }
 .status-viewer-header .back-btn { background: rgba(255,255,255,0.1); color: #fff; }
 .status-viewer-header .back-btn:hover { background: rgba(255,255,255,0.2); }
 .status-viewer-avatar { box-shadow: 0 0 0 2px #fff; }
@@ -1112,7 +1105,6 @@ body.theme-dark .brand-word { color: #3A3E63; }
 .status-viewer-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 22px; gap: 14px; overflow-y: auto; }
 .status-viewer-body p { color: #fff; font-size: 16px; line-height: 1.6; font-weight: 500; text-align: center; }
 .status-viewer-body p:empty { display: none; }
-/* [NCO-KEEP: status-media] */
 .status-viewer-media:empty { display: none; }
 .status-viewer-media img, .status-viewer-media video {
   max-width: 100%; max-height: 60vh; border-radius: 14px; object-fit: contain; display: block;
@@ -1149,12 +1141,6 @@ body.theme-dark .brand-word { color: #3A3E63; }
 /* ============================================================
    DESKTOP — full-screen two-pane layout (chat list + detail),
    nav bar becomes a left rail instead of a bottom bar.
-   Placed at the end of the file on purpose: every rule here needs
-   to win a same-specificity tie against the mobile-first base
-   rules declared earlier (.app-body, .bottom-nav, .chat-list,
-   .fab, .members-wrap, #screenSettings, etc.) — in plain CSS,
-   the later rule wins a tie, not the more "specific" media query,
-   so this block has to physically come after all of those.
    ============================================================ */
 @media (min-width: 1024px) {
   .app-shell { padding: 0; align-items: stretch; justify-content: stretch; }
@@ -1163,7 +1149,7 @@ body.theme-dark .brand-word { color: #3A3E63; }
     max-width: none;
     width: 100%;
     height: 100vh;
-    height: 100dvh; /* [NCO-KEEP: mobile-dvh-fix] harmless on desktop, keeps the property consistent everywhere it's set */
+    height: 100dvh;
     min-height: 100vh;
     min-height: 100dvh;
     border: none;
