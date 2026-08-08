@@ -1045,6 +1045,8 @@ body.theme-dark .brand-word { color: #3A3E63; }
 .btn-live-pill:hover { background: #16267F; }
 .btn-live-pill i { color: var(--chat-blue); }
 
+body.theme-dark .btn-live-pill { color: #FFFFFF; }
+
 .schedule-banner {
   display: flex;
   align-items: center;
@@ -1223,6 +1225,8 @@ body.theme-dark .msg-reply-btn { color: var(--chat-ink-soft); border-color: var(
 .btn-send i { transform: rotate(45deg); }
 .btn-send:hover { background: var(--chat-blue); }
 .btn-send:active { transform: scale(0.94); }
+
+body.theme-dark .btn-send { color: #FFFFFF; }
 
 .video-panel {
   position: absolute; inset: 0; z-index: 20;
