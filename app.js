@@ -335,21 +335,24 @@
   // 5d. HISTORY NAVIGATION (mobile back button)
   // ============================================================
   let screenHistory = [];
+  let isBackNavigation = false;
 
   function pushScreenState(screenName) {
     if (screenHistory.length === 0 || screenHistory[screenHistory.length - 1] !== screenName) {
       screenHistory.push(screenName);
       if (history.pushState) {
-        history.pushState({ screen: screenName }, '', '#' + screenName);
+        history.pushState({ screen: screenName, index: screenHistory.length - 1 }, '', '#' + screenName);
       }
     }
   }
 
   function goBackInApp() {
     if (screenHistory.length > 1) {
+      isBackNavigation = true;
       screenHistory.pop();
       const prevScreen = screenHistory[screenHistory.length - 1];
       goToScreen(prevScreen);
+      isBackNavigation = false;
       return true;
     }
     return false;
@@ -529,10 +532,16 @@
 
     Object.entries(SCREEN_EL).forEach(([key, el]) => {
       if (!el) return;
-      if (keepChatsVisible && key === 'chats') return;
+      if (keepChatsVisible && key === 'chats') {
+        el.classList.remove('hidden');
+        return;
+      }
       el.classList.add('hidden');
     });
-    if (SCREEN_EL[name]) SCREEN_EL[name].classList.remove('hidden');
+    
+    if (SCREEN_EL[name]) {
+      SCREEN_EL[name].classList.remove('hidden');
+    }
 
     const isRoot = ROOT_TABS.includes(name);
     const hideNav = !isRoot && !isDesktopLayout();
@@ -545,8 +554,10 @@
     }
     state.currentScreen = name;
     
-    // Push to history for mobile back button
-    pushScreenState(name);
+    // Push to history for mobile back button (skip if this is a back navigation)
+    if (!isBackNavigation) {
+      pushScreenState(name);
+    }
   }
 
   let lastIsDesktop = isDesktopLayout();
@@ -955,7 +966,7 @@
   }
 
   // ============================================================
-  // 8e. CLASS SCHEDULING (admin sets teacher's class time)
+  // 8e. CLASS SCHEDULING
   // ============================================================
   let scheduleSubscription = null;
 
@@ -1923,6 +1934,8 @@
     await loadStatuses();
     subscribeToPush().then((ok) => { DOM.notifToggle.checked = !!ok; });
 
+    // Clear history on login
+    screenHistory = [];
     goToScreen('chats');
   }
 
@@ -1985,6 +1998,9 @@
     DOM.usernameInput.value = '';
     DOM.passwordInput.value = '';
     hideError();
+    
+    // Clear history on sign out
+    screenHistory = [];
   }
 
   // ============================================================
@@ -2166,8 +2182,21 @@
 
   // Handle mobile back button
   window.addEventListener('popstate', function(event) {
-    if (goBackInApp()) {
-      event.preventDefault();
+    // Prevent the browser from navigating away
+    event.preventDefault();
+    
+    // Only handle if we have history to go back to
+    if (screenHistory.length > 1) {
+      isBackNavigation = true;
+      screenHistory.pop();
+      const prevScreen = screenHistory[screenHistory.length - 1];
+      goToScreen(prevScreen);
+      isBackNavigation = false;
+    } else {
+      // If at root, optionally close modals or show exit prompt
+      if (DOM.statusModal && !DOM.statusModal.classList.contains('hidden')) {
+        closeStatusViewer();
+      }
     }
   });
 
