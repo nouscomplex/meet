@@ -112,7 +112,6 @@
     // chats
     chatSearchInput: $('chatSearchInput'),
     channelList: $('channelList'),
-    createChannelFab: $('createChannelFab'),
 
     // updates
     userBadge: $('userBadge'),
@@ -848,7 +847,6 @@
 
   function renderChatList(channels) {
     DOM.channelList.innerHTML = '';
-    DOM.createChannelFab.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
 
     if (!channels || channels.length === 0) {
       DOM.channelList.innerHTML = state.isAdmin
@@ -2165,7 +2163,6 @@
     if (name) await createChannel(name);
   }
   DOM.createChannelBtn.addEventListener('click', handleCreateChannel);
-  DOM.createChannelFab.addEventListener('click', handleCreateChannel);
 
   DOM.generatePasswordBtn.addEventListener('click', () => {
     DOM.newUserPassword.value = generatePassword();
