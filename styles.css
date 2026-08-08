@@ -79,6 +79,14 @@ body.theme-dark {
   --ink: #F1F2FA;
   --ink-soft: #ABAFC9;
   --ink-faint: #6E7395;
+
+  /* --accent is used as TEXT/ICON color in many places (icon-btn hover,
+     alpha index, "See all" links, profile meta, settings icons, etc).
+     The default navy (#0E1B75) is nearly invisible on a dark background,
+     which is what was causing icons/headers to "merge" in dark mode.
+     Lighten it here so every element using var(--accent) stays legible. */
+  --accent: #7BB8FF;
+  --accent-dark: #BFDBFF;
   --accent-wash: #23204A;
   --chat-white: #15172F;
   --chat-grey: #33375E;
@@ -236,13 +244,19 @@ button { font-family: inherit; }
 
   /* Chat List - Left Panel */
   #screenChats {
-    flex: 0 0 380px !important;
-    max-width: 380px !important;
+    flex: 0 0 clamp(320px, 30vw, 420px) !important;
+    max-width: 420px !important;
     height: 100% !important;
     border-right: 1px solid var(--border) !important;
     background: var(--bg) !important;
     display: flex !important;
   }
+
+  /* Highlight the currently open conversation in the list, like WhatsApp Web */
+  .chat-row.active {
+    background: var(--surface-sunken);
+  }
+  .chat-row.active:hover { background: var(--surface-sunken); }
 
   /* Right Panel - Content Area */
   #screenUpdates,
@@ -260,33 +274,6 @@ button { font-family: inherit; }
   /* Hide screens when they have the hidden class */
   .screen.hidden {
     display: none !important;
-  }
-
-  /* OVERRIDE: Force all screens to use flex when visible */
-  #screenChats:not(.hidden),
-  #screenUpdates:not(.hidden),
-  #screenSettings:not(.hidden),
-  #screenChatDetail:not(.hidden),
-  #screenMembers:not(.hidden),
-  #screenProfile:not(.hidden) {
-    display: flex !important;
-    flex-direction: column !important;
-  }
-  
-  /* OVERRIDE: Chats panel sizing */
-  #screenChats:not(.hidden) {
-    flex: 0 0 380px !important;
-    max-width: 380px !important;
-    border-right: 1px solid var(--border) !important;
-  }
-  
-  /* OVERRIDE: Other panels take remaining space */
-  #screenUpdates:not(.hidden),
-  #screenSettings:not(.hidden),
-  #screenChatDetail:not(.hidden),
-  #screenMembers:not(.hidden),
-  #screenProfile:not(.hidden) {
-    flex: 1 !important;
   }
 
   /* Chat list scroll */
@@ -324,10 +311,89 @@ button { font-family: inherit; }
 
   .brand-header {
     background: var(--bg) !important;
+    border-bottom: 1px solid var(--border) !important;
   }
-  
+
+  /* screen-header sits inside panels whose background is var(--surface)
+     on desktop (Settings/Members/Profile/Updates). It previously used
+     var(--bg), a different shade, which created a mismatched seam
+     between header and body — most visible in dark mode. Match it to
+     the panel background and add a hairline border for definition. */
   .screen-header {
-    background: var(--bg) !important;
+    background: var(--surface) !important;
+    border-bottom: 1px solid var(--border) !important;
+  }
+
+  .chat-detail-header {
+    border-bottom: 1px solid var(--border) !important;
+  }
+
+  /* Subtle dotted "wallpaper" behind messages, like WhatsApp Web's
+     chat background. Uses existing theme variables so it adapts
+     automatically to light/dark without any new colors. */
+  .chat-scroll {
+    background-color: var(--chat-white);
+    background-image: radial-gradient(var(--border) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  /* Cap bubble width on wide screens — 84% of a 1600px window is huge */
+  .msg { max-width: 60%; }
+
+  /* ===== "No chat selected" welcome screen (desktop only) =====
+     WhatsApp Web hides the conversation header/composer entirely and
+     shows a centered placeholder until a chat is opened. Replicate
+     that instead of leaving the right panel blank on first load. */
+  #screenChatDetail.no-chat .chat-detail-header,
+  #screenChatDetail.no-chat .schedule-banner,
+  #screenChatDetail.no-chat .reply-preview,
+  #screenChatDetail.no-chat .file-preview-bar,
+  #screenChatDetail.no-chat #fileUploadStatus,
+  #screenChatDetail.no-chat .composer {
+    display: none !important;
+  }
+  #screenChatDetail.no-chat .chat-scroll {
+    background-image: none;
+    align-items: center;
+    justify-content: center;
+  }
+  #screenChatDetail.no-chat #chatMessages {
+    display: flex;
+    width: 100%;
+    height: 100%;
+  }
+
+  .chat-welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 24px;
+    text-align: center;
+  }
+  .chat-welcome-icon {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface-sunken);
+    color: var(--ink-faint);
+    font-size: 34px;
+  }
+  .chat-welcome-title {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 1.4rem;
+    color: var(--ink);
+  }
+  .chat-welcome-sub {
+    font-size: 13.5px;
+    color: var(--ink-faint);
+    max-width: 320px;
+    line-height: 1.5;
   }
 }
 
@@ -1093,6 +1159,7 @@ body.theme-dark .msg-time {
   touch-action: manipulation;
 }
 .msg-reply-btn:hover { color: var(--chat-accent); border-color: var(--chat-accent); }
+body.theme-dark .msg-reply-btn { color: var(--chat-ink-soft); border-color: var(--chat-grey); }
 
 .reply-preview {
   display: flex; align-items: center; gap: 10px;
