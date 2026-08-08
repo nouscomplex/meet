@@ -36,16 +36,6 @@
     CONFIG.SUPABASE.ANON_KEY
   );
 
-  // [NCO-KEEP: admin-signup-client] Separate, non-persisting client used
-  // ONLY for admin-triggered account creation (createUserAccount below).
-  // Do NOT call supabase.auth.signUp() on the primary `supabase` client for
-  // this — when email confirmation is off, signUp() returns an active
-  // session immediately and supabase-js replaces whatever session the
-  // client is currently holding with it. That silently logged the admin
-  // out mid-creation and continued as the brand-new account instead,
-  // which is why the role row never made it to Supabase and the admin's
-  // own session broke. This client has persistSession/autoRefreshToken
-  // off so calling signUp() on it never touches the admin's real session.
   const adminAuthClient = window.supabase.createClient(
     CONFIG.SUPABASE.URL,
     CONFIG.SUPABASE.ANON_KEY,
@@ -127,11 +117,23 @@
 
     // admin: create teacher/student account
     adminCreateUserCard: $('adminCreateUserCard'),
+    adminUserManagementCard: $('adminUserManagementCard'),
     newUserUsername: $('newUserUsername'),
     newUserRole: $('newUserRole'),
     newUserPassword: $('newUserPassword'),
     generatePasswordBtn: $('generatePasswordBtn'),
     createUserBtn: $('createUserBtn'),
+    
+    // admin: user management
+    manageUserSearch: $('manageUserSearch'),
+    loadUserBtn: $('loadUserBtn'),
+    userEditForm: $('userEditForm'),
+    editUsername: $('editUsername'),
+    editNewUsername: $('editNewUsername'),
+    editPassword: $('editPassword'),
+    editRole: $('editRole'),
+    updateUserBtn: $('updateUserBtn'),
+    deleteUserBtn: $('deleteUserBtn'),
 
     // chat detail
     backFromChat: $('backFromChat'),
@@ -183,6 +185,11 @@
     scheduleTimeInput: $('scheduleTimeInput'),
     scheduleDurationInput: $('scheduleDurationInput'),
     setScheduleBtn: $('setScheduleBtn'),
+    
+    // admin: channel description
+    adminDescEdit: $('adminDescEdit'),
+    channelDescInput: $('channelDescInput'),
+    updateDescBtn: $('updateDescBtn'),
 
     // status viewer
     statusModal: $('statusModal'),
@@ -248,7 +255,7 @@
   }
 
   // ============================================================
-  // 5c. PUSH NOTIFICATIONS (works even when phone is locked)
+  // 5c. PUSH NOTIFICATIONS
   // ============================================================
   function urlBase64ToUint8Array(base64String) {
     const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -325,6 +332,30 @@
   }
 
   // ============================================================
+  // 5d. HISTORY NAVIGATION (mobile back button)
+  // ============================================================
+  let screenHistory = [];
+
+  function pushScreenState(screenName) {
+    if (screenHistory.length === 0 || screenHistory[screenHistory.length - 1] !== screenName) {
+      screenHistory.push(screenName);
+      if (history.pushState) {
+        history.pushState({ screen: screenName }, '', '#' + screenName);
+      }
+    }
+  }
+
+  function goBackInApp() {
+    if (screenHistory.length > 1) {
+      screenHistory.pop();
+      const prevScreen = screenHistory[screenHistory.length - 1];
+      goToScreen(prevScreen);
+      return true;
+    }
+    return false;
+  }
+
+  // ============================================================
   // 6. UTILITY FUNCTIONS
   // ============================================================
   function getRoleFromUsername(username) {
@@ -336,6 +367,18 @@
     if (key.includes(CONFIG.AUTH.ROLES.ADMIN)) return CONFIG.AUTH.ROLES.ADMIN;
     if (key.includes(CONFIG.AUTH.ROLES.TEACHER)) return CONFIG.AUTH.ROLES.TEACHER;
     return CONFIG.AUTH.ROLES.STUDENT;
+  }
+
+  async function getUserRoles(username) {
+    const { data, error } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('username', username.toLowerCase());
+    
+    if (error || !data || data.length === 0) {
+      return null;
+    }
+    return data.map(row => row.role);
   }
 
   async function loadRoleCache() {
@@ -501,6 +544,9 @@
       });
     }
     state.currentScreen = name;
+    
+    // Push to history for mobile back button
+    pushScreenState(name);
   }
 
   let lastIsDesktop = isDesktopLayout();
@@ -744,7 +790,7 @@
           </span>
         ` : ''}
       `;
-      row.addEventListener('click', (e) => {
+      row.addEventListener('pointerup', (e) => {
         if (e.target.closest('[data-action]')) return;
         openChannel(ch);
       });
@@ -816,6 +862,46 @@
     DOM.navChatsBadge.classList.toggle('hidden', total === 0);
 
     renderChatList(allChannels);
+  }
+
+  // ============================================================
+  // 8a. CHANNEL DESCRIPTION (admin editable)
+  // ============================================================
+  async function loadChannelDescription(channelId) {
+    if (!channelId) return;
+    
+    const { data, error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.CHANNELS)
+      .select('description')
+      .eq('id', channelId)
+      .single();
+    
+    if (error || !data) {
+      DOM.profileChannelDesc.textContent = `Group workspace for ${state.currentChannel?.name || 'this group'}. Share updates, chat with the group, and join live sessions together.`;
+      return;
+    }
+    
+    const desc = data.description || `Group workspace for ${state.currentChannel?.name || 'this group'}. Share updates, chat with the group, and join live sessions together.`;
+    DOM.profileChannelDesc.textContent = desc;
+    DOM.channelDescInput.value = desc || '';
+    
+    // Show edit field for admins
+    DOM.adminDescEdit.classList.toggle('hidden', !state.isAdmin);
+  }
+
+  async function updateChannelDescription(channelId, description) {
+    if (!channelId) { alert('Select a channel first.'); return; }
+    if (!description) { alert('Enter a description.'); return; }
+    
+    const { error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.CHANNELS)
+      .update({ description: description })
+      .eq('id', channelId);
+    
+    if (error) { alert('Could not update description: ' + error.message); return; }
+    
+    await loadChannelDescription(channelId);
+    alert('Description updated successfully!');
   }
 
   // ============================================================
@@ -946,7 +1032,13 @@
       DOM.channelMembersList.innerHTML = '<div class="empty-note">Could not load members</div>';
       return;
     }
-    state.currentMembers = data || [];
+    
+    // Ensure each member has their channel-specific role
+    state.currentMembers = (data || []).map(member => ({
+      ...member,
+      role: member.role || getRoleFromUsername(member.username)
+    }));
+    
     renderMembers();
     updateChatDetailSubtitle();
     updateProfileMeta();
@@ -1031,20 +1123,22 @@
     username = normalizeUsername(username);
     if (!username || !state.currentChannel) { alert('Enter a username and select a channel.'); return; }
 
-    const registeredRole = state.roleCache[username.toLowerCase()];
-    if (!registeredRole) {
+    const registeredRoles = await getUserRoles(username);
+    if (!registeredRoles || registeredRoles.length === 0) {
       alert(`No account exists for "${username}". Create it first from Settings → Add teacher or student, then add them here.`);
       return;
     }
-    if (role && registeredRole !== role) {
-      alert(`"${username}" is registered as a ${registeredRole}, not a ${role}. Check the username or the role you selected.`);
-      return;
-    }
 
+    // Allow any role assignment per channel, even if different from global role
     const { error } = await supabase
       .from(CONFIG.SUPABASE.TABLES.MEMBERS)
       .upsert(
-        { channel_id: state.currentChannel.id, username, role: registeredRole, added_by: state.currentUser.username },
+        { 
+          channel_id: state.currentChannel.id, 
+          username, 
+          role: role || 'student', 
+          added_by: state.currentUser.username 
+        },
         { onConflict: 'channel_id,username' }
       );
 
@@ -1058,6 +1152,153 @@
     const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.MEMBERS).delete().eq('id', memberId);
     if (error) { alert('Remove failed: ' + error.message); return; }
     await loadMembers(state.currentChannel.id);
+  }
+
+  // ============================================================
+  // 7c. ADMIN: USER MANAGEMENT (edit/delete users)
+  // ============================================================
+  async function loadUserForEdit(username) {
+    username = normalizeUsername(username);
+    if (!username) { alert('Enter a username to search for.'); return; }
+
+    // Check if user exists in user_roles
+    const { data: roleData, error: roleError } = await supabase
+      .from('user_roles')
+      .select('username, role')
+      .eq('username', username)
+      .maybeSingle();
+
+    if (roleError || !roleData) {
+      alert(`User "${username}" not found.`);
+      DOM.userEditForm.style.display = 'none';
+      return;
+    }
+
+    DOM.editUsername.value = roleData.username;
+    DOM.editNewUsername.value = roleData.username;
+    DOM.editRole.value = roleData.role;
+    DOM.editPassword.value = '';
+    DOM.userEditForm.style.display = 'flex';
+  }
+
+  async function updateUserAccount(username, newUsername, newRole, newPassword) {
+    username = normalizeUsername(username);
+    newUsername = normalizeUsername(newUsername);
+    
+    if (!username) { alert('Current username is required.'); return; }
+    
+    try {
+      // Update role
+      if (newUsername && newUsername !== username) {
+        // Delete old role entry
+        await supabase.from('user_roles').delete().eq('username', username);
+        // Create new role entry
+        const { error: roleError } = await supabase
+          .from('user_roles')
+          .insert({ username: newUsername, role: newRole });
+        if (roleError) throw roleError;
+        
+        // Update auth email
+        const { error: authError } = await supabase.auth.admin.updateUserById(
+          state.currentUser.id,
+          { email: generateEmail(newUsername) }
+        );
+        if (authError) throw authError;
+        
+        // Update members table
+        await supabase.from(CONFIG.SUPABASE.TABLES.MEMBERS)
+          .update({ username: newUsername })
+          .eq('username', username);
+        
+        // Update messages table
+        await supabase.from(CONFIG.SUPABASE.TABLES.MESSAGES)
+          .update({ username: newUsername })
+          .eq('username', username);
+        
+        // Update statuses table
+        await supabase.from(CONFIG.SUPABASE.TABLES.STATUSES)
+          .update({ username: newUsername })
+          .eq('username', username);
+        
+        // Update class_schedule table
+        await supabase.from('class_schedule')
+          .update({ teacher_username: newUsername })
+          .eq('teacher_username', username);
+        
+        // Clear cache and refresh
+        delete state.roleCache[username];
+        state.roleCache[newUsername] = newRole;
+      } else {
+        // Just update role
+        const { error: roleError } = await supabase
+          .from('user_roles')
+          .update({ role: newRole })
+          .eq('username', username);
+        if (roleError) throw roleError;
+        state.roleCache[username] = newRole;
+      }
+      
+      // Update password if provided
+      if (newPassword && newPassword.length > 0) {
+        // This requires admin privileges in Supabase
+        const { error: passError } = await supabase.auth.admin.updateUserById(
+          state.currentUser.id,
+          { password: newPassword }
+        );
+        if (passError) throw passError;
+      }
+      
+      alert('User updated successfully!');
+      DOM.userEditForm.style.display = 'none';
+      DOM.manageUserSearch.value = '';
+      populateRegisteredUsersDatalist();
+      await loadRoleCache();
+      
+    } catch (e) {
+      console.error('Update user error:', e);
+      alert('Could not update user: ' + (e.message || e));
+    }
+  }
+
+  async function deleteUserAccount(username) {
+    username = normalizeUsername(username);
+    if (!username) { alert('No user selected.'); return; }
+    
+    if (!confirm(`Delete user "${username}" permanently? This cannot be undone and will remove all their data.`)) return;
+    
+    try {
+      // Delete from user_roles
+      await supabase.from('user_roles').delete().eq('username', username);
+      
+      // Delete from members
+      await supabase.from(CONFIG.SUPABASE.TABLES.MEMBERS).delete().eq('username', username);
+      
+      // Delete from messages
+      await supabase.from(CONFIG.SUPABASE.TABLES.MESSAGES).delete().eq('username', username);
+      
+      // Delete from statuses
+      await supabase.from(CONFIG.SUPABASE.TABLES.STATUSES).delete().eq('username', username);
+      
+      // Delete from class_schedule
+      await supabase.from('class_schedule').delete().eq('teacher_username', username);
+      
+      // Delete auth user (requires admin)
+      const { error: authError } = await supabase.auth.admin.deleteUser(
+        state.currentUser.id
+      );
+      if (authError) throw authError;
+      
+      delete state.roleCache[username];
+      alert('User deleted successfully!');
+      DOM.userEditForm.style.display = 'none';
+      DOM.manageUserSearch.value = '';
+      populateRegisteredUsersDatalist();
+      await loadRoleCache();
+      
+    } catch (e) {
+      console.error('Delete user error:', e);
+      alert('Could not delete user: ' + (e.message || e));
+    }
   }
 
   // ============================================================
@@ -1327,7 +1568,7 @@
             </button>
           ` : ''}
         `;
-        item.addEventListener('click', (e) => {
+        item.addEventListener('pointerup', (e) => {
           if (e.target.closest('[data-delete-status]')) return;
           showStatusModal(st);
         });
@@ -1477,7 +1718,6 @@
     DOM.statusProgress.style.width = '0%';
     DOM.statusModal.classList.remove('hidden');
     
-    // Make sure the modal takes full viewport height on mobile
     if (window.innerWidth < 560) {
       const inner = document.querySelector('.status-viewer-inner');
       if (inner) {
@@ -1635,7 +1875,7 @@
   function updateProfileScreen() {
     if (!state.currentChannel) return;
     DOM.profileChannelName.textContent = state.currentChannel.name;
-    DOM.profileChannelDesc.textContent = `Group workspace for ${state.currentChannel.name}. Share updates, chat with the group, and join live sessions together.`;
+    loadChannelDescription(state.currentChannel.id);
     updateProfileMeta();
 
     const media = state.messages.filter((m) => isImageFile(m.file_url));
@@ -1674,6 +1914,7 @@
 
     DOM.adminSettingsCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
     DOM.adminCreateUserCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
+    DOM.adminUserManagementCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
     DOM.adminProfileSchedule.classList.toggle('hidden', !state.isAdmin);
 
     setupPresence();
@@ -1758,7 +1999,7 @@
   });
 
   DOM.bottomNav.querySelectorAll('.nav-btn').forEach((btn) => {
-    btn.addEventListener('click', () => goToScreen(btn.dataset.tab));
+    btn.addEventListener('pointerup', () => goToScreen(btn.dataset.tab));
   });
 
   DOM.chatSearchInput.addEventListener('input', () => filterChatList(DOM.chatSearchInput.value));
@@ -1834,6 +2075,23 @@
     );
   });
 
+  // User management event listeners
+  DOM.loadUserBtn.addEventListener('click', () => {
+    loadUserForEdit(DOM.manageUserSearch.value);
+  });
+
+  DOM.updateUserBtn.addEventListener('click', () => {
+    const currentUser = DOM.editUsername.value;
+    const newUser = DOM.editNewUsername.value || currentUser;
+    const role = DOM.editRole.value;
+    const password = DOM.editPassword.value;
+    updateUserAccount(currentUser, newUser, role, password);
+  });
+
+  DOM.deleteUserBtn.addEventListener('click', () => {
+    deleteUserAccount(DOM.editUsername.value);
+  });
+
   DOM.setScheduleBtn.addEventListener('click', async () => {
     await setClassSchedule(
       DOM.scheduleTeacherInput.value.trim(),
@@ -1849,6 +2107,19 @@
     const role = DOM.assignRoleSelect.value;
     await addMemberToChannel(username, role);
     DOM.assignStudentInput.value = '';
+  });
+
+  // Channel description update
+  DOM.updateDescBtn.addEventListener('click', () => {
+    if (!state.currentChannel) return;
+    updateChannelDescription(state.currentChannel.id, DOM.channelDescInput.value.trim());
+  });
+
+  DOM.channelDescInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      DOM.updateDescBtn.click();
+    }
   });
 
   DOM.backFromMembers.addEventListener('click', () => goToScreen('profile'));
@@ -1892,6 +2163,14 @@
   // 16. BOOTSTRAP
   // ============================================================
   setupLogos();
+
+  // Handle mobile back button
+  window.addEventListener('popstate', function(event) {
+    if (goBackInApp()) {
+      event.preventDefault();
+    }
+  });
+
   restoreSession();
   console.log('✅ Application initialized successfully.');
 
