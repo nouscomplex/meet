@@ -110,94 +110,96 @@
           <span class="screen-title">Settings</span>
         </header>
 
-        <div class="settings-profile-card">
-          <div class="avatar avatar-student lg" id="settingsAvatar">?</div>
-          <div class="settings-profile-info">
-            <div class="settings-profile-name" id="settingsName">—</div>
-            <div class="settings-profile-email" id="settingsEmail">—</div>
-          </div>
-        </div>
-
-        <div class="settings-list">
-          <div class="settings-row">
-            <div class="settings-row-icon"><i class="fas fa-bell"></i></div>
-            <div class="settings-row-text">
-              <div class="settings-row-title">Notifications</div>
-              <div class="settings-row-sub">Push alerts, sound, vibration</div>
+        <div class="settings-scroll-container">
+          <div class="settings-profile-card">
+            <div class="avatar avatar-student lg" id="settingsAvatar">?</div>
+            <div class="settings-profile-info">
+              <div class="settings-profile-name" id="settingsName">—</div>
+              <div class="settings-profile-email" id="settingsEmail">—</div>
             </div>
-            <label class="toggle">
-              <input type="checkbox" id="notifToggle">
-              <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            </label>
           </div>
-          <div class="settings-row">
-            <div class="settings-row-icon"><i class="fas fa-moon"></i></div>
-            <div class="settings-row-text">
-              <div class="settings-row-title">Dark Theme</div>
-              <div class="settings-row-sub">Toggle between light and dark UI</div>
+
+          <div class="settings-list">
+            <div class="settings-row">
+              <div class="settings-row-icon"><i class="fas fa-bell"></i></div>
+              <div class="settings-row-text">
+                <div class="settings-row-title">Notifications</div>
+                <div class="settings-row-sub">Push alerts, sound, vibration</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="notifToggle">
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
             </div>
-            <label class="toggle">
-              <input type="checkbox" id="darkToggle">
-              <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            </label>
+            <div class="settings-row">
+              <div class="settings-row-icon"><i class="fas fa-moon"></i></div>
+              <div class="settings-row-text">
+                <div class="settings-row-title">Dark Theme</div>
+                <div class="settings-row-sub">Toggle between light and dark UI</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="darkToggle">
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+            </div>
           </div>
-        </div>
 
-        <div id="adminSettingsCard" class="hidden settings-list" style="margin-top:14px;">
-          <div class="settings-list-label"><i class="fas fa-user-shield"></i> Admin tools</div>
-          <button id="createChannelBtn" class="settings-action-row">
-            <i class="fas fa-plus"></i> New channel
-          </button>
-        </div>
-
-        <div id="adminCreateUserCard" class="hidden settings-list" style="margin-top:14px;">
-          <div class="settings-list-label"><i class="fas fa-user-plus"></i> Add teacher or student</div>
-          <div style="padding:4px 16px 16px; display:flex; flex-direction:column; gap:8px;">
-            <input id="newUserUsername" class="field-sm" placeholder="Username" style="width:100%;">
-            <div class="admin-row">
-              <select id="newUserRole" class="field-sm" style="flex:0 0 108px;">
-                <option value="student">Student</option>
-                <option value="teacher">Teacher</option>
-              </select>
-              <input id="newUserPassword" class="field-sm" placeholder="Password" style="flex:1;">
-              <button id="generatePasswordBtn" class="icon-btn" title="Generate password" type="button">
-                <i class="fas fa-shuffle"></i>
-              </button>
-            </div>
-            <button id="createUserBtn" class="btn-admin-sm" style="width:100%;">
-              <i class="fas fa-user-plus"></i> Create account
+          <div id="adminSettingsCard" class="hidden settings-list" style="margin-top:14px;">
+            <div class="settings-list-label"><i class="fas fa-user-shield"></i> Admin tools</div>
+            <button id="createChannelBtn" class="settings-action-row">
+              <i class="fas fa-plus"></i> New channel
             </button>
           </div>
-        </div>
 
-        <!-- Admin User Management Panel -->
-        <div id="adminUserManagementCard" class="hidden settings-list" style="margin-top:14px;">
-          <div class="settings-list-label"><i class="fas fa-users-cog"></i> Manage Users</div>
-          <div style="padding:4px 16px 16px; display:flex; flex-direction:column; gap:8px;">
-            <div class="admin-row" style="display:flex; gap:8px;">
-              <input id="manageUserSearch" class="field-sm" placeholder="Search username..." list="registeredUsersList" autocomplete="off" style="flex:1;">
-              <button id="loadUserBtn" class="btn-admin-sm"><i class="fas fa-search"></i> Load</button>
+          <div id="adminCreateUserCard" class="hidden settings-list" style="margin-top:14px;">
+            <div class="settings-list-label"><i class="fas fa-user-plus"></i> Add teacher or student</div>
+            <div style="padding:4px 16px 16px; display:flex; flex-direction:column; gap:8px;">
+              <input id="newUserUsername" class="field-sm" placeholder="Username" style="width:100%;">
+              <div class="admin-row">
+                <select id="newUserRole" class="field-sm" style="flex:0 0 108px;">
+                  <option value="student">Student</option>
+                  <option value="teacher">Teacher</option>
+                </select>
+                <input id="newUserPassword" class="field-sm" placeholder="Password" style="flex:1;">
+                <button id="generatePasswordBtn" class="icon-btn" title="Generate password" type="button">
+                  <i class="fas fa-shuffle"></i>
+                </button>
+              </div>
+              <button id="createUserBtn" class="btn-admin-sm" style="width:100%;">
+                <i class="fas fa-user-plus"></i> Create account
+              </button>
             </div>
-            <div id="userEditForm" style="display:none; flex-direction:column; gap:8px; padding-top:8px; border-top:1px solid var(--border);">
-              <input id="editUsername" class="field-sm" placeholder="Username (ID)" style="width:100%;">
-              <input id="editNewUsername" class="field-sm" placeholder="New username (optional)" style="width:100%;">
-              <input id="editPassword" class="field-sm" placeholder="New password (leave blank to keep current)" style="width:100%;">
-              <select id="editRole" class="field-sm" style="width:100%;">
-                <option value="student">Student</option>
-                <option value="teacher">Teacher</option>
-                <option value="admin">Admin</option>
-              </select>
-              <div style="display:flex; gap:8px;">
-                <button id="updateUserBtn" class="btn-admin-sm" style="flex:1;"><i class="fas fa-save"></i> Update</button>
-                <button id="deleteUserBtn" class="btn-admin-sm" style="flex:1; border-color:var(--danger); color:var(--danger);"><i class="fas fa-trash"></i> Delete</button>
+          </div>
+
+          <!-- Admin User Management Panel -->
+          <div id="adminUserManagementCard" class="hidden settings-list" style="margin-top:14px;">
+            <div class="settings-list-label"><i class="fas fa-users-cog"></i> Manage Users</div>
+            <div style="padding:4px 16px 16px; display:flex; flex-direction:column; gap:8px;">
+              <div class="admin-row" style="display:flex; gap:8px;">
+                <input id="manageUserSearch" class="field-sm" placeholder="Search username..." list="registeredUsersList" autocomplete="off" style="flex:1;">
+                <button id="loadUserBtn" class="btn-admin-sm"><i class="fas fa-search"></i> Load</button>
+              </div>
+              <div id="userEditForm" style="display:none; flex-direction:column; gap:8px; padding-top:8px; border-top:1px solid var(--border);">
+                <input id="editUsername" class="field-sm" placeholder="Username (ID)" style="width:100%;">
+                <input id="editNewUsername" class="field-sm" placeholder="New username (optional)" style="width:100%;">
+                <input id="editPassword" class="field-sm" placeholder="New password (leave blank to keep current)" style="width:100%;">
+                <select id="editRole" class="field-sm" style="width:100%;">
+                  <option value="student">Student</option>
+                  <option value="teacher">Teacher</option>
+                  <option value="admin">Admin</option>
+                </select>
+                <div style="display:flex; gap:8px;">
+                  <button id="updateUserBtn" class="btn-admin-sm" style="flex:1;"><i class="fas fa-save"></i> Update</button>
+                  <button id="deleteUserBtn" class="btn-admin-sm" style="flex:1; border-color:var(--danger); color:var(--danger);"><i class="fas fa-trash"></i> Delete</button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <button id="signOutBtn" class="logout-btn">
-          <i class="fas fa-arrow-right-from-bracket"></i> Log out
-        </button>
+          <button id="signOutBtn" class="logout-btn">
+            <i class="fas fa-arrow-right-from-bracket"></i> Log out
+          </button>
+        </div>
       </section>
 
       <!-- ============================================================
@@ -309,41 +311,43 @@
           <span class="screen-title">Profile</span>
         </header>
 
-        <div class="profile-card">
-          <div class="profile-card-name" id="profileChannelName">—</div>
-          <div class="profile-card-meta" id="profileChannelMeta">—</div>
-          <p class="profile-card-desc" id="profileChannelDesc"></p>
-          
-          <!-- Admin description edit -->
-          <div id="adminDescEdit" class="hidden" style="margin-top:12px;">
-            <div style="display:flex; gap:8px;">
-              <input id="channelDescInput" class="field-sm" placeholder="Group description..." style="flex:1;">
-              <button id="updateDescBtn" class="btn-admin-sm"><i class="fas fa-save"></i></button>
+        <div class="profile-scroll-container">
+          <div class="profile-card">
+            <div class="profile-card-name" id="profileChannelName">—</div>
+            <div class="profile-card-meta" id="profileChannelMeta">—</div>
+            <p class="profile-card-desc" id="profileChannelDesc"></p>
+            
+            <!-- Admin description edit -->
+            <div id="adminDescEdit" class="hidden" style="margin-top:12px;">
+              <div style="display:flex; gap:8px;">
+                <input id="channelDescInput" class="field-sm" placeholder="Group description..." style="flex:1;">
+                <button id="updateDescBtn" class="btn-admin-sm"><i class="fas fa-save"></i></button>
+              </div>
             </div>
           </div>
-        </div>
 
-        <button id="profileMembersBtn" class="btn-navy-pill">
-          <i class="fas fa-people-group"></i> Members
-        </button>
+          <button id="profileMembersBtn" class="btn-navy-pill">
+            <i class="fas fa-people-group"></i> Members
+          </button>
 
-        <div class="profile-section-row">
-          <span class="section-label">Shared media</span>
-          <a href="#" id="profileSeeAllMedia" class="see-all-link hidden">See all</a>
-        </div>
-        <div id="sharedMediaGrid" class="shared-media-grid">
-          <div class="empty-note">No shared media yet</div>
-        </div>
+          <div class="profile-section-row">
+            <span class="section-label">Shared media</span>
+            <a href="#" id="profileSeeAllMedia" class="see-all-link hidden">See all</a>
+          </div>
+          <div id="sharedMediaGrid" class="shared-media-grid">
+            <div class="empty-note">No shared media yet</div>
+          </div>
 
-        <div id="adminProfileSchedule" class="hidden schedule-card">
-          <div class="section-label"><i class="fas fa-calendar-clock"></i> Schedule class time</div>
-          <input id="scheduleTeacherInput" placeholder="Teacher username" class="field-sm" list="registeredUsersList" autocomplete="off" style="width:100%; margin-bottom:6px;">
-          <input id="scheduleTimeInput" type="datetime-local" class="field-sm" style="width:100%; margin-bottom:6px;">
-          <div class="admin-row">
-            <input id="scheduleDurationInput" type="number" min="10" max="240" value="45" class="field-sm" style="flex:0 0 90px;" title="Duration (minutes)">
-            <button id="setScheduleBtn" class="btn-admin-sm" style="flex:1;">
-              <i class="fas fa-clock"></i> Set time
-            </button>
+          <div id="adminProfileSchedule" class="hidden schedule-card">
+            <div class="section-label"><i class="fas fa-calendar-clock"></i> Schedule class time</div>
+            <input id="scheduleTeacherInput" placeholder="Teacher username" class="field-sm" list="registeredUsersList" autocomplete="off" style="width:100%; margin-bottom:6px;">
+            <input id="scheduleTimeInput" type="datetime-local" class="field-sm" style="width:100%; margin-bottom:6px;">
+            <div class="admin-row">
+              <input id="scheduleDurationInput" type="number" min="10" max="240" value="45" class="field-sm" style="flex:0 0 90px;" title="Duration (minutes)">
+              <button id="setScheduleBtn" class="btn-admin-sm" style="flex:1;">
+                <i class="fas fa-clock"></i> Set time
+              </button>
+            </div>
           </div>
         </div>
       </section>
