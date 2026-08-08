@@ -325,7 +325,7 @@
         .from('user_device_tokens')
         .upsert({
           user_id: userId,
-          subscription_data: subscriptionJson, // Securely packs keys and endpoints
+          subscription_data: subscriptionJson,
           endpoint: subscriptionJson.endpoint,
           p256dh: subscriptionJson.keys?.p256dh,
           auth: subscriptionJson.keys?.auth,
@@ -2112,24 +2112,28 @@
   async function handleSignOut() {
     if (!confirm('Sign out?')) return;
 
+    // Clean up VAPID subscription before signing out
+    try {
+      if (state.currentUser) {
+        // Delete the subscription from the table while the session is still active
+        await supabase
+          .from('user_device_tokens')
+          .delete()
+          .eq('user_id', state.currentUser.username);
+        console.log('VAPID subscription cleaned up successfully');
+      }
+    } catch (e) {
+      console.warn('Cleanup VAPID subscription error:', e);
+    }
+
+    // Terminate login session cleanly
     try { 
       await supabase.auth.signOut(); 
     } catch (e) { 
       console.warn('Sign out error:', e); 
     }
 
-    // Clean up VAPID subscription
-    try {
-      if (state.currentUser) {
-        await supabase
-          .from('user_device_tokens')
-          .delete()
-          .eq('user_id', state.currentUser.username);
-      }
-    } catch (e) {
-      console.warn('Cleanup VAPID subscription error:', e);
-    }
-
+    // Clean up subscriptions and presence
     if (state.messagesSubscription) { 
       supabase.removeChannel(state.messagesSubscription); 
       state.messagesSubscription = null; 
@@ -2140,6 +2144,7 @@
     }
     teardownPresence();
 
+    // Reset state
     state.currentUser = null;
     state.currentChannel = null;
     state.currentMembers = [];
@@ -2149,6 +2154,7 @@
     state.statuses = [];
     state.replyingTo = null;
 
+    // Update UI
     DOM.dashboard.classList.add('hidden');
     DOM.videoContainer.classList.add('hidden');
     DOM.authCard.classList.remove('hidden');
@@ -2157,6 +2163,10 @@
     hideError();
     
     screenHistory = [];
+    
+    // Note: This is a single-page app, so we don't redirect to /login
+    // If you want to redirect, uncomment the line below:
+    // window.location.href = '/login';
   }
 
   // ============================================================
