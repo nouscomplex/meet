@@ -573,7 +573,13 @@
   const CHAT_GROUP_SCREENS = ['chats', 'chatDetail', 'members', 'profile'];
   const isDesktopLayout = () => window.matchMedia('(min-width: 1024px)').matches;
 
+  function updateChatEmptyState() {
+    if (!DOM.screenChatDetail) return;
+    DOM.screenChatDetail.classList.toggle('no-chat', !state.currentChannel);
+  }
+
   function goToScreen(name) {
+    updateChatEmptyState();
     const isDesktop = isDesktopLayout();
     
     // On desktop, we want chats to always be visible when in chat-related screens
@@ -592,6 +598,11 @@
         // On desktop, always show chats when in a chat group
         shouldBeVisible = true;
       } else if (isDesktop && keepChatsVisible && key === 'chats') {
+        shouldBeVisible = true;
+      } else if (isDesktop && key === 'chatDetail' && name === 'chats') {
+        // WhatsApp-Web style: the right pane always shows something —
+        // either the open conversation or the "select a chat" welcome
+        // screen — instead of going blank on the chats tab.
         shouldBeVisible = true;
       }
       
@@ -856,7 +867,7 @@
       const time = preview ? formatTimeAgo(preview.created_at) : '';
 
       const row = document.createElement('div');
-      row.className = 'chat-row';
+      row.className = 'chat-row' + (state.currentChannel && state.currentChannel.id === ch.id ? ' active' : '');
       row.dataset.id = ch.id;
       row.dataset.name = ch.name.toLowerCase();
       row.innerHTML = `
@@ -890,6 +901,13 @@
     });
     DOM.channelList.querySelectorAll('[data-action="delete-channel"]').forEach((btn) => {
       btn.addEventListener('click', (e) => { e.stopPropagation(); deleteChannel(btn.dataset.id); });
+    });
+  }
+
+  function highlightActiveChatRow() {
+    if (!DOM.channelList) return;
+    DOM.channelList.querySelectorAll('.chat-row').forEach((row) => {
+      row.classList.toggle('active', !!state.currentChannel && row.dataset.id === String(state.currentChannel.id));
     });
   }
 
@@ -1017,6 +1035,8 @@
 
   async function selectChannel(channel) {
     state.currentChannel = channel;
+    updateChatEmptyState();
+    highlightActiveChatRow();
     await loadMessages(channel.id);
     await loadMembers(channel.id);
     subscribeToMessages(channel.id);
