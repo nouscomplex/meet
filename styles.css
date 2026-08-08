@@ -1073,6 +1073,12 @@ body.theme-dark .brand-word { color: #3A3E63; }
   -webkit-overflow-scrolling: touch;
 }
 
+#chatMessages {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .msg { display: flex; gap: 8px; max-width: 84%; animation: msgIn 0.2s ease-out; }
 .msg-theirs { align-self: flex-start; }
 .msg-mine { align-self: flex-end; flex-direction: row-reverse; }
