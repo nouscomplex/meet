@@ -578,33 +578,65 @@
     DOM.screenChatDetail.classList.toggle('no-chat', !state.currentChannel);
   }
 
-  function goToScreen(name) {
-    updateChatEmptyState();
-    const isDesktop = isDesktopLayout();
-    
-    // On desktop, we want chats to always be visible when in chat-related screens
-    const keepChatsVisible = isDesktop && CHAT_GROUP_SCREENS.includes(name);
-
-    // Handle all screens
+ function goToScreen(name) {
+  const isDesktop = isDesktopLayout();
+  
+  if (isDesktop) {
+    // On desktop: show chats always, plus the target screen
     Object.entries(SCREEN_EL).forEach(([key, el]) => {
       if (!el) return;
       
-      // Determine if this screen should be visible
-      let shouldBeVisible = false;
-      
-      if (key === name) {
-        shouldBeVisible = true;
-      } else if (isDesktop && key === 'chats' && CHAT_GROUP_SCREENS.includes(name)) {
-        // On desktop, always show chats when in a chat group
-        shouldBeVisible = true;
-      } else if (isDesktop && keepChatsVisible && key === 'chats') {
-        shouldBeVisible = true;
-      } else if (isDesktop && key === 'chatDetail' && name === 'chats') {
-        // WhatsApp-Web style: the right pane always shows something —
-        // either the open conversation or the "select a chat" welcome
-        // screen — instead of going blank on the chats tab.
-        shouldBeVisible = true;
+      // Always show chats on desktop when in chat group
+      if (key === 'chats' && (name === 'chatDetail' || name === 'members' || name === 'profile' || name === 'chats')) {
+        el.classList.remove('hidden');
+        el.style.display = 'flex';
+        el.style.flexDirection = 'column';
+      } else if (key === name) {
+        el.classList.remove('hidden');
+        el.style.display = 'flex';
+        el.style.flexDirection = 'column';
+      } else {
+        el.classList.add('hidden');
+        el.style.display = 'none';
       }
+    });
+    
+    // Show navigation on desktop
+    DOM.bottomNav.classList.remove('hidden');
+    DOM.bottomNav.style.display = 'flex';
+  } else {
+    // Mobile: show only the target screen
+    Object.entries(SCREEN_EL).forEach(([key, el]) => {
+      if (!el) return;
+      if (key === name) {
+        el.classList.remove('hidden');
+        el.style.display = 'flex';
+        el.style.flexDirection = 'column';
+      } else {
+        el.classList.add('hidden');
+        el.style.display = 'none';
+      }
+    });
+    
+    // Hide navigation for non-root screens on mobile
+    const isRoot = ROOT_TABS.includes(name);
+    DOM.bottomNav.classList.toggle('hidden', !isRoot);
+  }
+  
+  // Update active tab
+  if (ROOT_TABS.includes(name)) {
+    state.currentTab = name;
+    DOM.bottomNav.querySelectorAll('.nav-btn').forEach((b) => {
+      b.classList.toggle('active', b.dataset.tab === name);
+    });
+  }
+  
+  state.currentScreen = name;
+  
+  if (!isBackNavigation) {
+    pushScreenState(name);
+  }
+}
       
       // Apply visibility
       if (shouldBeVisible) {
