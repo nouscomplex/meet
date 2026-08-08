@@ -1,3 +1,4 @@
+/* styles.css - Complete updated file */
 /* ============================================================
    NOUS COMPLEX ORBIT — Design System
    Mobile-first communication app.
@@ -170,7 +171,7 @@ button { font-family: inherit; }
   }
 }
 
-/* Desktop two-pane layout */
+/* Desktop two-pane layout - WhatsApp Web style */
 @media (min-width: 1024px) {
   .app-shell { 
     padding: 0; 
@@ -192,6 +193,7 @@ button { font-family: inherit; }
     border: none;
     border-radius: 0;
     box-shadow: none;
+    background: var(--bg);
   }
 
   .app-body { 
@@ -212,6 +214,7 @@ button { font-family: inherit; }
     border-right: 1px solid var(--border);
     order: -1;
     flex-shrink: 0;
+    background: var(--surface);
   }
   .nav-btn { padding: 0; }
 
@@ -220,6 +223,7 @@ button { font-family: inherit; }
     max-width: 380px;
     height: 100%;
     border-right: 1px solid var(--border);
+    background: var(--bg);
   }
   #screenChats:not(.hidden) { display: flex; }
 
@@ -227,6 +231,7 @@ button { font-family: inherit; }
     flex: 1;
     height: 100%;
     min-width: 0;
+    background: var(--surface);
   }
   #screenUpdates:not(.hidden),
   #screenSettings:not(.hidden),
@@ -239,7 +244,7 @@ button { font-family: inherit; }
   .members-wrap { padding-bottom: 24px; }
 
   .fab { bottom: 28px; }
-  #backFromChat { display: none; }
+  #backFromChat, #backFromUpdates { display: none !important; }
 
   .status-viewer-inner { border-radius: 0; height: 100vh; max-height: 100vh; max-width: 480px; }
 }
@@ -522,6 +527,7 @@ button { font-family: inherit; }
   justify-content: space-between;
   padding: 18px 18px 14px;
   flex-shrink: 0;
+  background: var(--bg);
 }
 .brand-mark { 
   display: none;
@@ -540,6 +546,10 @@ button { font-family: inherit; }
   box-shadow: none;
   outline: none;
   background: transparent;
+}
+
+body.theme-dark .text-logo {
+  color: #7BB8FF;
 }
 
 .brand-word { font-family: var(--font-display); font-weight: 800; font-size: 1.5rem; color: #C9CBDA; letter-spacing: -0.01em; }
@@ -722,6 +732,7 @@ body.theme-dark .brand-word { color: #3A3E63; }
 }
 .settings-profile-name { font-weight: 800; font-size: 15.5px; color: var(--ink); font-family: var(--font-display); user-select: text; -webkit-user-select: text; }
 .settings-profile-email { font-size: 12.5px; color: var(--ink-faint); margin-top: 2px; user-select: text; -webkit-user-select: text; }
+.settings-profile-displayname { font-size: 12px; color: var(--ink-soft); margin-top: 2px; user-select: text; -webkit-user-select: text; }
 
 .settings-list {
   margin: 0 18px 10px;
@@ -1087,6 +1098,7 @@ body.theme-dark .msg-time {
 }
 .member-row:hover { background: var(--surface-sunken); }
 .member-name { font-weight: 700; font-size: 14px; color: var(--ink); }
+.member-display-name { font-size: 12px; color: var(--ink-soft); margin-left: 6px; }
 .member-status { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-faint); margin-top: 1px; }
 .member-status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-faint); }
 .member-status.online { color: var(--online); }
@@ -1368,6 +1380,7 @@ body.theme-dark .msg-time {
 .status-viewer-body p,
 .settings-profile-name,
 .settings-profile-email,
+.settings-profile-displayname,
 .auth-title,
 .auth-sub {
   user-select: text;
