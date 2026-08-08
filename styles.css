@@ -243,7 +243,7 @@ button { font-family: inherit; }
   }
 
   /* Chat List - Left Panel */
-  #screenChats {
+  #screenChats:not(.hidden) {
     flex: 0 0 clamp(320px, 30vw, 420px) !important;
     max-width: 420px !important;
     height: 100% !important;
@@ -259,11 +259,11 @@ button { font-family: inherit; }
   .chat-row.active:hover { background: var(--surface-sunken); }
 
   /* Right Panel - Content Area */
-  #screenUpdates,
-  #screenSettings,
-  #screenChatDetail,
-  #screenMembers,
-  #screenProfile {
+  #screenUpdates:not(.hidden),
+  #screenSettings:not(.hidden),
+  #screenChatDetail:not(.hidden),
+  #screenMembers:not(.hidden),
+  #screenProfile:not(.hidden) {
     flex: 1 !important;
     height: 100% !important;
     min-width: 0 !important;
