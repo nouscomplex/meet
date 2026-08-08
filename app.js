@@ -83,6 +83,10 @@
     currentScreen: 'chats',
     // Cache for messages to enable instant loading
     cachedMessages: {},
+    // Inactivity management
+    inactivityTimer: null,
+    INACTIVITY_TIMEOUT: 300000, // 5 minutes
+    isChannelActive: false,
   };
 
   // ============================================================
@@ -499,7 +503,80 @@
   }
 
   // ============================================================
-  // 5g. HISTORY NAVIGATION (mobile back button)
+  // 5g. INACTIVITY DISCONNECTION MANAGEMENT
+  // ============================================================
+  function setupInactivityManager() {
+    // Clear any existing timer
+    if (state.inactivityTimer) {
+      clearTimeout(state.inactivityTimer);
+      state.inactivityTimer = null;
+    }
+
+    // Define the reset routine - runs whenever user is active
+    function resetInactivityTimer() {
+      // Clear the pending disconnect countdown
+      if (state.inactivityTimer) {
+        clearTimeout(state.inactivityTimer);
+        state.inactivityTimer = null;
+      }
+      
+      // If the channel was disconnected, revive the connection silently in the background
+      if (state.messagesSubscription && state.messagesSubscription.state === 'closed') {
+        console.log("🔄 User active! Reviving background connection silently...");
+        if (state.currentChannel) {
+          subscribeToMessages(state.currentChannel.id);
+        }
+      }
+
+      // Start a fresh 5-minute countdown
+      state.inactivityTimer = setTimeout(() => {
+        if (state.messagesSubscription) {
+          console.log("⏰ 5 minutes of inactivity reached. Disconnecting idle channel to save resources.");
+          supabase.removeChannel(state.messagesSubscription);
+          state.messagesSubscription = null;
+          state.isChannelActive = false;
+        }
+      }, state.INACTIVITY_TIMEOUT);
+    }
+
+    // Initialize connection and start the first timer countdown
+    resetInactivityTimer();
+
+    // Attach standard browser event listeners to monitor user activity
+    const activityEvents = ['mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+    activityEvents.forEach(event => {
+      window.addEventListener(event, resetInactivityTimer);
+    });
+
+    // Store cleanup function
+    state._inactivityCleanup = function() {
+      if (state.inactivityTimer) {
+        clearTimeout(state.inactivityTimer);
+        state.inactivityTimer = null;
+      }
+      const events = ['mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+      events.forEach(event => {
+        window.removeEventListener(event, resetInactivityTimer);
+      });
+    };
+
+    console.log('⏱️ Inactivity manager initialized (5 minute timeout)');
+  }
+
+  function cleanupInactivityManager() {
+    if (state._inactivityCleanup) {
+      state._inactivityCleanup();
+      state._inactivityCleanup = null;
+    }
+    if (state.inactivityTimer) {
+      clearTimeout(state.inactivityTimer);
+      state.inactivityTimer = null;
+    }
+    console.log('⏱️ Inactivity manager cleaned up');
+  }
+
+  // ============================================================
+  // 5h. HISTORY NAVIGATION (mobile back button)
   // ============================================================
   let screenHistory = [];
   let isBackNavigation = false;
@@ -1202,6 +1279,9 @@
     subscribeToSchedule(channel.id);
     updateChatDetailHeader();
     updateProfileScreen();
+    
+    // Setup inactivity manager for this channel
+    setupInactivityManager();
   }
 
   function updateChatDetailHeader() {
@@ -1553,9 +1633,10 @@
   }
 
   // ============================================================
-  // 8b. REALTIME MESSAGE SYNC (with instant cache)
+  // 8b. REALTIME MESSAGE SYNC (with instant cache & inactivity)
   // ============================================================
   function subscribeToMessages(channelId) {
+    // Clean up existing subscription
     if (state.messagesSubscription) {
       supabase.removeChannel(state.messagesSubscription);
       state.messagesSubscription = null;
@@ -1569,6 +1650,7 @@
         table: CONFIG.SUPABASE.TABLES.MESSAGES, 
         filter: `channel_id=eq.${channelId}` 
       }, async (payload) => {
+        // Check if message already exists
         const exists = state.messages.some((m) => m.id === payload.new.id);
         if (!exists) {
           state.messages.push(payload.new);
@@ -1577,6 +1659,12 @@
           
           // Cache the updated messages
           saveCachedMessages(channelId, state.messages);
+
+          // Reset inactivity timer on new message
+          if (state.inactivityTimer) {
+            clearTimeout(state.inactivityTimer);
+            state.inactivityTimer = null;
+          }
 
           // Only send notifications if the message is from someone else
           if (payload.new.username !== state.currentUser?.username) {
@@ -1621,7 +1709,11 @@
         saveCachedMessages(channelId, state.messages);
       })
       .subscribe((status) => {
-        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        if (status === 'SUBSCRIBED') {
+          state.isChannelActive = true;
+          console.log(`✅ Subscribed to messages for channel ${channelId}`);
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          state.isChannelActive = false;
           console.warn('Realtime message sync unavailable — falling back to manual refresh.');
         }
       });
@@ -2325,6 +2417,9 @@
     }
     teardownPresence();
 
+    // Clean up inactivity manager
+    cleanupInactivityManager();
+
     // Reset state
     state.currentUser = null;
     state.currentChannel = null;
@@ -2334,6 +2429,7 @@
     state.messages = [];
     state.statuses = [];
     state.replyingTo = null;
+    state.isChannelActive = false;
 
     // Clear cached messages on logout
     try {
@@ -2392,10 +2488,32 @@
     DOM.messageInput.value = '';
     DOM.fileInput.value = '';
     DOM.filePreview.classList.add('hidden');
+    
+    // Reset inactivity timer on sending message (user is active)
+    if (state.inactivityTimer) {
+      clearTimeout(state.inactivityTimer);
+      state.inactivityTimer = null;
+    }
   });
 
   DOM.messageInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); DOM.sendMsgBtn.click(); }
+    if (e.key === 'Enter') { 
+      e.preventDefault(); 
+      DOM.sendMsgBtn.click(); 
+    }
+    // Reset inactivity timer on typing
+    if (state.inactivityTimer) {
+      clearTimeout(state.inactivityTimer);
+      state.inactivityTimer = null;
+    }
+  });
+
+  // Message input focus/blur handlers for inactivity
+  DOM.messageInput.addEventListener('focus', () => {
+    if (state.inactivityTimer) {
+      clearTimeout(state.inactivityTimer);
+      state.inactivityTimer = null;
+    }
   });
 
   DOM.postStatusBtn.addEventListener('click', () => openStatusComposer());
@@ -2423,6 +2541,12 @@
     }
     DOM.filePreviewName.textContent = file.name;
     DOM.filePreview.classList.remove('hidden');
+    
+    // Reset inactivity timer on file selection
+    if (state.inactivityTimer) {
+      clearTimeout(state.inactivityTimer);
+      state.inactivityTimer = null;
+    }
   });
 
   DOM.filePreviewRemove.addEventListener('click', () => {
