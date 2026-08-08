@@ -81,6 +81,8 @@
     currentTab: 'chats',
     screenReturn: 'chats',
     currentScreen: 'chats',
+    // Cache for messages to enable instant loading
+    cachedMessages: {},
   };
 
   // ============================================================
@@ -458,7 +460,46 @@
   }
 
   // ============================================================
-  // 5f. HISTORY NAVIGATION (mobile back button)
+  // 5f. CACHED MESSAGES - INSTANT LOAD
+  // ============================================================
+  function getCachedMessages(channelId) {
+    try {
+      const cacheKey = `cached_chat_history_${channelId}`;
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        console.log(`📦 Loaded ${parsed.length} cached messages for channel ${channelId}`);
+        return parsed;
+      }
+    } catch (e) {
+      console.warn('Failed to load cached messages:', e);
+    }
+    return null;
+  }
+
+  function saveCachedMessages(channelId, messages) {
+    try {
+      const cacheKey = `cached_chat_history_${channelId}`;
+      // Only cache the last 50 messages
+      const toCache = messages.slice(-50);
+      localStorage.setItem(cacheKey, JSON.stringify(toCache));
+      console.log(`💾 Cached ${toCache.length} messages for channel ${channelId}`);
+    } catch (e) {
+      console.warn('Failed to cache messages:', e);
+    }
+  }
+
+  function clearCachedMessages(channelId) {
+    try {
+      const cacheKey = `cached_chat_history_${channelId}`;
+      localStorage.removeItem(cacheKey);
+    } catch (e) {
+      console.warn('Failed to clear cached messages:', e);
+    }
+  }
+
+  // ============================================================
+  // 5g. HISTORY NAVIGATION (mobile back button)
   // ============================================================
   let screenHistory = [];
   let isBackNavigation = false;
@@ -1141,7 +1182,18 @@
     state.currentChannel = channel;
     updateChatEmptyState();
     highlightActiveChatRow();
+    
+    // INSTANT LOAD: Show cached messages immediately (0ms)
+    const cachedMessages = getCachedMessages(channel.id);
+    if (cachedMessages) {
+      state.messages = cachedMessages;
+      renderMessages();
+      console.log(`⚡ Instant load: ${cachedMessages.length} messages from cache`);
+    }
+    
+    // BACKGROUND FETCH: Load fresh messages from Supabase
     await loadMessages(channel.id);
+    
     await loadMembers(channel.id);
     subscribeToMessages(channel.id);
     await markDelivered(channel.id);
@@ -1501,7 +1553,7 @@
   }
 
   // ============================================================
-  // 8b. REALTIME MESSAGE SYNC (with VAPID notifications)
+  // 8b. REALTIME MESSAGE SYNC (with instant cache)
   // ============================================================
   function subscribeToMessages(channelId) {
     if (state.messagesSubscription) {
@@ -1522,6 +1574,9 @@
           state.messages.push(payload.new);
           renderMessages();
           refreshUnreadBadges();
+          
+          // Cache the updated messages
+          saveCachedMessages(channelId, state.messages);
 
           // Only send notifications if the message is from someone else
           if (payload.new.username !== state.currentUser?.username) {
@@ -1549,7 +1604,9 @@
         const idx = state.messages.findIndex((m) => m.id === payload.new.id);
         if (idx !== -1) { 
           state.messages[idx] = payload.new; 
-          renderMessages(); 
+          renderMessages();
+          // Update cache on message update
+          saveCachedMessages(channelId, state.messages);
         }
       })
       .on('postgres_changes', { 
@@ -1560,6 +1617,8 @@
       }, (payload) => {
         state.messages = state.messages.filter((m) => m.id !== payload.old.id);
         renderMessages();
+        // Update cache on message delete
+        saveCachedMessages(channelId, state.messages);
       })
       .subscribe((status) => {
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
@@ -1576,25 +1635,54 @@
   }
 
   // ============================================================
-  // 9. MESSAGES
+  // 9. MESSAGES (with caching support)
   // ============================================================
   async function loadMessages(channelId) {
     if (!channelId) return;
 
-    const { data, error } = await supabase
-      .from(CONFIG.SUPABASE.TABLES.MESSAGES)
-      .select('*')
-      .eq('channel_id', channelId)
-      .order('created_at', { ascending: true });
+    // Try to get cached messages first (already loaded in selectChannel)
+    // But we still fetch fresh data in background
+    
+    try {
+      const { data, error } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+        .select('*')
+        .eq('channel_id', channelId)
+        .order('created_at', { ascending: true })
+        .limit(50); // Just grab the last 50 messages to keep it fast
 
-    if (error) {
-      console.warn('Messages fallback:', error);
-      state.messages = [{ id: '1', content: 'Welcome to the channel!', username: 'system', created_at: Date.now() }];
-    } else {
-      state.messages = data || [];
+      if (error) {
+        console.warn('Messages fallback:', error);
+        // If there's an error, check if we have cached messages
+        if (state.messages.length === 0) {
+          state.messages = [{ id: '1', content: 'Welcome to the channel!', username: 'system', created_at: Date.now() }];
+        }
+        renderMessages();
+        return;
+      }
+
+      if (data && data.length > 0) {
+        // Update state with fresh data
+        state.messages = data;
+        // Save these fresh messages to local storage for the next time they open the app
+        saveCachedMessages(channelId, data);
+        renderMessages();
+        console.log(`📥 Fetched ${data.length} fresh messages from Supabase`);
+      } else if (state.messages.length === 0) {
+        // If no messages from DB and no cache, show empty state
+        state.messages = [];
+        renderMessages();
+      }
+      
+      updateProfileScreen();
+    } catch (error) {
+      console.error('Error loading messages:', error);
+      // Fallback to cached messages if available
+      if (state.messages.length === 0) {
+        state.messages = [{ id: '1', content: 'Welcome to the channel!', username: 'system', created_at: Date.now() }];
+        renderMessages();
+      }
     }
-    renderMessages();
-    updateProfileScreen();
   }
 
   function ticksHtml(msg) {
@@ -1674,6 +1762,10 @@
     if (error) { alert('Delete failed: ' + error.message); return; }
     state.messages = state.messages.filter((m) => m.id !== messageId);
     renderMessages();
+    // Update cache after deletion
+    if (state.currentChannel) {
+      saveCachedMessages(state.currentChannel.id, state.messages);
+    }
   }
 
   DOM.chatMessages.addEventListener('click', (e) => {
@@ -2242,6 +2334,19 @@
     state.messages = [];
     state.statuses = [];
     state.replyingTo = null;
+
+    // Clear cached messages on logout
+    try {
+      const keys = Object.keys(localStorage);
+      keys.forEach(key => {
+        if (key.startsWith('cached_chat_history_')) {
+          localStorage.removeItem(key);
+        }
+      });
+      console.log('🗑️ Cleared cached messages on logout');
+    } catch (e) {
+      console.warn('Failed to clear cache:', e);
+    }
 
     // Update UI
     DOM.dashboard.classList.add('hidden');
