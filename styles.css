@@ -79,6 +79,14 @@ body.theme-dark {
   --ink: #F1F2FA;
   --ink-soft: #ABAFC9;
   --ink-faint: #6E7395;
+
+  /* --accent is used as TEXT/ICON color in many places (icon-btn hover,
+     alpha index, "See all" links, profile meta, settings icons, etc).
+     The default navy (#0E1B75) is nearly invisible on a dark background,
+     which is what was causing icons/headers to "merge" in dark mode.
+     Lighten it here so every element using var(--accent) stays legible. */
+  --accent: #7BB8FF;
+  --accent-dark: #BFDBFF;
   --accent-wash: #23204A;
   --chat-white: #15172F;
   --chat-grey: #33375E;
@@ -172,36 +180,16 @@ button { font-family: inherit; }
 
 /* ============================================================
    DESKTOP LAYOUT - WhatsApp Web Style
+   ============================================================ */
 @media (min-width: 1024px) {
-  /* ... existing desktop styles ... */
-  
-  /* OVERRIDE: Force all screens to use flex when visible */
-  #screenChats:not(.hidden),
-  #screenUpdates:not(.hidden),
-  #screenSettings:not(.hidden),
-  #screenChatDetail:not(.hidden),
-  #screenMembers:not(.hidden),
-  #screenProfile:not(.hidden) {
-    display: flex !important;
-    flex-direction: column !important;
+  .app-shell { 
+    padding: 0; 
+    align-items: stretch; 
+    justify-content: stretch;
+    height: 100vh;
+    height: 100dvh;
+    height: var(--app-height);
   }
-  
-  /* OVERRIDE: Chats panel sizing */
-  #screenChats:not(.hidden) {
-    flex: 0 0 380px !important;
-    max-width: 380px !important;
-    border-right: 1px solid var(--border) !important;
-  }
-  
-  /* OVERRIDE: Other panels take remaining space */
-  #screenUpdates:not(.hidden),
-  #screenSettings:not(.hidden),
-  #screenChatDetail:not(.hidden),
-  #screenMembers:not(.hidden),
-  #screenProfile:not(.hidden) {
-    flex: 1 !important;
-  }
-}
 
   .phone-frame {
     max-width: none;
@@ -317,10 +305,21 @@ button { font-family: inherit; }
 
   .brand-header {
     background: var(--bg) !important;
+    border-bottom: 1px solid var(--border) !important;
   }
-  
+
+  /* screen-header sits inside panels whose background is var(--surface)
+     on desktop (Settings/Members/Profile/Updates). It previously used
+     var(--bg), a different shade, which created a mismatched seam
+     between header and body — most visible in dark mode. Match it to
+     the panel background and add a hairline border for definition. */
   .screen-header {
-    background: var(--bg) !important;
+    background: var(--surface) !important;
+    border-bottom: 1px solid var(--border) !important;
+  }
+
+  .chat-detail-header {
+    border-bottom: 1px solid var(--border) !important;
   }
 }
 
@@ -1086,6 +1085,7 @@ body.theme-dark .msg-time {
   touch-action: manipulation;
 }
 .msg-reply-btn:hover { color: var(--chat-accent); border-color: var(--chat-accent); }
+body.theme-dark .msg-reply-btn { color: var(--chat-ink-soft); border-color: var(--chat-grey); }
 
 .reply-preview {
   display: flex; align-items: center; gap: 10px;
