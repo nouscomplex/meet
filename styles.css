@@ -1,4 +1,4 @@
-/* styles.css - Complete file */
+/* styles.css - FIXED DESKTOP LAYOUT */
 /* ============================================================
    NOUS COMPLEX ORBIT — Design System
    Mobile-first communication app.
@@ -171,7 +171,9 @@ button { font-family: inherit; }
   }
 }
 
-/* Desktop two-pane layout - WhatsApp Web style */
+/* ============================================================
+   DESKTOP LAYOUT - WhatsApp Web Style
+   ============================================================ */
 @media (min-width: 1024px) {
   .app-shell { 
     padding: 0; 
@@ -203,89 +205,106 @@ button { font-family: inherit; }
     background: var(--bg);
   }
 
+  /* Sidebar Navigation */
   .bottom-nav {
-    position: static;
-    flex-direction: column;
-    justify-content: flex-start;
-    width: 92px;
-    height: 100%;
-    padding: 28px 8px calc(28px + env(safe-area-inset-bottom));
-    gap: 26px;
-    border-top: none;
-    border-right: 1px solid var(--border);
-    order: -1;
-    flex-shrink: 0;
-    background: var(--surface);
+    position: static !important;
+    flex-direction: column !important;
+    justify-content: flex-start !important;
+    width: 92px !important;
+    height: 100% !important;
+    padding: 28px 8px calc(28px + env(safe-area-inset-bottom)) !important;
+    gap: 26px !important;
+    border-top: none !important;
+    border-right: 1px solid var(--border) !important;
+    order: -1 !important;
+    flex-shrink: 0 !important;
+    background: var(--surface) !important;
+    display: flex !important;
   }
-  .nav-btn { padding: 0; }
+  .nav-btn { 
+    padding: 0 !important; 
+    flex-direction: column !important;
+    gap: 4px !important;
+  }
 
-  /* All screens need proper backgrounds and sizing */
+  /* ALL SCREENS - Always use flex on desktop */
   .screen {
-    background: var(--bg);
-    height: 100%;
     display: flex !important;
-    flex-direction: column;
+    flex-direction: column !important;
+    height: 100% !important;
+    background: var(--bg) !important;
   }
 
+  /* Chat List - Left Panel */
   #screenChats {
-    flex: 0 0 380px;
-    max-width: 380px;
-    height: 100%;
-    border-right: 1px solid var(--border);
-    background: var(--bg);
+    flex: 0 0 380px !important;
+    max-width: 380px !important;
+    height: 100% !important;
+    border-right: 1px solid var(--border) !important;
+    background: var(--bg) !important;
     display: flex !important;
   }
 
-  #screenUpdates, 
-  #screenSettings, 
-  #screenChatDetail, 
-  #screenMembers, 
+  /* Right Panel - Content Area */
+  #screenUpdates,
+  #screenSettings,
+  #screenChatDetail,
+  #screenMembers,
   #screenProfile {
-    flex: 1;
-    height: 100%;
-    min-width: 0;
-    background: var(--surface);
+    flex: 1 !important;
+    height: 100% !important;
+    min-width: 0 !important;
+    background: var(--surface) !important;
     display: flex !important;
   }
 
-  /* Hide the hidden class override for desktop */
-  #screenUpdates.hidden,
-  #screenSettings.hidden,
-  #screenChatDetail.hidden,
-  #screenMembers.hidden,
-  #screenProfile.hidden {
+  /* Hide screens when they have the hidden class */
+  .screen.hidden {
     display: none !important;
   }
 
-  /* Keep chats visible when in chat group screens - handled by JS */
-  #screenChats.hidden {
-    display: none !important;
-  }
+  /* But override: when chats is hidden but we're in chat group, keep it visible (handled by JS) */
+  /* The JS will manage the visibility, but we ensure the display is flex when visible */
 
-  /* Ensure chat list is visible */
+  /* Chat list scroll */
   .chat-list {
-    padding-bottom: 24px;
-    background: var(--bg);
+    padding-bottom: 24px !important;
+    background: var(--bg) !important;
   }
 
   #screenSettings { 
-    padding-bottom: 0;
-    background: var(--surface);
+    padding-bottom: 0 !important;
+    background: var(--surface) !important;
   }
   
   .members-wrap { 
-    padding-bottom: 24px;
-    background: var(--surface);
+    padding-bottom: 24px !important;
+    background: var(--surface) !important;
   }
 
-  .fab { bottom: 28px; }
-  #backFromChat, #backFromUpdates { display: none !important; }
+  .fab { bottom: 28px !important; }
+  
+  /* Hide back buttons on desktop */
+  #backFromChat, 
+  #backFromUpdates,
+  #backFromMembers,
+  #backFromProfile {
+    display: none !important;
+  }
 
-  .status-viewer-inner { border-radius: 0; height: 100vh; max-height: 100vh; max-width: 480px; }
+  .status-viewer-inner { 
+    border-radius: 0 !important; 
+    height: 100vh !important; 
+    max-height: 100vh !important; 
+    max-width: 480px !important; 
+  }
 
-  /* Brand header on desktop */
   .brand-header {
-    background: var(--bg);
+    background: var(--bg) !important;
+  }
+  
+  .screen-header {
+    background: var(--bg) !important;
   }
 }
 
