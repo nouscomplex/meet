@@ -206,7 +206,7 @@ button { font-family: inherit; }
   }
 
   .app-body { 
-    flex-direction: row;
+    flex-direction: row !important;
     height: 100%;
     overflow: hidden;
     background: var(--bg);
