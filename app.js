@@ -397,7 +397,68 @@
   }
 
   // ============================================================
-  // 5e. HISTORY NAVIGATION (mobile back button)
+  // 5e. VAPID PUSH NOTIFICATION SENDING (via Supabase Edge Function)
+  // ============================================================
+  async function sendVapidNotificationsToOfflineStudents(senderId, messageContent, channelId) {
+    try {
+      // 1. Find all students who are NOT the sender
+      const { data: offlineStudents, error: queryError } = await supabase
+        .from('user_device_tokens')
+        .select('user_id, subscription_data, endpoint')
+        .neq('user_id', senderId);
+
+      if (queryError) {
+        console.error("Failed to lookup student push destinations:", queryError.message);
+        return;
+      }
+
+      if (!offlineStudents || offlineStudents.length === 0) {
+        console.log('No offline students with VAPID subscriptions found');
+        return;
+      }
+
+      // Get sender's display name and channel name for the notification
+      const senderName = getDisplayName(senderId);
+      const channelName = state.currentChannel?.name || 'Class';
+
+      // Prepare the notification payload
+      const payload = {
+        title: `${senderName} in ${channelName}`,
+        body: messageContent.length > 100 ? messageContent.substring(0, 100) + '…' : messageContent,
+        icon: CONFIG.BRANDING.LOGO.PATH || '/favicon.ico',
+        badge: '/favicon.ico',
+        data: {
+          url: window.location.href,
+          type: 'chat_message',
+          channel_id: channelId,
+          sender: senderId
+        }
+      };
+
+      console.log(`📨 Sending VAPID notifications to ${offlineStudents.length} offline students via Edge Function`);
+
+      // 2. Call the Supabase Edge Function to send notifications
+      const { data, error } = await supabase.functions.invoke('send-push-notifications', {
+        body: {
+          subscriptions: offlineStudents.map(s => s.subscription_data).filter(s => s !== null),
+          payload: payload
+        }
+      });
+
+      if (error) {
+        console.error('Edge Function error:', error);
+        return;
+      }
+
+      console.log('✅ VAPID notifications sent successfully:', data);
+
+    } catch (error) {
+      console.error('Failed to send VAPID notifications:', error);
+    }
+  }
+
+  // ============================================================
+  // 5f. HISTORY NAVIGATION (mobile back button)
   // ============================================================
   let screenHistory = [];
   let isBackNavigation = false;
@@ -1440,7 +1501,7 @@
   }
 
   // ============================================================
-  // 8b. REALTIME MESSAGE SYNC
+  // 8b. REALTIME MESSAGE SYNC (with VAPID notifications)
   // ============================================================
   function subscribeToMessages(channelId) {
     if (state.messagesSubscription) {
@@ -1450,25 +1511,53 @@
 
     state.messagesSubscription = supabase
       .channel(`messages:${channelId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: CONFIG.SUPABASE.TABLES.MESSAGES, filter: `channel_id=eq.${channelId}` }, (payload) => {
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: CONFIG.SUPABASE.TABLES.MESSAGES, 
+        filter: `channel_id=eq.${channelId}` 
+      }, async (payload) => {
         const exists = state.messages.some((m) => m.id === payload.new.id);
         if (!exists) {
           state.messages.push(payload.new);
           renderMessages();
           refreshUnreadBadges();
 
+          // Only send notifications if the message is from someone else
           if (payload.new.username !== state.currentUser?.username) {
+            // Play sound notification (existing)
             playNotifySound();
+            
+            // Send VAPID push notifications to offline students via Edge Function
+            await sendVapidNotificationsToOfflineStudents(
+              payload.new.username,
+              payload.new.content || '📎 New attachment',
+              channelId
+            );
+            
             markDelivered(channelId);
             markSeen(channelId);
           }
         }
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: CONFIG.SUPABASE.TABLES.MESSAGES, filter: `channel_id=eq.${channelId}` }, (payload) => {
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: CONFIG.SUPABASE.TABLES.MESSAGES, 
+        filter: `channel_id=eq.${channelId}` 
+      }, (payload) => {
         const idx = state.messages.findIndex((m) => m.id === payload.new.id);
-        if (idx !== -1) { state.messages[idx] = payload.new; renderMessages(); }
+        if (idx !== -1) { 
+          state.messages[idx] = payload.new; 
+          renderMessages(); 
+        }
       })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: CONFIG.SUPABASE.TABLES.MESSAGES, filter: `channel_id=eq.${channelId}` }, (payload) => {
+      .on('postgres_changes', { 
+        event: 'DELETE', 
+        schema: 'public', 
+        table: CONFIG.SUPABASE.TABLES.MESSAGES, 
+        filter: `channel_id=eq.${channelId}` 
+      }, (payload) => {
         state.messages = state.messages.filter((m) => m.id !== payload.old.id);
         renderMessages();
       })
@@ -2163,10 +2252,6 @@
     hideError();
     
     screenHistory = [];
-    
-    // Note: This is a single-page app, so we don't redirect to /login
-    // If you want to redirect, uncomment the line below:
-    // window.location.href = '/login';
   }
 
   // ============================================================
