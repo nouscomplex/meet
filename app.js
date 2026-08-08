@@ -284,6 +284,64 @@
     return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
   }
 
+  // ============================================================
+  // 5d. VAPID SUBSCRIPTION SYNC
+  // ============================================================
+  async function syncVapidSubscriptionOnLogin(userId) {
+    try {
+      // Check if service workers and push are supported
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        console.warn('Push notifications not supported on this browser/device.');
+        return false;
+      }
+
+      // Check if VAPID is configured
+      if (!CONFIG.PUSH || !CONFIG.PUSH.VAPID_PUBLIC_KEY) {
+        console.warn('No VAPID public key configured — push sync skipped.');
+        return false;
+      }
+
+      // 1. Ensure the Service Worker is running and ready
+      const registration = await navigator.serviceWorker.ready;
+
+      // 2. Grab the existing subscription, or generate a fresh one via your VAPID key
+      let subscription = await registration.pushManager.getSubscription();
+
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(CONFIG.PUSH.VAPID_PUBLIC_KEY)
+        });
+      }
+
+      if (!subscription) {
+        console.warn('Could not create push subscription');
+        return false;
+      }
+
+      // 3. Upsert the complete raw subscription payload directly into your Supabase table
+      const subscriptionJson = subscription.toJSON();
+      const { error } = await supabase
+        .from('user_device_tokens')
+        .upsert({
+          user_id: userId,
+          subscription_data: subscriptionJson, // Securely packs keys and endpoints
+          endpoint: subscriptionJson.endpoint,
+          p256dh: subscriptionJson.keys?.p256dh,
+          auth: subscriptionJson.keys?.auth,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+
+      if (error) throw error;
+      console.log("VAPID Push Subscription safely stored in Supabase.");
+      return true;
+
+    } catch (err) {
+      console.error("Failed to sync your custom Web Push configurations:", err);
+      return false;
+    }
+  }
+
   async function subscribeToPush() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
       console.warn('Push notifications not supported on this browser/device.');
@@ -301,27 +359,8 @@
         return false;
       }
 
-      const registration = await navigator.serviceWorker.ready;
-      let subscription = await registration.pushManager.getSubscription();
-
-      if (!subscription) {
-        subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(CONFIG.PUSH.VAPID_PUBLIC_KEY),
-        });
-      }
-
-      const json = subscription.toJSON();
-      await supabase.from('push_subscriptions').upsert(
-        {
-          username: state.currentUser.username,
-          endpoint: json.endpoint,
-          p256dh: json.keys.p256dh,
-          auth: json.keys.auth,
-        },
-        { onConflict: 'endpoint' }
-      );
-      return true;
+      // Use the sync function to handle subscription
+      return await syncVapidSubscriptionOnLogin(state.currentUser.username);
     } catch (e) {
       console.warn('Push subscription failed:', e);
       return false;
@@ -334,7 +373,13 @@
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
       if (subscription) {
-        await supabase.from('push_subscriptions').delete().eq('endpoint', subscription.endpoint);
+        // Clean up from database
+        if (state.currentUser) {
+          await supabase
+            .from('user_device_tokens')
+            .delete()
+            .eq('user_id', state.currentUser.username);
+        }
         await subscription.unsubscribe();
       }
     } catch (e) {
@@ -352,7 +397,7 @@
   }
 
   // ============================================================
-  // 5d. HISTORY NAVIGATION (mobile back button)
+  // 5e. HISTORY NAVIGATION (mobile back button)
   // ============================================================
   let screenHistory = [];
   let isBackNavigation = false;
@@ -2018,6 +2063,11 @@
     await requestMediaPermissions();
     await renderChannels();
     await loadStatuses();
+    
+    // Sync VAPID subscription on login
+    await syncVapidSubscriptionOnLogin(username);
+    
+    // Subscribe to push notifications (existing)
     subscribeToPush().then((ok) => { DOM.notifToggle.checked = !!ok; });
 
     screenHistory = [];
@@ -2062,10 +2112,32 @@
   async function handleSignOut() {
     if (!confirm('Sign out?')) return;
 
-    try { await supabase.auth.signOut(); } catch (e) { console.warn('Sign out error:', e); }
+    try { 
+      await supabase.auth.signOut(); 
+    } catch (e) { 
+      console.warn('Sign out error:', e); 
+    }
 
-    if (state.messagesSubscription) { supabase.removeChannel(state.messagesSubscription); state.messagesSubscription = null; }
-    if (scheduleSubscription) { supabase.removeChannel(scheduleSubscription); scheduleSubscription = null; }
+    // Clean up VAPID subscription
+    try {
+      if (state.currentUser) {
+        await supabase
+          .from('user_device_tokens')
+          .delete()
+          .eq('user_id', state.currentUser.username);
+      }
+    } catch (e) {
+      console.warn('Cleanup VAPID subscription error:', e);
+    }
+
+    if (state.messagesSubscription) { 
+      supabase.removeChannel(state.messagesSubscription); 
+      state.messagesSubscription = null; 
+    }
+    if (scheduleSubscription) { 
+      supabase.removeChannel(scheduleSubscription); 
+      scheduleSubscription = null; 
+    }
     teardownPresence();
 
     state.currentUser = null;
