@@ -1,3 +1,4 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -83,6 +84,7 @@
       ============================================================ -->
       <section id="screenUpdates" class="screen hidden">
         <header class="screen-header">
+          <button id="backFromUpdates" class="icon-btn back-btn hidden"><i class="fas fa-arrow-left"></i></button>
           <span class="screen-title">Updates</span>
           <span id="userBadge" class="role-chip"></span>
         </header>
@@ -116,6 +118,7 @@
             <div class="settings-profile-info">
               <div class="settings-profile-name" id="settingsName">—</div>
               <div class="settings-profile-email" id="settingsEmail">—</div>
+              <div class="settings-profile-displayname" id="settingsDisplayName" style="font-size:12px; color:var(--ink-faint); margin-top:2px;"></div>
             </div>
           </div>
 
@@ -155,6 +158,7 @@
             <div class="settings-list-label"><i class="fas fa-user-plus"></i> Add teacher or student</div>
             <div style="padding:4px 16px 16px; display:flex; flex-direction:column; gap:8px;">
               <input id="newUserUsername" class="field-sm" placeholder="Username" style="width:100%;">
+              <input id="newUserDisplayName" class="field-sm" placeholder="Display name (optional)" style="width:100%;">
               <div class="admin-row">
                 <select id="newUserRole" class="field-sm" style="flex:0 0 108px;">
                   <option value="student">Student</option>
@@ -181,6 +185,7 @@
               </div>
               <div id="userEditForm" style="display:none; flex-direction:column; gap:8px; padding-top:8px; border-top:1px solid var(--border);">
                 <input id="editUsername" class="field-sm" placeholder="Username (ID)" style="width:100%;">
+                <input id="editDisplayName" class="field-sm" placeholder="Display name" style="width:100%;">
                 <input id="editNewUsername" class="field-sm" placeholder="New username (optional)" style="width:100%;">
                 <input id="editPassword" class="field-sm" placeholder="New password (leave blank to keep current)" style="width:100%;">
                 <select id="editRole" class="field-sm" style="width:100%;">
