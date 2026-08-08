@@ -1,4 +1,3 @@
-/* styles.css - FIXED DESKTOP LAYOUT */
 /* ============================================================
    NOUS COMPLEX ORBIT — Design System
    Mobile-first communication app.
@@ -262,9 +261,6 @@ button { font-family: inherit; }
   .screen.hidden {
     display: none !important;
   }
-
-  /* But override: when chats is hidden but we're in chat group, keep it visible (handled by JS) */
-  /* The JS will manage the visibility, but we ensure the display is flex when visible */
 
   /* Chat list scroll */
   .chat-list {
