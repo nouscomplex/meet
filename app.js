@@ -15,6 +15,27 @@
   } catch (e) { /* localStorage unavailable */ }
 
   // ============================================================
+  // 0b. VIEWPORT HEIGHT (mobile keyboard fix)
+  // ============================================================
+  // 100vh/100dvh don't reliably shrink to the visible area on every mobile
+  // browser/webview when the on-screen keyboard opens, which is what let
+  // the keyboard cover (or push off-screen) the group header. Track the
+  // real visible height ourselves via visualViewport and expose it as a
+  // CSS var that the layout uses instead.
+  function setAppHeight() {
+    const vv = window.visualViewport;
+    const h = vv ? vv.height : window.innerHeight;
+    document.documentElement.style.setProperty('--app-height', h + 'px');
+  }
+  setAppHeight();
+  window.addEventListener('resize', setAppHeight);
+  window.addEventListener('orientationchange', setAppHeight);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', setAppHeight);
+    window.visualViewport.addEventListener('scroll', setAppHeight);
+  }
+
+  // ============================================================
   // 1. LOAD CONFIGURATION
   // ============================================================
   const CONFIG = window.CONFIG;
@@ -341,21 +362,42 @@
     if (screenHistory.length === 0 || screenHistory[screenHistory.length - 1] !== screenName) {
       screenHistory.push(screenName);
       if (history.pushState) {
-        history.pushState({ screen: screenName, index: screenHistory.length - 1 }, '', '#' + screenName);
+        history.pushState({ orbitScreen: screenName }, '', '#' + screenName);
       }
     }
   }
 
-  function goBackInApp() {
-    if (screenHistory.length > 1) {
+  // Handles the hardware/gesture back button. Reads the browser's own
+  // history.state instead of relying only on the in-memory screenHistory
+  // array, since that array is reset on page load/reload while the
+  // browser's session history (and the popstate events it fires) persists.
+  function handleBackNavigation(event) {
+    const targetScreen = event.state && event.state.orbitScreen;
+
+    if (targetScreen && SCREEN_EL[targetScreen]) {
       isBackNavigation = true;
-      screenHistory.pop();
-      const prevScreen = screenHistory[screenHistory.length - 1];
-      goToScreen(prevScreen);
+      const idx = screenHistory.lastIndexOf(targetScreen);
+      screenHistory = idx !== -1 ? screenHistory.slice(0, idx + 1) : [targetScreen];
+      goToScreen(targetScreen);
       isBackNavigation = false;
-      return true;
+      return;
     }
-    return false;
+
+    // No app screen left in the history stack. Close whatever full-screen
+    // overlay is open (status viewer / live video) instead of doing
+    // nothing, and leave a fresh state behind so the *next* back press
+    // still has somewhere to land rather than immediately exiting.
+    if (DOM.statusModal && !DOM.statusModal.classList.contains('hidden')) {
+      closeStatusViewer();
+      if (state.currentScreen) pushScreenState(state.currentScreen);
+      return;
+    }
+    if (DOM.videoContainer && !DOM.videoContainer.classList.contains('hidden')) {
+      DOM.videoContainer.classList.add('hidden');
+      DOM.videoIframe.src = '';
+      state.videoActive = false;
+      if (state.currentScreen) pushScreenState(state.currentScreen);
+    }
   }
 
   // ============================================================
@@ -2180,25 +2222,12 @@
   // ============================================================
   setupLogos();
 
-  // Handle mobile back button
-  window.addEventListener('popstate', function(event) {
-    // Prevent the browser from navigating away
-    event.preventDefault();
-    
-    // Only handle if we have history to go back to
-    if (screenHistory.length > 1) {
-      isBackNavigation = true;
-      screenHistory.pop();
-      const prevScreen = screenHistory[screenHistory.length - 1];
-      goToScreen(prevScreen);
-      isBackNavigation = false;
-    } else {
-      // If at root, optionally close modals or show exit prompt
-      if (DOM.statusModal && !DOM.statusModal.classList.contains('hidden')) {
-        closeStatusViewer();
-      }
-    }
-  });
+  if (history.replaceState) {
+    history.replaceState({ orbitScreen: null }, '', location.pathname + location.search);
+  }
+
+  // Handle mobile/hardware back button and browser back navigation
+  window.addEventListener('popstate', handleBackNavigation);
 
   restoreSession();
   console.log('✅ Application initialized successfully.');
