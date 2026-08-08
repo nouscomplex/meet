@@ -172,16 +172,36 @@ button { font-family: inherit; }
 
 /* ============================================================
    DESKTOP LAYOUT - WhatsApp Web Style
-   ============================================================ */
 @media (min-width: 1024px) {
-  .app-shell { 
-    padding: 0; 
-    align-items: stretch; 
-    justify-content: stretch;
-    height: 100vh;
-    height: 100dvh;
-    height: var(--app-height);
+  /* ... existing desktop styles ... */
+  
+  /* OVERRIDE: Force all screens to use flex when visible */
+  #screenChats:not(.hidden),
+  #screenUpdates:not(.hidden),
+  #screenSettings:not(.hidden),
+  #screenChatDetail:not(.hidden),
+  #screenMembers:not(.hidden),
+  #screenProfile:not(.hidden) {
+    display: flex !important;
+    flex-direction: column !important;
   }
+  
+  /* OVERRIDE: Chats panel sizing */
+  #screenChats:not(.hidden) {
+    flex: 0 0 380px !important;
+    max-width: 380px !important;
+    border-right: 1px solid var(--border) !important;
+  }
+  
+  /* OVERRIDE: Other panels take remaining space */
+  #screenUpdates:not(.hidden),
+  #screenSettings:not(.hidden),
+  #screenChatDetail:not(.hidden),
+  #screenMembers:not(.hidden),
+  #screenProfile:not(.hidden) {
+    flex: 1 !important;
+  }
+}
 
   .phone-frame {
     max-width: none;
