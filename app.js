@@ -723,6 +723,7 @@
 
       const row = document.createElement('div');
       row.className = 'chat-row';
+      if (state.currentChannel?.id === ch.id) row.classList.add('active');
       row.dataset.id = ch.id;
       row.dataset.name = ch.name.toLowerCase();
       row.innerHTML = `
@@ -844,6 +845,7 @@
 
   async function selectChannel(channel) {
     state.currentChannel = channel;
+    renderChatList(allChannels);
     await loadMessages(channel.id);
     await loadMembers(channel.id);
     subscribeToMessages(channel.id);
