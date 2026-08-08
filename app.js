@@ -558,7 +558,7 @@
   }
 
   // ============================================================
-  // 6b. SCREEN NAVIGATION
+  // 6b. SCREEN NAVIGATION - FIXED FOR DESKTOP
   // ============================================================
   const ROOT_TABS = ['chats', 'updates', 'settings'];
   const SCREEN_EL = {
@@ -579,29 +579,49 @@
     // On desktop, we want chats to always be visible when in chat-related screens
     const keepChatsVisible = isDesktop && CHAT_GROUP_SCREENS.includes(name);
 
-    // Hide all screens first
-    Object.entries(SCREEN_EL).forEach(([key, el]) => {
-      if (!el) return;
-      // On desktop, keep chats visible for chat group screens
-      if (keepChatsVisible && key === 'chats') {
-        el.classList.remove('hidden');
+    // On desktop, show all screens initially with flex
+    if (isDesktop) {
+      Object.entries(SCREEN_EL).forEach(([key, el]) => {
+        if (!el) return;
         el.style.display = 'flex';
-        return;
-      }
-      el.classList.add('hidden');
-      el.style.display = '';
-    });
-    
-    // Show the target screen
-    if (SCREEN_EL[name]) {
-      SCREEN_EL[name].classList.remove('hidden');
-      SCREEN_EL[name].style.display = 'flex';
+        el.classList.remove('hidden');
+      });
     }
 
-    // Handle navigation visibility
+    // Now handle visibility
+    Object.entries(SCREEN_EL).forEach(([key, el]) => {
+      if (!el) return;
+      
+      // On desktop, keep chats visible for chat group screens
+      if (keepChatsVisible && key === 'chats') {
+        el.style.display = 'flex';
+        el.classList.remove('hidden');
+        return;
+      }
+      
+      // Hide/show based on target
+      if (key === name) {
+        el.style.display = 'flex';
+        el.classList.remove('hidden');
+      } else if (isDesktop && key === 'chats' && CHAT_GROUP_SCREENS.includes(name)) {
+        // On desktop, always show chats when in a chat group
+        el.style.display = 'flex';
+        el.classList.remove('hidden');
+      } else {
+        el.style.display = 'none';
+        el.classList.add('hidden');
+      }
+    });
+    
+    // Navigation visibility
     const isRoot = ROOT_TABS.includes(name);
     const hideNav = !isRoot && !isDesktop;
     DOM.bottomNav.classList.toggle('hidden', hideNav);
+    
+    if (isDesktop) {
+      DOM.bottomNav.classList.remove('hidden');
+      DOM.bottomNav.style.display = 'flex';
+    }
     
     if (isRoot) {
       state.currentTab = name;
