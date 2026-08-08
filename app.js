@@ -1,4 +1,3 @@
-// app.js - Complete updated file
 // ============================================================
 // NOUS COMPLEX ORBIT — Application Logic
 // ============================================================
@@ -380,10 +379,6 @@
       return;
     }
 
-    // No app screen left in the history stack. Close whatever full-screen
-    // overlay is open (status viewer / live video) instead of doing
-    // nothing, and leave a fresh state behind so the *next* back press
-    // still has somewhere to land rather than immediately exiting.
     if (DOM.statusModal && !DOM.statusModal.classList.contains('hidden')) {
       closeStatusViewer();
       if (state.currentScreen) pushScreenState(state.currentScreen);
@@ -579,33 +574,44 @@
   const isDesktopLayout = () => window.matchMedia('(min-width: 1024px)').matches;
 
   function goToScreen(name) {
-    const keepChatsVisible = isDesktopLayout() && CHAT_GROUP_SCREENS.includes(name);
+    const isDesktop = isDesktopLayout();
+    
+    // On desktop, we want chats to always be visible when in chat-related screens
+    const keepChatsVisible = isDesktop && CHAT_GROUP_SCREENS.includes(name);
 
+    // Hide all screens first
     Object.entries(SCREEN_EL).forEach(([key, el]) => {
       if (!el) return;
+      // On desktop, keep chats visible for chat group screens
       if (keepChatsVisible && key === 'chats') {
         el.classList.remove('hidden');
+        el.style.display = 'flex';
         return;
       }
       el.classList.add('hidden');
+      el.style.display = '';
     });
     
+    // Show the target screen
     if (SCREEN_EL[name]) {
       SCREEN_EL[name].classList.remove('hidden');
+      SCREEN_EL[name].style.display = 'flex';
     }
 
+    // Handle navigation visibility
     const isRoot = ROOT_TABS.includes(name);
-    const hideNav = !isRoot && !isDesktopLayout();
+    const hideNav = !isRoot && !isDesktop;
     DOM.bottomNav.classList.toggle('hidden', hideNav);
+    
     if (isRoot) {
       state.currentTab = name;
       DOM.bottomNav.querySelectorAll('.nav-btn').forEach((b) => {
         b.classList.toggle('active', b.dataset.tab === name);
       });
     }
+    
     state.currentScreen = name;
     
-    // Push to history for mobile back button (skip if this is a back navigation)
     if (!isBackNavigation) {
       pushScreenState(name);
     }
@@ -1256,9 +1262,7 @@
     
     try {
       if (newUsername && newUsername !== username) {
-        // Delete old role entry
         await supabase.from('user_roles').delete().eq('username', username);
-        // Create new role entry
         const { error: roleError } = await supabase
           .from('user_roles')
           .insert({ 
@@ -1268,40 +1272,33 @@
           });
         if (roleError) throw roleError;
         
-        // Update auth email
         const { error: authError } = await supabase.auth.admin.updateUserById(
           state.currentUser.id,
           { email: generateEmail(newUsername) }
         );
         if (authError) throw authError;
         
-        // Update members table
         await supabase.from(CONFIG.SUPABASE.TABLES.MEMBERS)
           .update({ username: newUsername })
           .eq('username', username);
         
-        // Update messages table
         await supabase.from(CONFIG.SUPABASE.TABLES.MESSAGES)
           .update({ username: newUsername })
           .eq('username', username);
         
-        // Update statuses table
         await supabase.from(CONFIG.SUPABASE.TABLES.STATUSES)
           .update({ username: newUsername })
           .eq('username', username);
         
-        // Update class_schedule table
         await supabase.from('class_schedule')
           .update({ teacher_username: newUsername })
           .eq('teacher_username', username);
         
-        // Clear cache and refresh
         delete state.roleCache[username];
         delete state.displayNameCache[username];
         state.roleCache[newUsername] = newRole;
         state.displayNameCache[newUsername] = newDisplayName || newUsername;
       } else {
-        // Just update role and display name
         const { error: roleError } = await supabase
           .from('user_roles')
           .update({ 
@@ -1314,7 +1311,6 @@
         state.displayNameCache[username] = newDisplayName || username;
       }
       
-      // Update password if provided
       if (newPassword && newPassword.length > 0) {
         const { error: passError } = await supabase.auth.admin.updateUserById(
           state.currentUser.id,
@@ -1342,22 +1338,12 @@
     if (!confirm(`Delete user "${username}" permanently? This cannot be undone and will remove all their data.`)) return;
     
     try {
-      // Delete from user_roles
       await supabase.from('user_roles').delete().eq('username', username);
-      
-      // Delete from members
       await supabase.from(CONFIG.SUPABASE.TABLES.MEMBERS).delete().eq('username', username);
-      
-      // Delete from messages
       await supabase.from(CONFIG.SUPABASE.TABLES.MESSAGES).delete().eq('username', username);
-      
-      // Delete from statuses
       await supabase.from(CONFIG.SUPABASE.TABLES.STATUSES).delete().eq('username', username);
-      
-      // Delete from class_schedule
       await supabase.from('class_schedule').delete().eq('teacher_username', username);
       
-      // Delete auth user (requires admin)
       const { error: authError } = await supabase.auth.admin.deleteUser(
         state.currentUser.id
       );
@@ -2160,7 +2146,6 @@
     );
   });
 
-  // User management event listeners
   DOM.loadUserBtn.addEventListener('click', () => {
     loadUserForEdit(DOM.manageUserSearch.value);
   });
@@ -2195,7 +2180,6 @@
     DOM.assignStudentInput.value = '';
   });
 
-  // Channel description update
   DOM.updateDescBtn.addEventListener('click', () => {
     if (!state.currentChannel) return;
     updateChannelDescription(state.currentChannel.id, DOM.channelDescInput.value.trim());
@@ -2227,7 +2211,6 @@
   DOM.statusModal.addEventListener('click', (e) => { if (e.target === DOM.statusModal) closeStatusViewer(); });
   DOM.statusPauseBtn.addEventListener('click', toggleStatusPause);
 
-  // Status deletion (delegated)
   DOM.statusTray.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-delete-status]');
     if (btn) {
