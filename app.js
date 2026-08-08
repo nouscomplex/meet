@@ -1,3 +1,4 @@
+// app.js - Complete updated file
 // ============================================================
 // NOUS COMPLEX ORBIT — Application Logic
 // ============================================================
@@ -17,11 +18,6 @@
   // ============================================================
   // 0b. VIEWPORT HEIGHT (mobile keyboard fix)
   // ============================================================
-  // 100vh/100dvh don't reliably shrink to the visible area on every mobile
-  // browser/webview when the on-screen keyboard opens, which is what let
-  // the keyboard cover (or push off-screen) the group header. Track the
-  // real visible height ourselves via visualViewport and expose it as a
-  // CSS var that the layout uses instead.
   function setAppHeight() {
     const vv = window.visualViewport;
     const h = vv ? vv.height : window.innerHeight;
@@ -81,6 +77,7 @@
     replyingTo: null,
     unreadByChannel: {},
     roleCache: {},
+    displayNameCache: {},
     onlineUsers: new Set(),
     currentTab: 'chats',
     screenReturn: 'chats',
@@ -125,11 +122,13 @@
     statusAddBtn: $('statusAddBtn'),
     postStatusBtn: $('postStatusBtn'),
     postStatusFab: $('postStatusFab'),
+    backFromUpdates: $('backFromUpdates'),
 
     // settings
     settingsAvatar: $('settingsAvatar'),
     settingsName: $('settingsName'),
     settingsEmail: $('settingsEmail'),
+    settingsDisplayName: $('settingsDisplayName'),
     notifToggle: $('notifToggle'),
     darkToggle: $('darkToggle'),
     adminSettingsCard: $('adminSettingsCard'),
@@ -140,6 +139,7 @@
     adminCreateUserCard: $('adminCreateUserCard'),
     adminUserManagementCard: $('adminUserManagementCard'),
     newUserUsername: $('newUserUsername'),
+    newUserDisplayName: $('newUserDisplayName'),
     newUserRole: $('newUserRole'),
     newUserPassword: $('newUserPassword'),
     generatePasswordBtn: $('generatePasswordBtn'),
@@ -150,6 +150,7 @@
     loadUserBtn: $('loadUserBtn'),
     userEditForm: $('userEditForm'),
     editUsername: $('editUsername'),
+    editDisplayName: $('editDisplayName'),
     editNewUsername: $('editNewUsername'),
     editPassword: $('editPassword'),
     editRole: $('editRole'),
@@ -367,10 +368,6 @@
     }
   }
 
-  // Handles the hardware/gesture back button. Reads the browser's own
-  // history.state instead of relying only on the in-memory screenHistory
-  // array, since that array is reset on page load/reload while the
-  // browser's session history (and the popstate events it fires) persists.
   function handleBackNavigation(event) {
     const targetScreen = event.state && event.state.orbitScreen;
 
@@ -414,6 +411,12 @@
     return CONFIG.AUTH.ROLES.STUDENT;
   }
 
+  function getDisplayName(username) {
+    if (!username) return username;
+    const key = username.toLowerCase();
+    return state.displayNameCache[key] || username;
+  }
+
   async function getUserRoles(username) {
     const { data, error } = await supabase
       .from('user_roles')
@@ -427,13 +430,17 @@
   }
 
   async function loadRoleCache() {
-    const { data, error } = await supabase.from('user_roles').select('username, role');
+    const { data, error } = await supabase.from('user_roles').select('username, role, display_name');
     if (error) {
       console.warn('Role cache unavailable, using username-based fallback:', error);
       return;
     }
     (data || []).forEach((row) => {
-      state.roleCache[row.username.toLowerCase()] = row.role;
+      const key = row.username.toLowerCase();
+      state.roleCache[key] = row.role;
+      if (row.display_name) {
+        state.displayNameCache[key] = row.display_name;
+      }
     });
     populateRegisteredUsersDatalist();
   }
@@ -455,7 +462,8 @@
 
   function avatarHtml(username, size) {
     const key = roleKey(username);
-    const initial = (username || '?').charAt(0).toUpperCase();
+    const displayName = getDisplayName(username);
+    const initial = (displayName || '?').charAt(0).toUpperCase();
     const sizeClass = size === 'sm' ? ' sm' : size === 'lg' ? ' lg' : '';
     const online = state.onlineUsers.has((username || '').toLowerCase());
     return `<div class="avatar avatar-${key}${sizeClass}">${initial}<span class="avatar-dot${online ? ' online' : ''}"></span></div>`;
@@ -477,8 +485,9 @@
   function setAvatarEl(el, username, extraClass) {
     if (!el) return;
     const key = roleKey(username);
+    const displayName = getDisplayName(username);
     el.className = `avatar avatar-${key}${extraClass ? ' ' + extraClass : ''}`;
-    el.textContent = (username || '?').charAt(0).toUpperCase();
+    el.textContent = (displayName || '?').charAt(0).toUpperCase();
   }
 
   function generateEmail(username) {
@@ -633,7 +642,7 @@
   // ============================================================
   // 7a. ADMIN: CREATE TEACHER / STUDENT ACCOUNT
   // ============================================================
-  async function createUserAccount(username, role, password) {
+  async function createUserAccount(username, displayName, role, password) {
     username = normalizeUsername(username);
     if (!username) { alert('Enter a username.'); return; }
     if (!password) { alert('Enter or generate a password.'); return; }
@@ -651,12 +660,19 @@
 
       const { error: roleError } = await supabase
         .from('user_roles')
-        .upsert({ username, role }, { onConflict: 'username' });
+        .upsert({ 
+          username, 
+          role, 
+          display_name: displayName || username 
+        }, { onConflict: 'username' });
       if (roleError) throw roleError;
 
-      state.roleCache[username.toLowerCase()] = role;
+      const key = username.toLowerCase();
+      state.roleCache[key] = role;
+      state.displayNameCache[key] = displayName || username;
       populateRegisteredUsersDatalist();
       DOM.newUserUsername.value = '';
+      DOM.newUserDisplayName.value = '';
       DOM.newUserPassword.value = '';
       DOM.newUserRole.value = 'student';
 
@@ -817,7 +833,7 @@
       const previewText = preview
         ? (preview.content ? escapeHtml(truncate(preview.content, 42)) : (preview.file_url ? '📎 Attachment' : ''))
         : 'No messages yet';
-      const previewAuthor = preview && preview.username ? `${escapeHtml(preview.username)}: ` : '';
+      const previewAuthor = preview && preview.username ? `${escapeHtml(getDisplayName(preview.username))}: ` : '';
       const time = preview ? formatTimeAgo(preview.created_at) : '';
 
       const row = document.createElement('div');
@@ -938,7 +954,6 @@
     DOM.profileChannelDesc.textContent = desc;
     DOM.channelDescInput.value = desc || '';
     
-    // Show edit field for admins
     DOM.adminDescEdit.classList.toggle('hidden', !state.isAdmin);
   }
 
@@ -1031,7 +1046,7 @@
   function renderScheduleBanner(schedule) {
     const when = new Date(schedule.scheduled_time);
     const formatted = when.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-    DOM.scheduleBannerText.textContent = `Class with ${schedule.teacher_username} scheduled for ${formatted} (${schedule.duration_minutes} min)`;
+    DOM.scheduleBannerText.textContent = `Class with ${getDisplayName(schedule.teacher_username)} scheduled for ${formatted} (${schedule.duration_minutes} min)`;
     DOM.scheduleBanner.classList.remove('hidden');
   }
 
@@ -1086,7 +1101,6 @@
       return;
     }
     
-    // Ensure each member has their channel-specific role
     state.currentMembers = (data || []).map(member => ({
       ...member,
       role: member.role || getRoleFromUsername(member.username)
@@ -1131,7 +1145,8 @@
         lastRole = m.role;
         lastLetter = '';
       }
-      const letter = m.username.charAt(0).toUpperCase();
+      const displayName = getDisplayName(m.username);
+      const letter = displayName.charAt(0).toUpperCase();
       if (letter !== lastLetter) {
         const anchorId = `memberLetter-${anchorIdx++}`;
         html += `<div class="member-group-letter" id="${anchorId}">${letter}</div>`;
@@ -1143,7 +1158,7 @@
         <div class="member-row" id="member-${m.id}">
           ${avatarHtml(m.username, 'sm')}
           <div style="flex:1; min-width:0;">
-            <div class="member-name">${escapeHtml(m.username)}</div>
+            <div class="member-name">${escapeHtml(displayName)} <span class="member-display-name">(${escapeHtml(m.username)})</span></div>
             <div class="member-status${online ? ' online' : ''}"><span class="dot"></span>${online ? 'Active now' : 'Offline'}</div>
           </div>
           <span class="role-chip role-${m.role}-chip member-role-chip">${escapeHtml(m.role)}</span>
@@ -1160,7 +1175,7 @@
       btn.addEventListener('click', () => removeMember(btn.dataset.removeMember));
     });
 
-    const present = new Set(members.map((m) => m.username.charAt(0).toUpperCase()));
+    const present = new Set(members.map((m) => getDisplayName(m.username).charAt(0).toUpperCase()));
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
     DOM.alphaIndex.innerHTML = alphabet.map((l) => `<span data-letter="${l}" class="${present.has(l) ? '' : 'hidden'}">${l}</span>`).join('');
     DOM.alphaIndex.querySelectorAll('span').forEach((span) => {
@@ -1182,7 +1197,6 @@
       return;
     }
 
-    // Allow any role assignment per channel, even if different from global role
     const { error } = await supabase
       .from(CONFIG.SUPABASE.TABLES.MEMBERS)
       .upsert(
@@ -1214,10 +1228,9 @@
     username = normalizeUsername(username);
     if (!username) { alert('Enter a username to search for.'); return; }
 
-    // Check if user exists in user_roles
     const { data: roleData, error: roleError } = await supabase
       .from('user_roles')
-      .select('username, role')
+      .select('username, role, display_name')
       .eq('username', username)
       .maybeSingle();
 
@@ -1228,27 +1241,31 @@
     }
 
     DOM.editUsername.value = roleData.username;
+    DOM.editDisplayName.value = roleData.display_name || roleData.username;
     DOM.editNewUsername.value = roleData.username;
     DOM.editRole.value = roleData.role;
     DOM.editPassword.value = '';
     DOM.userEditForm.style.display = 'flex';
   }
 
-  async function updateUserAccount(username, newUsername, newRole, newPassword) {
+  async function updateUserAccount(username, newUsername, newDisplayName, newRole, newPassword) {
     username = normalizeUsername(username);
     newUsername = normalizeUsername(newUsername);
     
     if (!username) { alert('Current username is required.'); return; }
     
     try {
-      // Update role
       if (newUsername && newUsername !== username) {
         // Delete old role entry
         await supabase.from('user_roles').delete().eq('username', username);
         // Create new role entry
         const { error: roleError } = await supabase
           .from('user_roles')
-          .insert({ username: newUsername, role: newRole });
+          .insert({ 
+            username: newUsername, 
+            role: newRole,
+            display_name: newDisplayName || newUsername
+          });
         if (roleError) throw roleError;
         
         // Update auth email
@@ -1280,20 +1297,25 @@
         
         // Clear cache and refresh
         delete state.roleCache[username];
+        delete state.displayNameCache[username];
         state.roleCache[newUsername] = newRole;
+        state.displayNameCache[newUsername] = newDisplayName || newUsername;
       } else {
-        // Just update role
+        // Just update role and display name
         const { error: roleError } = await supabase
           .from('user_roles')
-          .update({ role: newRole })
+          .update({ 
+            role: newRole,
+            display_name: newDisplayName || username
+          })
           .eq('username', username);
         if (roleError) throw roleError;
         state.roleCache[username] = newRole;
+        state.displayNameCache[username] = newDisplayName || username;
       }
       
       // Update password if provided
       if (newPassword && newPassword.length > 0) {
-        // This requires admin privileges in Supabase
         const { error: passError } = await supabase.auth.admin.updateUserById(
           state.currentUser.id,
           { password: newPassword }
@@ -1342,6 +1364,7 @@
       if (authError) throw authError;
       
       delete state.roleCache[username];
+      delete state.displayNameCache[username];
       alert('User deleted successfully!');
       DOM.userEditForm.style.display = 'none';
       DOM.manageUserSearch.value = '';
@@ -1448,7 +1471,7 @@
       if (msg.reply_to) {
         replyHtml = `
           <div class="msg-reply-quote">
-            <span class="reply-author">${escapeHtml(msg.reply_username || 'Message')}</span>
+            <span class="reply-author">${escapeHtml(getDisplayName(msg.reply_username || 'Message'))}</span>
             <span class="reply-text">${escapeHtml(truncate(msg.reply_content || '', 60))}</span>
           </div>
         `;
@@ -1472,11 +1495,12 @@
         ? `<div class="msg-meta" style="margin-top:2px;">${ticksHtml(msg)}${msg.seen_at ? `<span class="msg-seen-time">Seen ${formatDate(msg.seen_at)}</span>` : ''}</div>`
         : '';
 
+      const displayName = getDisplayName(msg.username);
       wrap.innerHTML = `
         ${avatarHtml(msg.username, 'sm')}
         <div class="msg-body">
           <div class="msg-meta">
-            <span class="msg-author">${escapeHtml(msg.username || 'unknown')}</span>
+            <span class="msg-author">${escapeHtml(displayName)}</span>
             <span class="msg-time">${formatDate(msg.created_at)}</span>
           </div>
           ${bubbleHtml}
@@ -1512,7 +1536,7 @@
     if (!msg) return;
 
     state.replyingTo = msg;
-    DOM.replyPreviewAuthor.textContent = msg.username;
+    DOM.replyPreviewAuthor.textContent = getDisplayName(msg.username);
     DOM.replyPreviewText.textContent = msg.content || (msg.file_url ? 'Attached file' : '');
     DOM.replyPreview.classList.remove('hidden');
     DOM.messageInput.focus();
@@ -1605,13 +1629,14 @@
       state.statuses.forEach((st) => {
         const item = document.createElement('div');
         item.className = 'update-row';
+        const displayName = getDisplayName(st.username);
         const preview = st.content
           ? escapeHtml(truncate(st.content, 46))
           : (st.media_url ? '<i class="fas fa-camera"></i> Photo/video' : '');
         item.innerHTML = `
           ${avatarHtml(st.username)}
           <div class="update-row-body">
-            <div class="update-row-name">${escapeHtml(st.username || 'User')}</div>
+            <div class="update-row-name">${escapeHtml(displayName)}</div>
             <div class="update-row-preview">${preview}</div>
           </div>
           <div class="update-row-time">${formatTimeAgo(st.created_at)}</div>
@@ -1756,7 +1781,7 @@
 
   function showStatusModal(status) {
     setAvatarEl(DOM.statusViewerAvatar, status.username, 'sm status-viewer-avatar');
-    DOM.statusModalTitle.textContent = status.username || 'Announcement';
+    DOM.statusModalTitle.textContent = getDisplayName(status.username);
     DOM.statusModalTime.textContent = formatFullDate(status.created_at);
     DOM.statusModalContent.textContent = status.content || '';
 
@@ -1950,6 +1975,7 @@
     await loadRoleCache();
     const role = getRoleFromUsername(username);
     const key = roleKey(username);
+    const displayName = getDisplayName(username);
 
     state.currentUser = { id: user.id, username: username, email: user.email, role: role };
     state.isAdmin = role === CONFIG.AUTH.ROLES.ADMIN;
@@ -1958,12 +1984,13 @@
     DOM.authCard.classList.add('hidden');
     DOM.dashboard.classList.remove('hidden');
 
-    DOM.userBadge.textContent = username;
+    DOM.userBadge.textContent = displayName;
     DOM.userBadge.className = `role-chip role-${key}-chip`;
 
     setAvatarEl(DOM.settingsAvatar, username, 'lg');
-    DOM.settingsName.textContent = username;
+    DOM.settingsName.textContent = displayName;
     DOM.settingsEmail.textContent = user.email || generateEmail(username);
+    DOM.settingsDisplayName.textContent = `Username: ${username}`;
 
     DOM.adminSettingsCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
     DOM.adminCreateUserCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
@@ -1976,7 +2003,6 @@
     await loadStatuses();
     subscribeToPush().then((ok) => { DOM.notifToggle.checked = !!ok; });
 
-    // Clear history on login
     screenHistory = [];
     goToScreen('chats');
   }
@@ -2041,7 +2067,6 @@
     DOM.passwordInput.value = '';
     hideError();
     
-    // Clear history on sign out
     screenHistory = [];
   }
 
@@ -2063,6 +2088,7 @@
   DOM.chatSearchInput.addEventListener('input', () => filterChatList(DOM.chatSearchInput.value));
 
   DOM.backFromChat.addEventListener('click', () => goToScreen('chats'));
+  DOM.backFromUpdates.addEventListener('click', () => goToScreen('chats'));
   DOM.chatDetailTitleBtn.addEventListener('click', () => {
     if (!state.currentChannel) return;
     updateProfileScreen();
@@ -2128,6 +2154,7 @@
   DOM.createUserBtn.addEventListener('click', () => {
     createUserAccount(
       DOM.newUserUsername.value.trim(),
+      DOM.newUserDisplayName.value.trim(),
       DOM.newUserRole.value,
       DOM.newUserPassword.value.trim()
     );
@@ -2141,9 +2168,10 @@
   DOM.updateUserBtn.addEventListener('click', () => {
     const currentUser = DOM.editUsername.value;
     const newUser = DOM.editNewUsername.value || currentUser;
+    const displayName = DOM.editDisplayName.value || currentUser;
     const role = DOM.editRole.value;
     const password = DOM.editPassword.value;
-    updateUserAccount(currentUser, newUser, role, password);
+    updateUserAccount(currentUser, newUser, displayName, role, password);
   });
 
   DOM.deleteUserBtn.addEventListener('click', () => {
@@ -2226,7 +2254,6 @@
     history.replaceState({ orbitScreen: null }, '', location.pathname + location.search);
   }
 
-  // Handle mobile/hardware back button and browser back navigation
   window.addEventListener('popstate', handleBackNavigation);
 
   restoreSession();
