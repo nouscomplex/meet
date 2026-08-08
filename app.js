@@ -579,37 +579,30 @@
     // On desktop, we want chats to always be visible when in chat-related screens
     const keepChatsVisible = isDesktop && CHAT_GROUP_SCREENS.includes(name);
 
-    // On desktop, show all screens initially with flex
-    if (isDesktop) {
-      Object.entries(SCREEN_EL).forEach(([key, el]) => {
-        if (!el) return;
-        el.style.display = 'flex';
-        el.classList.remove('hidden');
-      });
-    }
-
-    // Now handle visibility
+    // Handle all screens
     Object.entries(SCREEN_EL).forEach(([key, el]) => {
       if (!el) return;
       
-      // On desktop, keep chats visible for chat group screens
-      if (keepChatsVisible && key === 'chats') {
-        el.style.display = 'flex';
-        el.classList.remove('hidden');
-        return;
-      }
+      // Determine if this screen should be visible
+      let shouldBeVisible = false;
       
-      // Hide/show based on target
       if (key === name) {
-        el.style.display = 'flex';
-        el.classList.remove('hidden');
+        shouldBeVisible = true;
       } else if (isDesktop && key === 'chats' && CHAT_GROUP_SCREENS.includes(name)) {
         // On desktop, always show chats when in a chat group
-        el.style.display = 'flex';
+        shouldBeVisible = true;
+      } else if (isDesktop && keepChatsVisible && key === 'chats') {
+        shouldBeVisible = true;
+      }
+      
+      // Apply visibility
+      if (shouldBeVisible) {
         el.classList.remove('hidden');
+        el.style.display = 'flex';
+        el.style.flexDirection = 'column';
       } else {
-        el.style.display = 'none';
         el.classList.add('hidden');
+        el.style.display = 'none';
       }
     });
     
