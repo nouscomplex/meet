@@ -87,6 +87,10 @@
     inactivityTimer: null,
     INACTIVITY_TIMEOUT: 300000, // 5 minutes
     isChannelActive: false,
+    // Tab focus management
+    isTabFocused: true,
+    tabChannel: null,
+    isRefreshing: false,
   };
 
   // ============================================================
@@ -576,7 +580,101 @@
   }
 
   // ============================================================
-  // 5h. HISTORY NAVIGATION (mobile back button)
+  // 5h. TAB FOCUS MANAGER
+  // ============================================================
+  function setupTabFocusManager() {
+    // Clean up any existing tab channel
+    if (state.tabChannel) {
+      supabase.removeChannel(state.tabChannel);
+      state.tabChannel = null;
+    }
+
+    // Create a separate channel for tab focus management
+    if (state.currentChannel) {
+      state.tabChannel = supabase.channel(`tab-focus-${state.currentChannel.id}`);
+      state.tabChannel.subscribe();
+    }
+
+    // Handle visibility change
+    const handleVisibilityChange = async () => {
+      if (document.hidden) {
+        // 1. Student closed or minimized the tab -> Disconnect instantly!
+        console.log("🔴 Tab hidden. Dropping connection to save free tier slots.");
+        state.isTabFocused = false;
+        
+        // Remove the main messages subscription
+        if (state.messagesSubscription) {
+          supabase.removeChannel(state.messagesSubscription);
+          state.messagesSubscription = null;
+          state.isChannelActive = false;
+        }
+        
+        // Also remove the tab channel
+        if (state.tabChannel) {
+          await supabase.removeChannel(state.tabChannel);
+          state.tabChannel = null;
+        }
+      } else {
+        // 2. Student clicked back into the tab -> Reconnect silently!
+        console.log("🟢 Tab focused again! Reconnecting...");
+        state.isTabFocused = true;
+        
+        // Recreate the tab channel
+        if (!state.tabChannel && state.currentChannel) {
+          state.tabChannel = supabase.channel(`tab-focus-${state.currentChannel.id}`);
+          state.tabChannel.subscribe();
+        }
+        
+        // Reconnect the main messages subscription
+        if (!state.messagesSubscription && state.currentChannel) {
+          subscribeToMessages(state.currentChannel.id);
+        }
+        
+        // 3. SILENT CATCH-UP: Grab messages sent while the student was away
+        if (state.currentChannel && !state.isRefreshing) {
+          state.isRefreshing = true;
+          console.log("📥 Catching up on messages missed while tab was inactive...");
+          try {
+            await loadMessages(state.currentChannel.id);
+            console.log("✅ Catch-up complete!");
+          } catch (e) {
+            console.warn('Catch-up failed:', e);
+          } finally {
+            state.isRefreshing = false;
+          }
+        }
+      }
+    };
+
+    // Attach listener to the browser document
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Store cleanup function
+    state._tabFocusCleanup = function() {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (state.tabChannel) {
+        supabase.removeChannel(state.tabChannel);
+        state.tabChannel = null;
+      }
+    };
+
+    console.log('📋 Tab focus manager initialized');
+  }
+
+  function cleanupTabFocusManager() {
+    if (state._tabFocusCleanup) {
+      state._tabFocusCleanup();
+      state._tabFocusCleanup = null;
+    }
+    if (state.tabChannel) {
+      supabase.removeChannel(state.tabChannel);
+      state.tabChannel = null;
+    }
+    console.log('📋 Tab focus manager cleaned up');
+  }
+
+  // ============================================================
+  // 5i. HISTORY NAVIGATION (mobile back button)
   // ============================================================
   let screenHistory = [];
   let isBackNavigation = false;
@@ -1282,6 +1380,9 @@
     
     // Setup inactivity manager for this channel
     setupInactivityManager();
+    
+    // Setup tab focus manager for this channel
+    setupTabFocusManager();
   }
 
   function updateChatDetailHeader() {
@@ -2419,6 +2520,9 @@
 
     // Clean up inactivity manager
     cleanupInactivityManager();
+    
+    // Clean up tab focus manager
+    cleanupTabFocusManager();
 
     // Reset state
     state.currentUser = null;
@@ -2430,6 +2534,7 @@
     state.statuses = [];
     state.replyingTo = null;
     state.isChannelActive = false;
+    state.isTabFocused = true;
 
     // Clear cached messages on logout
     try {
