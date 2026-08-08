@@ -49,11 +49,6 @@
         <p class="auth-note">Ask your admin if you don't have an account yet</p>
       </div>
     </div>
-    <!-- [NCO-KEEP: auth-password-field] Login now requires a real password —
-         accounts are provisioned by an admin from Settings, not auto-created
-         on first login. Do not remove passwordInput or reintroduce a
-         default-password auto-signup flow; see app.js loginWithUsername(). -->
-
 
     <!-- ===== APP BODY (mobile screens) ===== -->
     <div id="dashboard" class="hidden app-body">
@@ -175,6 +170,31 @@
           </div>
         </div>
 
+        <!-- Admin User Management Panel -->
+        <div id="adminUserManagementCard" class="hidden settings-list" style="margin-top:14px;">
+          <div class="settings-list-label"><i class="fas fa-users-cog"></i> Manage Users</div>
+          <div style="padding:4px 16px 16px; display:flex; flex-direction:column; gap:8px;">
+            <div class="admin-row" style="display:flex; gap:8px;">
+              <input id="manageUserSearch" class="field-sm" placeholder="Search username..." list="registeredUsersList" autocomplete="off" style="flex:1;">
+              <button id="loadUserBtn" class="btn-admin-sm"><i class="fas fa-search"></i> Load</button>
+            </div>
+            <div id="userEditForm" style="display:none; flex-direction:column; gap:8px; padding-top:8px; border-top:1px solid var(--border);">
+              <input id="editUsername" class="field-sm" placeholder="Username (ID)" style="width:100%;">
+              <input id="editNewUsername" class="field-sm" placeholder="New username (optional)" style="width:100%;">
+              <input id="editPassword" class="field-sm" placeholder="New password (leave blank to keep current)" style="width:100%;">
+              <select id="editRole" class="field-sm" style="width:100%;">
+                <option value="student">Student</option>
+                <option value="teacher">Teacher</option>
+                <option value="admin">Admin</option>
+              </select>
+              <div style="display:flex; gap:8px;">
+                <button id="updateUserBtn" class="btn-admin-sm" style="flex:1;"><i class="fas fa-save"></i> Update</button>
+                <button id="deleteUserBtn" class="btn-admin-sm" style="flex:1; border-color:var(--danger); color:var(--danger);"><i class="fas fa-trash"></i> Delete</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <button id="signOutBtn" class="logout-btn">
           <i class="fas fa-arrow-right-from-bracket"></i> Log out
         </button>
@@ -263,12 +283,6 @@
         </div>
 
         <div id="adminAddMemberRow" class="hidden admin-add-row">
-          <!-- [NCO-KEEP: restrict-add-to-registered-users] list= gives
-               autocomplete suggestions of real accounts; the actual
-               enforcement (rejecting anyone not in that list) happens in
-               addMemberToChannel() in app.js — don't remove the list
-               attribute or the datalist below, and don't rely on the
-               datalist alone for the restriction, it's only a UI hint. -->
           <input id="assignStudentInput" placeholder="Username" class="field-sm" list="registeredUsersList" autocomplete="off">
           <select id="assignRoleSelect" class="field-sm" style="flex:0 0 96px;">
             <option value="student">Student</option>
@@ -299,6 +313,14 @@
           <div class="profile-card-name" id="profileChannelName">—</div>
           <div class="profile-card-meta" id="profileChannelMeta">—</div>
           <p class="profile-card-desc" id="profileChannelDesc"></p>
+          
+          <!-- Admin description edit -->
+          <div id="adminDescEdit" class="hidden" style="margin-top:12px;">
+            <div style="display:flex; gap:8px;">
+              <input id="channelDescInput" class="field-sm" placeholder="Group description..." style="flex:1;">
+              <button id="updateDescBtn" class="btn-admin-sm"><i class="fas fa-save"></i></button>
+            </div>
+          </div>
         </div>
 
         <button id="profileMembersBtn" class="btn-navy-pill">
@@ -360,12 +382,9 @@
           <div id="statusModalTitle" class="status-viewer-name"></div>
           <div id="statusModalTime" class="status-viewer-time"></div>
         </div>
-        <!-- [NCO-KEEP: status-pause-btn] Pauses the auto-advance timer; see
-             toggleStatusPause()/showStatusModal() in app.js. -->
         <button id="statusPauseBtn" class="icon-btn back-btn" title="Pause"><i class="fas fa-pause"></i></button>
       </div>
       <div class="status-viewer-body">
-        <!-- [NCO-KEEP: status-media] populated by showStatusModal() in app.js -->
         <div id="statusModalMedia" class="status-viewer-media"></div>
         <p id="statusModalContent"></p>
       </div>
