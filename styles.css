@@ -1,4 +1,4 @@
-/* styles.css - Complete updated file */
+/* styles.css - Complete file */
 /* ============================================================
    NOUS COMPLEX ORBIT — Design System
    Mobile-first communication app.
@@ -200,6 +200,7 @@ button { font-family: inherit; }
     flex-direction: row;
     height: 100%;
     overflow: hidden;
+    background: var(--bg);
   }
 
   .bottom-nav {
@@ -218,35 +219,74 @@ button { font-family: inherit; }
   }
   .nav-btn { padding: 0; }
 
+  /* All screens need proper backgrounds and sizing */
+  .screen {
+    background: var(--bg);
+    height: 100%;
+    display: flex !important;
+    flex-direction: column;
+  }
+
   #screenChats {
     flex: 0 0 380px;
     max-width: 380px;
     height: 100%;
     border-right: 1px solid var(--border);
     background: var(--bg);
+    display: flex !important;
   }
-  #screenChats:not(.hidden) { display: flex; }
 
-  #screenUpdates, #screenSettings, #screenChatDetail, #screenMembers, #screenProfile {
+  #screenUpdates, 
+  #screenSettings, 
+  #screenChatDetail, 
+  #screenMembers, 
+  #screenProfile {
     flex: 1;
     height: 100%;
     min-width: 0;
     background: var(--surface);
+    display: flex !important;
   }
-  #screenUpdates:not(.hidden),
-  #screenSettings:not(.hidden),
-  #screenChatDetail:not(.hidden),
-  #screenMembers:not(.hidden),
-  #screenProfile:not(.hidden) { display: flex; }
 
-  .chat-list, .updates-list { padding-bottom: 24px; }
-  #screenSettings { padding-bottom: 0; }
-  .members-wrap { padding-bottom: 24px; }
+  /* Hide the hidden class override for desktop */
+  #screenUpdates.hidden,
+  #screenSettings.hidden,
+  #screenChatDetail.hidden,
+  #screenMembers.hidden,
+  #screenProfile.hidden {
+    display: none !important;
+  }
+
+  /* Keep chats visible when in chat group screens - handled by JS */
+  #screenChats.hidden {
+    display: none !important;
+  }
+
+  /* Ensure chat list is visible */
+  .chat-list {
+    padding-bottom: 24px;
+    background: var(--bg);
+  }
+
+  #screenSettings { 
+    padding-bottom: 0;
+    background: var(--surface);
+  }
+  
+  .members-wrap { 
+    padding-bottom: 24px;
+    background: var(--surface);
+  }
 
   .fab { bottom: 28px; }
   #backFromChat, #backFromUpdates { display: none !important; }
 
   .status-viewer-inner { border-radius: 0; height: 100vh; max-height: 100vh; max-width: 480px; }
+
+  /* Brand header on desktop */
+  .brand-header {
+    background: var(--bg);
+  }
 }
 
 .hidden { display: none !important; }
