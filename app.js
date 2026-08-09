@@ -1906,8 +1906,8 @@
         .from(CONFIG.SUPABASE.TABLES.MESSAGES)
         .select('*')
         .eq('channel_id', channelId)
-        .order('created_at', { ascending: true })
-        .limit(50); // Just grab the last 50 messages to keep it fast
+        .order('created_at', { ascending: false })
+        .limit(50); // Fetch the newest 50, then reverse so oldest appears at top
 
       if (error) {
         console.warn('Messages fallback:', error);
@@ -1920,10 +1920,12 @@
       }
 
       if (data && data.length > 0) {
+        // Reverse so the array is oldest-first (correct chronological display order)
+        const orderedData = data.reverse();
         // Update state with fresh data
-        state.messages = data;
+        state.messages = orderedData;
         // Save these fresh messages to local storage for the next time they open the app
-        saveCachedMessages(channelId, data);
+        saveCachedMessages(channelId, orderedData);
         renderMessages();
         console.log(`📥 Fetched ${data.length} fresh messages from Supabase`);
       } else if (state.messages.length === 0) {
@@ -2107,7 +2109,12 @@
     state.replyingTo = null;
     DOM.replyPreview.classList.add('hidden');
 
-    await loadMessages(state.currentChannel.id);
+    // The realtime INSERT subscription (subscribeToMessages) already appends the
+    // new message to state.messages and calls renderMessages() the moment the DB
+    // write is confirmed. Calling loadMessages() here was redundant — and worse,
+    // it could overwrite state.messages with the oldest 50 records before the
+    // realtime event arrived, making the just-sent message disappear for a few
+    // seconds. Channel preview list still refreshed below so the sidebar stays current.
     state.channelPreviews = await loadChannelPreviews(allChannels.map((c) => c.id));
     renderChatList(allChannels);
   }
