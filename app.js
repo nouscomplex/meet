@@ -2049,66 +2049,117 @@
     state.replyingTo = null;
     DOM.replyPreview.classList.add('hidden');
   });
+// ============================================================
+// COMPLETE FIX FOR DISAPPEARING MESSAGES
+// 
+// INSTRUCTIONS:
+// 1. Open your app.js file
+// 2. Go to line 2051 (use Ctrl+G or Cmd+G)
+// 3. Select entire sendMessage function (lines 2051-2113)
+// 4. Delete all those lines
+// 5. Paste this entire file starting at line 2051
+// 6. Save file (Ctrl+S)
+// 7. Reload app in browser (Ctrl+Shift+R)
+// 8. Send a test message - it will appear instantly ✅
+//
+// ============================================================
 
-  async function sendMessage(content, file) {
-    if (!state.currentChannel || !state.currentUser) { alert('Please select a channel first.'); return; }
+async function sendMessage(content, file) {
+  if (!state.currentChannel || !state.currentUser) { 
+    alert('Please select a channel first.'); 
+    return; 
+  }
 
-    let fileUrl = null;
+  let fileUrl = null;
 
-    if (file) {
-      if (file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
-        alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
-        return;
-      }
-
-      const path = generateStoragePath(state.currentChannel.id, file.name);
-
-      try {
-        const { error } = await supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).upload(path, file);
-        if (error) throw error;
-
-        const { data: urlData } = supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).getPublicUrl(path);
-        fileUrl = urlData.publicUrl;
-
-        DOM.fileUploadStatus.textContent = `📎 ${file.name} uploaded`;
-        DOM.fileUploadStatus.classList.remove('hidden');
-        setTimeout(() => DOM.fileUploadStatus.classList.add('hidden'), 4000);
-      } catch (e) {
-        console.error('Upload error:', e);
-        alert(`File upload failed: ${e.message || 'unknown error — check console for details.'}`);
-        return;
-      }
+  // Handle file upload if provided
+  if (file) {
+    if (file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
+      alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
+      return;
     }
 
-    const replyPayload = state.replyingTo
-      ? { reply_to: state.replyingTo.id, reply_username: state.replyingTo.username, reply_content: state.replyingTo.content || (state.replyingTo.file_url ? '📎 Attached file' : '') }
-      : {};
+    const path = generateStoragePath(state.currentChannel.id, file.name);
 
-    const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.MESSAGES).insert({
-      channel_id: state.currentChannel.id,
-      username: state.currentUser.username,
-      content: content || '',
-      file_url: fileUrl,
-      created_at: new Date().toISOString(),
-      ...replyPayload,
-    });
+    try {
+      const { error } = await supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).upload(path, file);
+      if (error) throw error;
 
-    if (error) {
-      console.error('Send error:', error);
-      alert('Failed to send message.');
-    } else {
-      // Fire the push notification exactly once, from the sender's own
-      // client, scoped to this channel's members.
-      sendVapidNotificationsToOfflineStudents(
-        state.currentUser.username,
-        content || '📎 New attachment',
-        state.currentChannel.id
-      );
+      const { data: urlData } = supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).getPublicUrl(path);
+      fileUrl = urlData.publicUrl;
+
+      DOM.fileUploadStatus.textContent = `📎 ${file.name} uploaded`;
+      DOM.fileUploadStatus.classList.remove('hidden');
+      setTimeout(() => DOM.fileUploadStatus.classList.add('hidden'), 4000);
+    } catch (e) {
+      console.error('Upload error:', e);
+      alert(`File upload failed: ${e.message || 'unknown error — check console for details.'}`);
+      return;
     }
+  }
 
-    state.replyingTo = null;
-    DOM.replyPreview.classList.add('hidden');
+  // Build reply payload if replying to another message
+  const replyPayload = state.replyingTo
+    ? { 
+        reply_to: state.replyingTo.id, 
+        reply_username: state.replyingTo.username, 
+        reply_content: state.replyingTo.content || (state.replyingTo.file_url ? '📎 Attached file' : '') 
+      }
+    : {};
 
+  // Create the message object
+  const newMessage = {
+    channel_id: state.currentChannel.id,
+    username: state.currentUser.username,
+    content: content || '',
+    file_url: fileUrl,
+    created_at: new Date().toISOString(),
+    ...replyPayload,
+  };
+
+  // OPTIMISTIC UPDATE: Add message to local state FIRST
+  // This ensures it appears immediately in the UI
+  state.messages.push(newMessage);
+  renderMessages();
+  console.log('✉️ Message added to local state (optimistic update)');
+
+  // Send the message to the database
+  const { error, data } = await supabase
+    .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+    .insert(newMessage);
+
+  if (error) {
+    // Handle database insert error
+    console.error('Send error:', error);
+    alert('Failed to send message.');
+    
+    // ROLLBACK: Remove optimistically added message if insert fails
+    state.messages = state.messages.filter((m) => 
+      !(m.username === state.currentUser.username && m.created_at === newMessage.created_at)
+    );
+    renderMessages();
+    console.log('❌ Message removed (rollback due to error)');
+  } else {
+    // Success: message was inserted to the database
+    console.log('✅ Message sent to database');
+    
+    // Fire the push notification exactly once, from the sender's own
+    // client, scoped to this channel's members.
+    sendVapidNotificationsToOfflineStudents(
+      state.currentUser.username,
+      content || '📎 New attachment',
+      state.currentChannel.id
+    );
+
+    // Update channel previews so sidebar shows new message count
+    state.channelPreviews = await loadChannelPreviews(allChannels.map((c) => c.id));
+    renderChatList(allChannels);
+  }
+
+  // Clear the reply state and hide reply preview box
+  state.replyingTo = null;
+  DOM.replyPreview.classList.add('hidden');
+}
     // The realtime INSERT subscription (subscribeToMessages) already appends the
     // new message to state.messages and calls renderMessages() the moment the DB
     // write is confirmed. Calling loadMessages() here was redundant — and worse,
