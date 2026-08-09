@@ -257,12 +257,13 @@
   }
 
   // ============================================================
-  // 5b. NOTIFICATION SOUND
+  // 5b. NOTIFICATION SOUND & VISUAL NOTIFICATIONS (FIXED)
   // ============================================================
   let audioCtx = null;
 
   function playNotifySound() {
     try {
+      // PLAY SOUND
       audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
       if (audioCtx.state === 'suspended') audioCtx.resume();
 
@@ -281,6 +282,39 @@
       });
     } catch (e) {
       console.warn('Notification sound unavailable:', e);
+    }
+
+    // SHOW BROWSER NOTIFICATION (NEW)
+    try {
+      // Only show if we have permission and the tab is not focused
+      if (Notification.permission === 'granted' && document.hidden) {
+        const senderName = state.currentUser ? getDisplayName(state.currentUser.username) : 'Someone';
+        const channelName = state.currentChannel?.name || 'Class';
+        
+        // Create and show notification
+        const notification = new Notification(`💬 ${senderName} in ${channelName}`, {
+          body: 'New message! Tap to open.',
+          icon: CONFIG.BRANDING.LOGO.PATH || '/favicon.ico',
+          badge: '/favicon.ico',
+          tag: 'new-message-' + Date.now(), // Unique tag to show each message
+          requireInteraction: true, // Keeps it visible until user interacts
+          silent: true, // We already play our custom sound
+        });
+        
+        // Keep notification visible longer (some browsers ignore this, but we try)
+        setTimeout(() => {
+          notification.close();
+        }, 10000); // 10 seconds
+        
+        // When user clicks the notification, focus the tab
+        notification.onclick = function() {
+          window.focus();
+          notification.close();
+        };
+      }
+    } catch (e) {
+      // Fallback: just play sound, no visual notification
+      console.warn('Could not show notification:', e);
     }
   }
 
@@ -411,10 +445,7 @@
   // ============================================================
   async function sendVapidNotificationsToOfflineStudents(senderId, messageContent, channelId) {
     try {
-      // 1. Find the OTHER members of this specific channel — not every
-      // registered device in the whole school. Previously this queried
-      // user_device_tokens with no channel filter, so a message in any one
-      // class channel pushed a notification to every user in the app.
+      // 1. Find the OTHER members of this specific channel
       const { data: members, error: memberError } = await supabase
         .from(CONFIG.SUPABASE.TABLES.MEMBERS)
         .select('username')
@@ -736,12 +767,6 @@
 
     if (state.roleCache[key]) return state.roleCache[key];
 
-    // SECURITY: role must come from the server-loaded role cache (user_roles
-    // table), never guessed from the username text. A previous version granted
-    // admin/teacher access to any username merely *containing* those words
-    // (e.g. "teacherassistant" or "administrator2" would get elevated access).
-    // If the role cache hasn't loaded yet or the user isn't registered,
-    // fail safe to the lowest-privilege role.
     console.warn(`No role found in role cache for "${username}" — defaulting to student.`);
     return CONFIG.AUTH.ROLES.STUDENT;
   }
@@ -1643,16 +1668,6 @@
     DOM.userEditForm.style.display = 'flex';
   }
 
-  // Privileged auth changes (changing another user's login email or password)
-  // require the Supabase service_role key, which must NEVER be shipped to the
-  // browser. This calls a Supabase Edge Function that holds the service_role
-  // key server-side and performs the auth.admin.* call there, looked up by the
-  // TARGET user's username/email — never by whichever admin happens to be
-  // logged in. You must deploy an 'admin-update-user' Edge Function that:
-  //   1. Verifies the caller is an admin (checks their JWT/role)
-  //   2. Looks up the target auth user by email (generateEmail(targetUsername))
-  //   3. Calls supabase.auth.admin.updateUserById(targetAuthUser.id, { email, password })
-  // See the accompanying admin-update-user-edge-function.md for a starting point.
   async function callAdminUpdateUserFunction(targetUsername, { newEmail, newPassword } = {}) {
     if (!newEmail && !newPassword) return { error: null };
     const { data, error } = await supabase.functions.invoke('admin-update-user', {
@@ -1685,8 +1700,6 @@
           });
         if (roleError) throw roleError;
         
-        // Update the TARGET user's auth email via the server-side function —
-        // identified by their username, not the currently logged-in admin.
         const { error: authError } = await callAdminUpdateUserFunction(username, {
           newEmail: generateEmail(newUsername),
         });
@@ -1713,7 +1726,6 @@
         state.roleCache[newUsername] = newRole;
         state.displayNameCache[newUsername] = newDisplayName || newUsername;
 
-        // Password change (if any) must apply to the NEW username going forward.
         if (newPassword && newPassword.length > 0) {
           const { error: passError } = await callAdminUpdateUserFunction(newUsername, { newPassword });
           if (passError) throw passError;
@@ -1748,11 +1760,6 @@
     }
   }
 
-  // Deleting another user's auth account also requires the service_role key.
-  // You must deploy an 'admin-delete-user' Edge Function that:
-  //   1. Verifies the caller is an admin
-  //   2. Looks up the target auth user by email (generateEmail(targetUsername))
-  //   3. Calls supabase.auth.admin.deleteUser(targetAuthUser.id)
   async function callAdminDeleteUserFunction(targetUsername) {
     const { data, error } = await supabase.functions.invoke('admin-delete-user', {
       body: { targetUsername },
@@ -1775,8 +1782,6 @@
       await supabase.from(CONFIG.SUPABASE.TABLES.STATUSES).delete().eq('username', username);
       await supabase.from('class_schedule').delete().eq('teacher_username', username);
       
-      // Delete the TARGET user's auth account, identified by their own
-      // username — not whichever admin happens to be logged in.
       const { error: authError } = await callAdminDeleteUserFunction(username);
       if (authError) throw authError;
       
@@ -1814,19 +1819,19 @@
       }, async (payload) => {
         const dbMessage = payload.new;
         
-        // ⭐ FIX: Three-level duplicate detection
+        // ⭐ FIX: Improved duplicate detection
         
-        // Check 1: Exact ID match
+        // Check 1: Exact ID match (most reliable)
         if (state.messages.some((m) => m.id === dbMessage.id)) {
-          console.log(`✋ Message ${dbMessage.id} already exists (ID match)`);
+          console.log(`✋ Message already exists (ID: ${dbMessage.id})`);
           return;
         }
 
-        // Check 2: clientId match (PRIMARY FIX - links optimistic → real)
+        // Check 2: Replace optimistic message by client_id
         if (dbMessage.client_id) {
           const optimisticIndex = state.messages.findIndex((m) => 
-            m.id === `temp_client_${dbMessage.client_id.replace('client_', '')}` ||
-            (m.isPending && m.client_id === dbMessage.client_id)
+            m.client_id === dbMessage.client_id ||
+            (m.isPending && m.id && m.id.includes('temp_'))
           );
           
           if (optimisticIndex !== -1) {
@@ -1839,16 +1844,17 @@
           }
         }
 
-        // Check 3: Fallback - content matching
+        // Check 3: Prevent duplicates by content (only if no ID match)
         const similarExists = state.messages.some((m) => 
           m.username === dbMessage.username &&
           m.content === dbMessage.content &&
           m.channel_id === dbMessage.channel_id &&
-          !m.isPending
+          !m.isPending &&
+          Math.abs(new Date(m.created_at) - new Date(dbMessage.created_at)) < 2000 // Within 2 seconds
         );
 
         if (similarExists) {
-          console.log(`✋ Similar message already exists`);
+          console.log(`✋ Similar message already exists (content match)`);
           return;
         }
 
@@ -1859,12 +1865,14 @@
         refreshUnreadBadges();
         saveCachedMessages(channelId, state.messages);
 
+        // Play sound for messages from others
         if (dbMessage.username !== state.currentUser?.username) {
           playNotifySound();
           markDelivered(channelId);
           markSeen(channelId);
         }
 
+        // Reset inactivity timer
         if (state.inactivityTimer) {
           clearTimeout(state.inactivityTimer);
           state.inactivityTimer = null;
@@ -1912,20 +1920,16 @@
   async function loadMessages(channelId) {
     if (!channelId) return;
 
-    // Try to get cached messages first (already loaded in selectChannel)
-    // But we still fetch fresh data in background
-    
     try {
       const { data, error } = await supabase
         .from(CONFIG.SUPABASE.TABLES.MESSAGES)
         .select('*')
         .eq('channel_id', channelId)
         .order('created_at', { ascending: true })
-        .limit(50); // Just grab the last 50 messages to keep it fast
+        .limit(50);
 
       if (error) {
         console.warn('Messages fallback:', error);
-        // If there's an error, check if we have cached messages
         if (state.messages.length === 0) {
           state.messages = [{ id: '1', content: 'Welcome to the channel!', username: 'system', created_at: Date.now() }];
         }
@@ -1934,14 +1938,11 @@
       }
 
       if (data && data.length > 0) {
-        // Update state with fresh data
         state.messages = data;
-        // Save these fresh messages to local storage for the next time they open the app
         saveCachedMessages(channelId, data);
         renderMessages();
         console.log(`📥 Fetched ${data.length} fresh messages from Supabase`);
       } else if (state.messages.length === 0) {
-        // If no messages from DB and no cache, show empty state
         state.messages = [];
         renderMessages();
       }
@@ -1949,7 +1950,6 @@
       updateProfileScreen();
     } catch (error) {
       console.error('Error loading messages:', error);
-      // Fallback to cached messages if available
       if (state.messages.length === 0) {
         state.messages = [{ id: '1', content: 'Welcome to the channel!', username: 'system', created_at: Date.now() }];
         renderMessages();
@@ -2034,7 +2034,6 @@
     if (error) { alert('Delete failed: ' + error.message); return; }
     state.messages = state.messages.filter((m) => m.id !== messageId);
     renderMessages();
-    // Update cache after deletion
     if (state.currentChannel) {
       saveCachedMessages(state.currentChannel.id, state.messages);
     }
@@ -2063,6 +2062,9 @@
   });
 
 
+  // ============================================================
+  // 9. SEND MESSAGE (FIXED)
+  // ============================================================
   async function sendMessage(content, file) {
     if (!state.currentChannel || !state.currentUser) { 
       alert('Please select a channel first.'); 
@@ -2113,7 +2115,7 @@
       username: state.currentUser.username,
       content: content || '',
       file_url: fileUrl,
-      client_id: clientId,  // ⭐ This is the key fix
+      client_id: clientId,
       ...replyPayload,
     };
 
@@ -2130,6 +2132,7 @@
     renderMessages();
     console.log(`✉️ Message added (optimistic, clientId: ${clientId})`);
 
+    // SEND TO DATABASE
     const { error, data } = await supabase
       .from(CONFIG.SUPABASE.TABLES.MESSAGES)
       .insert(newMessage)
@@ -2138,24 +2141,32 @@
     if (error) {
       console.error('Send error:', error);
       alert('Failed to send message.');
+      // Remove the optimistic message
       state.messages = state.messages.filter((m) => m.id !== tempId);
       renderMessages();
       console.log('❌ Message rolled back');
-    } else {
-      console.log('✅ Message sent to database');
+    } else if (data && data[0]) {
+      // ✅ SUCCESS - Replace the temporary message with the real one
+      const realMessage = data[0];
       
-      if (data && data[0]) {
-        const dbMessage = data[0];
-        const index = state.messages.findIndex((m) => m.id === tempId);
+      // Find and replace the temp message
+      const index = state.messages.findIndex((m) => m.id === tempId);
+      if (index !== -1) {
+        // Replace the temp message with the real one
+        state.messages[index] = realMessage;
+        // Remove the isPending flag
+        delete state.messages[index].isPending;
         
-        if (index !== -1) {
-          state.messages[index] = dbMessage;
-          delete state.messages[index].isPending;
-          renderMessages();
-          console.log(`✅ Optimistic replaced (temp → real ID: ${dbMessage.id})`);
-        }
+        // Force a re-render
+        renderMessages();
+        console.log(`✅ Message replaced: ${tempId} → ${realMessage.id}`);
+      } else {
+        // If temp message wasn't found, just add the real one
+        state.messages.push(realMessage);
+        renderMessages();
       }
       
+      // Send push notifications to offline students
       sendVapidNotificationsToOfflineStudents(
         state.currentUser.username,
         content || '📎 New attachment',
@@ -2164,6 +2175,11 @@
 
       state.channelPreviews = await loadChannelPreviews(allChannels.map((c) => c.id));
       renderChatList(allChannels);
+      
+      // Save to cache
+      if (state.currentChannel) {
+        saveCachedMessages(state.currentChannel.id, state.messages);
+      }
     }
 
     state.replyingTo = null;
@@ -2545,6 +2561,18 @@
     await renderChannels();
     await loadStatuses();
     
+    // REQUEST NOTIFICATION PERMISSION (NEW)
+    try {
+      if ('Notification' in window && Notification.permission === 'default') {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          console.log('✅ Notification permission granted');
+        }
+      }
+    } catch (e) {
+      console.warn('Notification permission request failed:', e);
+    }
+    
     // Sync VAPID subscription on login
     await syncVapidSubscriptionOnLogin(username);
     
@@ -2596,7 +2624,6 @@
     // Clean up VAPID subscription before signing out
     try {
       if (state.currentUser) {
-        // Delete the subscription from the table while the session is still active
         await supabase
           .from('user_device_tokens')
           .delete()
