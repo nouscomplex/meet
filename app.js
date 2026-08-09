@@ -1804,6 +1804,7 @@
   // ============================================================
   // 8b. REALTIME MESSAGE SYNC (with instant cache & inactivity)
   // ============================================================
+
   function subscribeToMessages(channelId) {
     // Clean up existing subscription
     if (state.messagesSubscription) {
@@ -1819,9 +1820,19 @@
         table: CONFIG.SUPABASE.TABLES.MESSAGES, 
         filter: `channel_id=eq.${channelId}` 
       }, async (payload) => {
-        // Check if message already exists
-        const exists = state.messages.some((m) => m.id === payload.new.id);
+        // IMPROVED DUPLICATE DETECTION:
+        // Check if message exists by:
+        // 1. Exact ID match (real database message)
+        // 2. Username + created_at + channel_id match (optimistic message)
+        const exists = state.messages.some((m) => 
+          m.id === payload.new.id ||
+          (m.username === payload.new.username && 
+           m.created_at === payload.new.created_at &&
+           m.channel_id === payload.new.channel_id)
+        );
+        
         if (!exists) {
+          // Message doesn't exist, add it
           state.messages.push(payload.new);
           renderMessages();
           refreshUnreadBadges();
@@ -1846,6 +1857,24 @@
             playNotifySound();
             markDelivered(channelId);
             markSeen(channelId);
+          }
+        } else {
+          // Message already exists - check if it's the optimistic message with temp ID
+          const index = state.messages.findIndex((m) =>
+            m.username === payload.new.username &&
+            m.created_at === payload.new.created_at &&
+            m.channel_id === payload.new.channel_id &&
+            m.id !== payload.new.id  // Different ID means we have temp ID
+          );
+          
+          if (index !== -1 && state.messages[index].id && state.messages[index].id.startsWith('temp_')) {
+            // Replace temporary optimistic message with real database message
+            state.messages[index] = payload.new;
+            renderMessages();
+            console.log('✅ Optimistic message confirmed by real-time subscription');
+            
+            // Update cache with real message
+            saveCachedMessages(channelId, state.messages);
           }
         }
       })
@@ -1878,23 +1907,10 @@
         if (status === 'SUBSCRIBED') {
           state.isChannelActive = true;
           console.log(`✅ Subscribed to messages for channel ${channelId}`);
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          state.isChannelActive = false;
-          console.warn('Realtime message sync unavailable — falling back to manual refresh.');
         }
       });
   }
 
-  async function createChannel(name) {
-    if (!name) return;
-    const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.CHANNELS).insert({ name });
-    if (error) { alert('Error creating channel: ' + error.message); return; }
-    await renderChannels();
-  }
-
-  // ============================================================
-  // 9. MESSAGES (with caching support)
-  // ============================================================
   async function loadMessages(channelId) {
     if (!channelId) return;
 
@@ -2092,7 +2108,7 @@
         }
       : {};
 
-    // Create the message object
+    // Create the message object (WITHOUT id - database will generate it)
     const newMessage = {
       channel_id: state.currentChannel.id,
       username: state.currentUser.username,
@@ -2102,42 +2118,75 @@
       ...replyPayload,
     };
 
-    // OPTIMISTIC UPDATE: Add message to local state FIRST
-    state.messages.push(newMessage);
+    // ================================================================
+    // V2 FIX: OPTIMISTIC UPDATE WITH TEMPORARY ID
+    // ================================================================
+    // Generate a temporary ID so we can track this message
+    // in state.messages before the database assigns a real ID.
+    // This prevents duplicate detection from failing.
+    const tempId = `temp_${Date.now()}_${Math.random()}`;
+    const optimisticMessage = { ...newMessage, id: tempId, isPending: true };
+    
+    // Add to local state immediately - user sees it right away
+    state.messages.push(optimisticMessage);
     renderMessages();
-    console.log('✉️ Message added to local state (optimistic update)');
+    console.log('✉️ Message added to local state (optimistic update with temp ID: ' + tempId + ')');
 
-    // Send the message to the database
+    // Send the message to the database and get back the real message with real ID
     const { error, data } = await supabase
       .from(CONFIG.SUPABASE.TABLES.MESSAGES)
-      .insert(newMessage);
+      .insert(newMessage)
+      .select(); // Important: get back the inserted record with the real ID
 
     if (error) {
+      // ================================================================
+      // ERROR HANDLING: Rollback optimistic message
+      // ================================================================
       console.error('Send error:', error);
       alert('Failed to send message.');
       
-      // ROLLBACK: Remove optimistically added message if insert fails
-      state.messages = state.messages.filter((m) => 
-        !(m.username === state.currentUser.username && m.created_at === newMessage.created_at)
-      );
+      // Remove the optimistic message from state since insert failed
+      state.messages = state.messages.filter((m) => m.id !== tempId);
       renderMessages();
       console.log('❌ Message removed (rollback due to error)');
     } else {
+      // ================================================================
+      // SUCCESS: Replace temporary ID with real ID from database
+      // ================================================================
       console.log('✅ Message sent to database');
       
+      // CRITICAL: Update the optimistic message with the real ID
+      // This must happen BEFORE the real-time subscription fires
+      // Otherwise the real-time handler won't find the optimistic message
+      if (data && data[0]) {
+        const dbMessage = data[0];
+        const index = state.messages.findIndex((m) => m.id === tempId);
+        if (index !== -1) {
+          // Replace optimistic message with real database message
+          state.messages[index] = dbMessage;
+          delete state.messages[index].isPending;
+          renderMessages();
+          console.log('✅ Optimistic message updated with real ID from database');
+        }
+      }
+      
+      // Send push notification to offline users
       sendVapidNotificationsToOfflineStudents(
         state.currentUser.username,
         content || '📎 New attachment',
         state.currentChannel.id
       );
 
+      // Update channel previews in sidebar
       state.channelPreviews = await loadChannelPreviews(allChannels.map((c) => c.id));
       renderChatList(allChannels);
     }
 
+    // Clear the reply state and hide reply preview box
     state.replyingTo = null;
     DOM.replyPreview.classList.add('hidden');
   }
+
 
   // ============================================================
   // 10. STATUS UPDATES
