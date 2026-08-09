@@ -107,11 +107,6 @@ const CONFIG = {
     ENABLE_STATUS_UPDATES: true,
     ENABLE_ADMIN_CONSOLE: true,
     ENABLE_VIDEO_CONFERENCE: true,
-    ROSTER: {
-      STUDENT_COUNT: 300,
-      PREFIX: 'student',
-      PASSWORD_LENGTH: 6,
-    }
   },
 
   // ============================================================
