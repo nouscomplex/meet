@@ -531,61 +531,54 @@
   // 5g. INACTIVITY DISCONNECTION MANAGEMENT
   // ============================================================
   function setupInactivityManager() {
-    // Clear any existing timer
     if (state.inactivityTimer) {
       clearTimeout(state.inactivityTimer);
       state.inactivityTimer = null;
     }
 
-    // Define the reset routine - runs whenever user is active
     function resetInactivityTimer() {
-      // Clear the pending disconnect countdown
       if (state.inactivityTimer) {
         clearTimeout(state.inactivityTimer);
         state.inactivityTimer = null;
       }
       
-      // If the channel was disconnected, revive the connection silently in the background
       if (state.messagesSubscription && state.messagesSubscription.state === 'closed') {
-        console.log("🔄 User active! Reviving background connection silently...");
+        console.log("🔄 User active! Reconnecting...");
         if (state.currentChannel) {
           subscribeToMessages(state.currentChannel.id);
         }
       }
 
-      // Start a fresh 5-minute countdown
       state.inactivityTimer = setTimeout(() => {
-        if (state.messagesSubscription) {
-          console.log("⏰ 5 minutes of inactivity reached. Disconnecting idle channel to save resources.");
+        // ⭐ FIX: Only disconnect if tab is actually focused
+        if (state.messagesSubscription && state.isTabFocused) {
+          console.log("⏰ 5 min idle. Disconnecting to save resources.");
           supabase.removeChannel(state.messagesSubscription);
           state.messagesSubscription = null;
           state.isChannelActive = false;
+          console.log("💤 Channel disconnected. Will reconnect when active.");
         }
       }, state.INACTIVITY_TIMEOUT);
     }
 
-    // Initialize connection and start the first timer countdown
     resetInactivityTimer();
 
-    // Attach standard browser event listeners to monitor user activity
     const activityEvents = ['mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
     activityEvents.forEach(event => {
       window.addEventListener(event, resetInactivityTimer);
     });
 
-    // Store cleanup function
     state._inactivityCleanup = function() {
       if (state.inactivityTimer) {
         clearTimeout(state.inactivityTimer);
         state.inactivityTimer = null;
       }
-      const events = ['mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
-      events.forEach(event => {
+      activityEvents.forEach(event => {
         window.removeEventListener(event, resetInactivityTimer);
       });
     };
 
-    console.log('⏱️ Inactivity manager initialized (5 minute timeout)');
+    console.log('⏱️ Inactivity manager initialized');
   }
 
   function cleanupInactivityManager() {
@@ -1806,7 +1799,6 @@
   // ============================================================
 
   function subscribeToMessages(channelId) {
-    // Clean up existing subscription
     if (state.messagesSubscription) {
       supabase.removeChannel(state.messagesSubscription);
       state.messagesSubscription = null;
@@ -1820,62 +1812,62 @@
         table: CONFIG.SUPABASE.TABLES.MESSAGES, 
         filter: `channel_id=eq.${channelId}` 
       }, async (payload) => {
-        // IMPROVED DUPLICATE DETECTION:
-        // Check if message exists by:
-        // 1. Exact ID match (real database message)
-        // 2. Username + created_at + channel_id match (optimistic message)
-        const exists = state.messages.some((m) => 
-          m.id === payload.new.id ||
-          (m.username === payload.new.username && 
-           m.created_at === payload.new.created_at &&
-           m.channel_id === payload.new.channel_id)
-        );
+        const dbMessage = payload.new;
         
-        if (!exists) {
-          // Message doesn't exist, add it
-          state.messages.push(payload.new);
-          renderMessages();
-          refreshUnreadBadges();
-          
-          // Cache the updated messages
-          saveCachedMessages(channelId, state.messages);
+        // ⭐ FIX: Three-level duplicate detection
+        
+        // Check 1: Exact ID match
+        if (state.messages.some((m) => m.id === dbMessage.id)) {
+          console.log(`✋ Message ${dbMessage.id} already exists (ID match)`);
+          return;
+        }
 
-          // Reset inactivity timer on new message
-          if (state.inactivityTimer) {
-            clearTimeout(state.inactivityTimer);
-            state.inactivityTimer = null;
-          }
-
-          // Only play the in-app sound / mark delivered+seen if the message
-          // is from someone else. Push notifications are NOT sent here —
-          // this handler fires once per client currently viewing the
-          // channel, so sending pushes here caused duplicate notification
-          // blasts whenever more than one person had the channel open. The
-          // sender's own client sends the push exactly once, from
-          // sendMessage(), right after the insert succeeds.
-          if (payload.new.username !== state.currentUser?.username) {
-            playNotifySound();
-            markDelivered(channelId);
-            markSeen(channelId);
-          }
-        } else {
-          // Message already exists - check if it's the optimistic message with temp ID
-          const index = state.messages.findIndex((m) =>
-            m.username === payload.new.username &&
-            m.created_at === payload.new.created_at &&
-            m.channel_id === payload.new.channel_id &&
-            m.id !== payload.new.id  // Different ID means we have temp ID
+        // Check 2: clientId match (PRIMARY FIX - links optimistic → real)
+        if (dbMessage.client_id) {
+          const optimisticIndex = state.messages.findIndex((m) => 
+            m.id === `temp_client_${dbMessage.client_id.replace('client_', '')}` ||
+            (m.isPending && m.client_id === dbMessage.client_id)
           );
           
-          if (index !== -1 && state.messages[index].id && state.messages[index].id.startsWith('temp_')) {
-            // Replace temporary optimistic message with real database message
-            state.messages[index] = payload.new;
+          if (optimisticIndex !== -1) {
+            console.log(`✅ Replacing optimistic message (clientId: ${dbMessage.client_id})`);
+            state.messages[optimisticIndex] = dbMessage;
+            delete state.messages[optimisticIndex].isPending;
             renderMessages();
-            console.log('✅ Optimistic message confirmed by real-time subscription');
-            
-            // Update cache with real message
             saveCachedMessages(channelId, state.messages);
+            return;
           }
+        }
+
+        // Check 3: Fallback - content matching
+        const similarExists = state.messages.some((m) => 
+          m.username === dbMessage.username &&
+          m.content === dbMessage.content &&
+          m.channel_id === dbMessage.channel_id &&
+          !m.isPending
+        );
+
+        if (similarExists) {
+          console.log(`✋ Similar message already exists`);
+          return;
+        }
+
+        // ⭐ NEW MESSAGE: Add it
+        console.log(`📥 New message from database (ID: ${dbMessage.id})`);
+        state.messages.push(dbMessage);
+        renderMessages();
+        refreshUnreadBadges();
+        saveCachedMessages(channelId, state.messages);
+
+        if (dbMessage.username !== state.currentUser?.username) {
+          playNotifySound();
+          markDelivered(channelId);
+          markSeen(channelId);
+        }
+
+        if (state.inactivityTimer) {
+          clearTimeout(state.inactivityTimer);
+          state.inactivityTimer = null;
         }
       })
       .on('postgres_changes', { 
@@ -1888,7 +1880,6 @@
         if (idx !== -1) { 
           state.messages[idx] = payload.new; 
           renderMessages();
-          // Update cache on message update
           saveCachedMessages(channelId, state.messages);
         }
       })
@@ -1898,15 +1889,22 @@
         table: CONFIG.SUPABASE.TABLES.MESSAGES, 
         filter: `channel_id=eq.${channelId}` 
       }, (payload) => {
+        const initialCount = state.messages.length;
         state.messages = state.messages.filter((m) => m.id !== payload.old.id);
-        renderMessages();
-        // Update cache on message delete
-        saveCachedMessages(channelId, state.messages);
+        
+        if (state.messages.length < initialCount) {
+          console.log(`🗑️ Message deleted (ID: ${payload.old.id})`);
+          renderMessages();
+          saveCachedMessages(channelId, state.messages);
+        }
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           state.isChannelActive = true;
-          console.log(`✅ Subscribed to messages for channel ${channelId}`);
+          console.log(`✅ Subscribed to channel ${channelId}`);
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error(`❌ Channel error for ${channelId}`);
+          state.isChannelActive = false;
         }
       });
   }
@@ -2073,7 +2071,6 @@
 
     let fileUrl = null;
 
-    // Handle file upload if provided
     if (file) {
       if (file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
         alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
@@ -2094,12 +2091,11 @@
         setTimeout(() => DOM.fileUploadStatus.classList.add('hidden'), 4000);
       } catch (e) {
         console.error('Upload error:', e);
-        alert(`File upload failed: ${e.message || 'unknown error — check console for details.'}`);
+        alert(`File upload failed: ${e.message}`);
         return;
       }
     }
 
-    // Build reply payload if replying to another message
     const replyPayload = state.replyingTo
       ? { 
           reply_to: state.replyingTo.id, 
@@ -2108,81 +2104,68 @@
         }
       : {};
 
-    // Create the message object (WITHOUT id - database will generate it)
+    // ⭐ FIX: Generate clientId for message tracking
+    const clientId = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // Create message WITHOUT created_at (database will generate it)
     const newMessage = {
       channel_id: state.currentChannel.id,
       username: state.currentUser.username,
       content: content || '',
       file_url: fileUrl,
-      created_at: new Date().toISOString(),
+      client_id: clientId,  // ⭐ This is the key fix
       ...replyPayload,
     };
 
-    // ================================================================
-    // V2 FIX: OPTIMISTIC UPDATE WITH TEMPORARY ID
-    // ================================================================
-    // Generate a temporary ID so we can track this message
-    // in state.messages before the database assigns a real ID.
-    // This prevents duplicate detection from failing.
-    const tempId = `temp_${Date.now()}_${Math.random()}`;
-    const optimisticMessage = { ...newMessage, id: tempId, isPending: true };
+    // ⭐ Show message immediately (optimistic update)
+    const tempId = `temp_${clientId}`;
+    const optimisticMessage = { 
+      id: tempId, 
+      ...newMessage,
+      created_at: new Date().toISOString(),
+      isPending: true 
+    };
     
-    // Add to local state immediately - user sees it right away
     state.messages.push(optimisticMessage);
     renderMessages();
-    console.log('✉️ Message added to local state (optimistic update with temp ID: ' + tempId + ')');
+    console.log(`✉️ Message added (optimistic, clientId: ${clientId})`);
 
-    // Send the message to the database and get back the real message with real ID
     const { error, data } = await supabase
       .from(CONFIG.SUPABASE.TABLES.MESSAGES)
       .insert(newMessage)
-      .select(); // Important: get back the inserted record with the real ID
+      .select();
 
     if (error) {
-      // ================================================================
-      // ERROR HANDLING: Rollback optimistic message
-      // ================================================================
       console.error('Send error:', error);
       alert('Failed to send message.');
-      
-      // Remove the optimistic message from state since insert failed
       state.messages = state.messages.filter((m) => m.id !== tempId);
       renderMessages();
-      console.log('❌ Message removed (rollback due to error)');
+      console.log('❌ Message rolled back');
     } else {
-      // ================================================================
-      // SUCCESS: Replace temporary ID with real ID from database
-      // ================================================================
       console.log('✅ Message sent to database');
       
-      // CRITICAL: Update the optimistic message with the real ID
-      // This must happen BEFORE the real-time subscription fires
-      // Otherwise the real-time handler won't find the optimistic message
       if (data && data[0]) {
         const dbMessage = data[0];
         const index = state.messages.findIndex((m) => m.id === tempId);
+        
         if (index !== -1) {
-          // Replace optimistic message with real database message
           state.messages[index] = dbMessage;
           delete state.messages[index].isPending;
           renderMessages();
-          console.log('✅ Optimistic message updated with real ID from database');
+          console.log(`✅ Optimistic replaced (temp → real ID: ${dbMessage.id})`);
         }
       }
       
-      // Send push notification to offline users
       sendVapidNotificationsToOfflineStudents(
         state.currentUser.username,
         content || '📎 New attachment',
         state.currentChannel.id
       );
 
-      // Update channel previews in sidebar
       state.channelPreviews = await loadChannelPreviews(allChannels.map((c) => c.id));
       renderChatList(allChannels);
     }
 
-    // Clear the reply state and hide reply preview box
     state.replyingTo = null;
     DOM.replyPreview.classList.add('hidden');
   }
