@@ -88,7 +88,7 @@
     isTabFocused: true,
     tabChannel: null,
     isRefreshing: false,
-    isMerging: false, // New flag to prevent merge conflicts
+    isMerging: false,
   };
 
   // ============================================================
@@ -107,7 +107,6 @@
     authLogo: $('authLogo'),
     sidebarLogo: $('sidebarLogo'),
 
-    // screens
     screenChats: $('screenChats'),
     screenUpdates: $('screenUpdates'),
     screenSettings: $('screenSettings'),
@@ -117,11 +116,9 @@
     bottomNav: $('bottomNav'),
     navChatsBadge: $('navChatsBadge'),
 
-    // chats
     chatSearchInput: $('chatSearchInput'),
     channelList: $('channelList'),
 
-    // updates
     userBadge: $('userBadge'),
     statusTray: $('statusTray'),
     statusPlaceholder: $('statusPlaceholder'),
@@ -130,7 +127,6 @@
     postStatusFab: $('postStatusFab'),
     backFromUpdates: $('backFromUpdates'),
 
-    // settings
     settingsAvatar: $('settingsAvatar'),
     settingsName: $('settingsName'),
     settingsEmail: $('settingsEmail'),
@@ -141,7 +137,6 @@
     createChannelBtn: $('createChannelBtn'),
     signOutBtn: $('signOutBtn'),
 
-    // admin: create teacher/student account
     adminCreateUserCard: $('adminCreateUserCard'),
     adminUserManagementCard: $('adminUserManagementCard'),
     newUserUsername: $('newUserUsername'),
@@ -151,7 +146,6 @@
     generatePasswordBtn: $('generatePasswordBtn'),
     createUserBtn: $('createUserBtn'),
     
-    // admin: user management
     manageUserSearch: $('manageUserSearch'),
     loadUserBtn: $('loadUserBtn'),
     userEditForm: $('userEditForm'),
@@ -163,7 +157,6 @@
     updateUserBtn: $('updateUserBtn'),
     deleteUserBtn: $('deleteUserBtn'),
 
-    // chat detail
     backFromChat: $('backFromChat'),
     chatDetailTitleBtn: $('chatDetailTitleBtn'),
     chatDetailName: $('chatDetailName'),
@@ -189,7 +182,6 @@
     videoIframe: $('videoIframe'),
     closeVideoBtn: $('closeVideoBtn'),
 
-    // members
     backFromMembers: $('backFromMembers'),
     memberSearchInput: $('memberSearchInput'),
     adminAddMemberRow: $('adminAddMemberRow'),
@@ -200,7 +192,6 @@
     channelMembersList: $('channelMembersList'),
     alphaIndex: $('alphaIndex'),
 
-    // profile
     backFromProfile: $('backFromProfile'),
     profileChannelName: $('profileChannelName'),
     profileChannelMeta: $('profileChannelMeta'),
@@ -214,12 +205,10 @@
     scheduleDurationInput: $('scheduleDurationInput'),
     setScheduleBtn: $('setScheduleBtn'),
     
-    // admin: channel description
     adminDescEdit: $('adminDescEdit'),
     channelDescInput: $('channelDescInput'),
     updateDescBtn: $('updateDescBtn'),
 
-    // status viewer
     statusModal: $('statusModal'),
     statusSegments: $('statusSegments'),
     statusProgress: $('statusProgress'),
@@ -312,505 +301,6 @@
   }
 
   // ============================================================
-  // 5c. PUSH NOTIFICATIONS
-  // ============================================================
-  function urlBase64ToUint8Array(base64String) {
-    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-    const rawData = atob(base64);
-    return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
-  }
-
-  async function syncVapidSubscriptionOnLogin(username) {
-    try {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        console.warn('Push notifications not supported on this browser/device.');
-        return false;
-      }
-
-      if (!CONFIG.PUSH || !CONFIG.PUSH.VAPID_PUBLIC_KEY) {
-        console.warn('No VAPID public key configured — push sync skipped.');
-        return false;
-      }
-
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      if (userError || !userData?.user) {
-        console.warn('Could not get user UUID:', userError);
-        return false;
-      }
-      
-      const userUuid = userData.user.id;
-      console.log(`🔑 Using user UUID: ${userUuid}`);
-
-      const registration = await navigator.serviceWorker.ready;
-
-      let subscription = await registration.pushManager.getSubscription();
-
-      if (!subscription) {
-        subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(CONFIG.PUSH.VAPID_PUBLIC_KEY)
-        });
-      }
-
-      if (!subscription) {
-        console.warn('Could not create push subscription');
-        return false;
-      }
-
-      const subscriptionJson = subscription.toJSON();
-      
-      const { error } = await supabase
-        .from('user_device_tokens')
-        .upsert({
-          user_id: userUuid,
-          subscription_data: subscriptionJson,
-          endpoint: subscriptionJson.endpoint,
-          p256dh: subscriptionJson.keys?.p256dh,
-          auth: subscriptionJson.keys?.auth,
-          username: username,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'user_id' });
-
-      if (error) throw error;
-      console.log("✅ VAPID Push Subscription safely stored in Supabase.");
-      return true;
-
-    } catch (err) {
-      console.error("Failed to sync push configurations:", err);
-      return false;
-    }
-  }
-
-  async function subscribeToPush() {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      console.warn('Push notifications not supported on this browser/device.');
-      return false;
-    }
-    if (!CONFIG.PUSH || !CONFIG.PUSH.VAPID_PUBLIC_KEY) {
-      console.warn('No VAPID public key configured — push notifications disabled.');
-      return false;
-    }
-
-    try {
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') {
-        console.warn('Notification permission not granted.');
-        return false;
-      }
-
-      return await syncVapidSubscriptionOnLogin(state.currentUser.username);
-    } catch (e) {
-      console.warn('Push subscription failed:', e);
-      return false;
-    }
-  }
-
-  async function unsubscribeFromPush() {
-    try {
-      if (!('serviceWorker' in navigator)) return;
-      const registration = await navigator.serviceWorker.ready;
-      const subscription = await registration.pushManager.getSubscription();
-      if (subscription) {
-        const { data: userData } = await supabase.auth.getUser();
-        if (userData?.user) {
-          await supabase
-            .from('user_device_tokens')
-            .delete()
-            .eq('user_id', userData.user.id);
-        }
-        await subscription.unsubscribe();
-      }
-    } catch (e) {
-      console.warn('Push unsubscribe failed:', e);
-    }
-  }
-
-  async function setNotificationsEnabled(enabled) {
-    if (enabled) {
-      const ok = await subscribeToPush();
-      DOM.notifToggle.checked = !!ok;
-    } else {
-      await unsubscribeFromPush();
-    }
-  }
-
-  async function sendVapidNotificationsToOfflineStudents(senderId, messageContent, channelId) {
-    try {
-      if (!CONFIG.PUSH || !CONFIG.PUSH.VAPID_PUBLIC_KEY) {
-        console.log('Push notifications disabled - no VAPID key');
-        return;
-      }
-
-      const { data: members, error: memberError } = await supabase
-        .from(CONFIG.SUPABASE.TABLES.MEMBERS)
-        .select('username')
-        .eq('channel_id', channelId)
-        .neq('username', senderId);
-
-      if (memberError) {
-        console.error("Failed to look up channel members:", memberError.message);
-        return;
-      }
-
-      const memberUsernames = (members || []).map((m) => m.username);
-      if (!memberUsernames.length) {
-        console.log('No other channel members to notify');
-        return;
-      }
-
-      const { data: offlineStudents, error: queryError } = await supabase
-        .from('user_device_tokens')
-        .select('username, subscription_data, endpoint')
-        .in('username', memberUsernames);
-
-      if (queryError) {
-        console.error("Failed to lookup student push destinations:", queryError.message);
-        return;
-      }
-
-      if (!offlineStudents || offlineStudents.length === 0) {
-        console.log('No offline students with VAPID subscriptions found');
-        return;
-      }
-
-      const senderName = getDisplayName(senderId);
-      const channelName = state.currentChannel?.name || 'Class';
-
-      const payload = {
-        title: `${senderName} in ${channelName}`,
-        body: messageContent.length > 100 ? messageContent.substring(0, 100) + '…' : messageContent,
-        icon: CONFIG.BRANDING.LOGO.PATH || '/favicon.ico',
-        badge: '/favicon.ico',
-        data: {
-          url: window.location.href,
-          type: 'chat_message',
-          channel_id: channelId,
-          sender: senderId
-        }
-      };
-
-      console.log(`📨 Sending VAPID notifications to ${offlineStudents.length} offline students via Edge Function`);
-
-      const { data, error } = await supabase.functions.invoke('send-push-notifications', {
-        body: {
-          subscriptions: offlineStudents.map(s => s.subscription_data).filter(s => s !== null),
-          payload: payload
-        }
-      });
-
-      if (error) {
-        console.error('Edge Function error:', error);
-        return;
-      }
-
-      console.log('✅ VAPID notifications sent successfully:', data);
-
-    } catch (error) {
-      console.error('Failed to send VAPID notifications:', error);
-    }
-  }
-
-  // ============================================================
-  // 5f. CACHED MESSAGES - INSTANT LOAD
-  // ============================================================
-  function getCachedMessages(channelId) {
-    try {
-      const cacheKey = `cached_chat_history_${channelId}`;
-      const cached = localStorage.getItem(cacheKey);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        console.log(`📦 Loaded ${parsed.length} cached messages for channel ${channelId}`);
-        return parsed;
-      }
-    } catch (e) {
-      console.warn('Failed to load cached messages:', e);
-    }
-    return null;
-  }
-
-  function saveCachedMessages(channelId, messages) {
-    try {
-      const cacheKey = `cached_chat_history_${channelId}`;
-      const toCache = messages.slice(-50);
-      localStorage.setItem(cacheKey, JSON.stringify(toCache));
-      console.log(`💾 Cached ${toCache.length} messages for channel ${channelId}`);
-    } catch (e) {
-      console.warn('Failed to cache messages:', e);
-    }
-  }
-
-  function clearCachedMessages(channelId) {
-    try {
-      const cacheKey = `cached_chat_history_${channelId}`;
-      localStorage.removeItem(cacheKey);
-    } catch (e) {
-      console.warn('Failed to clear cached messages:', e);
-    }
-  }
-
-  // ============================================================
-  // 5f2. SAFE MESSAGE MERGING (NEW)
-  // ============================================================
-  function mergeMessagesSafely(newMessages) {
-    // Prevent concurrent merges
-    if (state.isMerging) {
-      console.log('⏳ Merge already in progress, skipping');
-      return;
-    }
-    
-    state.isMerging = true;
-    
-    try {
-      // If newMessages is not an array, make it one
-      const messagesToAdd = Array.isArray(newMessages) ? newMessages : [newMessages];
-      
-      // Create a Map for deduplication (key by message ID)
-      const messageMap = new Map();
-      
-      // Add existing messages first
-      state.messages.forEach(msg => {
-        messageMap.set(msg.id, msg);
-      });
-      
-      // Add/overwrite with new messages
-      messagesToAdd.forEach(msg => {
-        if (msg && msg.id) {
-          // If this is a temporary message, check if we have a real one
-          if (msg.id.startsWith('temp_') || msg.isPending) {
-            // Check if a real version exists
-            const realVersion = messagesToAdd.find(m => 
-              !m.isPending && m.client_id === msg.client_id
-            );
-            if (realVersion) {
-              // Replace temp with real
-              messageMap.set(realVersion.id, realVersion);
-              messageMap.delete(msg.id);
-              return;
-            }
-          }
-          messageMap.set(msg.id, msg);
-        }
-      });
-      
-      // Convert Map values back to array
-      const mergedMessages = Array.from(messageMap.values());
-      
-      // Sort by created_at
-      mergedMessages.sort((a, b) => {
-        const dateA = new Date(a.created_at || a.createdAt || 0);
-        const dateB = new Date(b.created_at || b.createdAt || 0);
-        return dateA - dateB;
-      });
-      
-      // Update state
-      state.messages = mergedMessages;
-      
-      // Update cache if we have a channel
-      if (state.currentChannel) {
-        saveCachedMessages(state.currentChannel.id, mergedMessages);
-      }
-      
-      // Update UI
-      renderMessages();
-      
-      console.log(`✅ Merged ${messagesToAdd.length} messages, total: ${mergedMessages.length}`);
-      
-    } catch (error) {
-      console.error('Error merging messages:', error);
-    } finally {
-      state.isMerging = false;
-    }
-  }
-
-  // ============================================================
-  // 5g. INACTIVITY DISCONNECTION MANAGEMENT
-  // ============================================================
-  function setupInactivityManager() {
-    if (state.inactivityTimer) {
-      clearTimeout(state.inactivityTimer);
-      state.inactivityTimer = null;
-    }
-
-    function resetInactivityTimer() {
-      if (state.inactivityTimer) {
-        clearTimeout(state.inactivityTimer);
-        state.inactivityTimer = null;
-      }
-      
-      if (state.messagesSubscription && state.messagesSubscription.state === 'closed') {
-        console.log("🔄 User active! Reconnecting...");
-        if (state.currentChannel) {
-          subscribeToMessages(state.currentChannel.id);
-        }
-      }
-
-      state.inactivityTimer = setTimeout(() => {
-        if (state.messagesSubscription && state.isTabFocused) {
-          console.log("⏰ 5 min idle. Disconnecting to save resources.");
-          supabase.removeChannel(state.messagesSubscription);
-          state.messagesSubscription = null;
-          state.isChannelActive = false;
-          console.log("💤 Channel disconnected. Will reconnect when active.");
-        }
-      }, state.INACTIVITY_TIMEOUT);
-    }
-
-    resetInactivityTimer();
-
-    const activityEvents = ['mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
-    activityEvents.forEach(event => {
-      window.addEventListener(event, resetInactivityTimer);
-    });
-
-    state._inactivityCleanup = function() {
-      if (state.inactivityTimer) {
-        clearTimeout(state.inactivityTimer);
-        state.inactivityTimer = null;
-      }
-      activityEvents.forEach(event => {
-        window.removeEventListener(event, resetInactivityTimer);
-      });
-    };
-
-    console.log('⏱️ Inactivity manager initialized');
-  }
-
-  function cleanupInactivityManager() {
-    if (state._inactivityCleanup) {
-      state._inactivityCleanup();
-      state._inactivityCleanup = null;
-    }
-    if (state.inactivityTimer) {
-      clearTimeout(state.inactivityTimer);
-      state.inactivityTimer = null;
-    }
-    console.log('⏱️ Inactivity manager cleaned up');
-  }
-
-  // ============================================================
-  // 5h. TAB FOCUS MANAGER
-  // ============================================================
-  function setupTabFocusManager() {
-    if (state.tabChannel) {
-      supabase.removeChannel(state.tabChannel);
-      state.tabChannel = null;
-    }
-
-    if (state.currentChannel) {
-      state.tabChannel = supabase.channel(`tab-focus-${state.currentChannel.id}`);
-      state.tabChannel.subscribe();
-    }
-
-    const handleVisibilityChange = async () => {
-      if (document.hidden) {
-        console.log("🔴 Tab hidden. Dropping connection to save free tier slots.");
-        state.isTabFocused = false;
-        
-        if (state.messagesSubscription) {
-          supabase.removeChannel(state.messagesSubscription);
-          state.messagesSubscription = null;
-          state.isChannelActive = false;
-        }
-        
-        if (state.tabChannel) {
-          await supabase.removeChannel(state.tabChannel);
-          state.tabChannel = null;
-        }
-      } else {
-        console.log("🟢 Tab focused again! Reconnecting...");
-        state.isTabFocused = true;
-        
-        if (!state.tabChannel && state.currentChannel) {
-          state.tabChannel = supabase.channel(`tab-focus-${state.currentChannel.id}`);
-          state.tabChannel.subscribe();
-        }
-        
-        if (!state.messagesSubscription && state.currentChannel) {
-          subscribeToMessages(state.currentChannel.id);
-        }
-        
-        if (state.currentChannel && !state.isRefreshing) {
-          state.isRefreshing = true;
-          console.log("📥 Catching up on messages missed while tab was inactive...");
-          try {
-            await fetchFreshHistory(state.currentChannel.id);
-            console.log("✅ Catch-up complete!");
-          } catch (e) {
-            console.warn('Catch-up failed:', e);
-          } finally {
-            state.isRefreshing = false;
-          }
-        }
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    state._tabFocusCleanup = function() {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      if (state.tabChannel) {
-        supabase.removeChannel(state.tabChannel);
-        state.tabChannel = null;
-      }
-    };
-
-    console.log('📋 Tab focus manager initialized');
-  }
-
-  function cleanupTabFocusManager() {
-    if (state._tabFocusCleanup) {
-      state._tabFocusCleanup();
-      state._tabFocusCleanup = null;
-    }
-    if (state.tabChannel) {
-      supabase.removeChannel(state.tabChannel);
-      state.tabChannel = null;
-    }
-    console.log('📋 Tab focus manager cleaned up');
-  }
-
-  // ============================================================
-  // 5i. HISTORY NAVIGATION (mobile back button)
-  // ============================================================
-  let screenHistory = [];
-  let isBackNavigation = false;
-
-  function pushScreenState(screenName) {
-    if (screenHistory.length === 0 || screenHistory[screenHistory.length - 1] !== screenName) {
-      screenHistory.push(screenName);
-      if (history.pushState) {
-        history.pushState({ orbitScreen: screenName }, '', '#' + screenName);
-      }
-    }
-  }
-
-  function handleBackNavigation(event) {
-    const targetScreen = event.state && event.state.orbitScreen;
-
-    if (targetScreen && SCREEN_EL[targetScreen]) {
-      isBackNavigation = true;
-      const idx = screenHistory.lastIndexOf(targetScreen);
-      screenHistory = idx !== -1 ? screenHistory.slice(0, idx + 1) : [targetScreen];
-      goToScreen(targetScreen);
-      isBackNavigation = false;
-      return;
-    }
-
-    if (DOM.statusModal && !DOM.statusModal.classList.contains('hidden')) {
-      closeStatusViewer();
-      if (state.currentScreen) pushScreenState(state.currentScreen);
-      return;
-    }
-    if (DOM.videoContainer && !DOM.videoContainer.classList.contains('hidden')) {
-      DOM.videoContainer.classList.add('hidden');
-      DOM.videoIframe.src = '';
-      state.videoActive = false;
-      if (state.currentScreen) pushScreenState(state.currentScreen);
-    }
-  }
-
-  // ============================================================
   // 6. UTILITY FUNCTIONS
   // ============================================================
   function getRoleFromUsername(username) {
@@ -844,7 +334,7 @@
   async function loadRoleCache() {
     const { data, error } = await supabase.from('user_roles').select('username, role, display_name');
     if (error) {
-      console.warn('Role cache unavailable, using username-based fallback:', error);
+      console.warn('Role cache unavailable:', error);
       return;
     }
     (data || []).forEach((row) => {
@@ -1058,6 +548,46 @@
   });
 
   // ============================================================
+  // 5i. HISTORY NAVIGATION (mobile back button)
+  // ============================================================
+  let screenHistory = [];
+  let isBackNavigation = false;
+
+  function pushScreenState(screenName) {
+    if (screenHistory.length === 0 || screenHistory[screenHistory.length - 1] !== screenName) {
+      screenHistory.push(screenName);
+      if (history.pushState) {
+        history.pushState({ orbitScreen: screenName }, '', '#' + screenName);
+      }
+    }
+  }
+
+  function handleBackNavigation(event) {
+    const targetScreen = event.state && event.state.orbitScreen;
+
+    if (targetScreen && SCREEN_EL[targetScreen]) {
+      isBackNavigation = true;
+      const idx = screenHistory.lastIndexOf(targetScreen);
+      screenHistory = idx !== -1 ? screenHistory.slice(0, idx + 1) : [targetScreen];
+      goToScreen(targetScreen);
+      isBackNavigation = false;
+      return;
+    }
+
+    if (DOM.statusModal && !DOM.statusModal.classList.contains('hidden')) {
+      closeStatusViewer();
+      if (state.currentScreen) pushScreenState(state.currentScreen);
+      return;
+    }
+    if (DOM.videoContainer && !DOM.videoContainer.classList.contains('hidden')) {
+      DOM.videoContainer.classList.add('hidden');
+      DOM.videoIframe.src = '';
+      state.videoActive = false;
+      if (state.currentScreen) pushScreenState(state.currentScreen);
+    }
+  }
+
+  // ============================================================
   // 7. AUTHENTICATION
   // ============================================================
   async function loginWithUsername(username, password) {
@@ -1070,100 +600,10 @@
     } catch (e) {
       console.error('Auth error:', e);
       if (/email not confirmed/i.test(e.message || '')) {
-        throw new Error('This account is waiting on an email confirmation that can\'t reach this address. Ask your admin to turn off "Confirm email" in Supabase → Authentication → Sign In / Providers → Email.');
+        throw new Error('This account is waiting on an email confirmation. Ask your admin to turn off "Confirm email" in Supabase.');
       }
       throw new Error('Incorrect School ID or password.');
     }
-  }
-
-  // ============================================================
-  // 7a. ADMIN: CREATE TEACHER / STUDENT ACCOUNT
-  // ============================================================
-  async function createUserAccount(username, displayName, role, password) {
-    username = normalizeUsername(username);
-    if (!username) { alert('Enter a username.'); return; }
-    if (!password) { alert('Enter or generate a password.'); return; }
-
-    const email = generateEmail(username);
-
-    try {
-      const { data: signUpData, error: signUpError } = await adminAuthClient.auth.signUp({ email, password });
-      await adminAuthClient.auth.signOut();
-
-      const isAlreadyRegistered =
-        signUpError && /already registered|already exists/i.test(signUpError.message || '');
-
-      if (signUpError && !isAlreadyRegistered) throw signUpError;
-
-      const { error: roleError } = await supabase
-        .from('user_roles')
-        .upsert({ 
-          username, 
-          role, 
-          display_name: displayName || username 
-        }, { onConflict: 'username' });
-      if (roleError) throw roleError;
-
-      const key = username.toLowerCase();
-      state.roleCache[key] = role;
-      state.displayNameCache[key] = displayName || username;
-      populateRegisteredUsersDatalist();
-      DOM.newUserUsername.value = '';
-      DOM.newUserDisplayName.value = '';
-      DOM.newUserPassword.value = '';
-      DOM.newUserRole.value = 'student';
-
-      if (isAlreadyRegistered) {
-        alert(
-          `"${username}" already had an account.\n\n` +
-          `Role set to ${role}, but the password shown here was NOT applied.`
-        );
-      } else if (signUpData && !signUpData.session) {
-        alert(
-          `Account created for "${username}" (${role}).\n\n` +
-          `Turn off "Confirm email" in Supabase → Authentication → Sign In / Providers → Email.`
-        );
-      } else {
-        alert(`Account created for "${username}" (${role}).\n\nPassword: ${password}`);
-      }
-    } catch (e) {
-      console.error('Create user error:', e);
-      alert('Could not create account: ' + (e.message || e));
-    }
-  }
-
-  // ============================================================
-  // 7b. PRESENCE (who's online)
-  // ============================================================
-  let presenceChannel = null;
-
-  function setupPresence() {
-    if (!state.currentUser) return;
-    presenceChannel = supabase.channel('presence:orbit', {
-      config: { presence: { key: state.currentUser.username.toLowerCase() } },
-    });
-
-    presenceChannel
-      .on('presence', { event: 'sync' }, () => {
-        const s = presenceChannel.presenceState();
-        state.onlineUsers = new Set(Object.keys(s));
-        renderMembers();
-        updateChatDetailSubtitle();
-        updateProfileMeta();
-      })
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await presenceChannel.track({ username: state.currentUser.username, online_at: new Date().toISOString() });
-        }
-      });
-  }
-
-  function teardownPresence() {
-    if (presenceChannel) {
-      supabase.removeChannel(presenceChannel);
-      presenceChannel = null;
-    }
-    state.onlineUsers = new Set();
   }
 
   // ============================================================
@@ -1395,45 +835,6 @@
   }
 
   // ============================================================
-  // 8a. CHANNEL DESCRIPTION (admin editable)
-  // ============================================================
-  async function loadChannelDescription(channelId) {
-    if (!channelId) return;
-    
-    const { data, error } = await supabase
-      .from(CONFIG.SUPABASE.TABLES.CHANNELS)
-      .select('description')
-      .eq('id', channelId)
-      .single();
-    
-    if (error || !data) {
-      DOM.profileChannelDesc.textContent = `Group workspace for ${state.currentChannel?.name || 'this group'}. Share updates, chat with the group, and join live sessions together.`;
-      return;
-    }
-    
-    const desc = data.description || `Group workspace for ${state.currentChannel?.name || 'this group'}. Share updates, chat with the group, and join live sessions together.`;
-    DOM.profileChannelDesc.textContent = desc;
-    DOM.channelDescInput.value = desc || '';
-    
-    DOM.adminDescEdit.classList.toggle('hidden', !state.isAdmin);
-  }
-
-  async function updateChannelDescription(channelId, description) {
-    if (!channelId) { alert('Select a channel first.'); return; }
-    if (!description) { alert('Enter a description.'); return; }
-    
-    const { error } = await supabase
-      .from(CONFIG.SUPABASE.TABLES.CHANNELS)
-      .update({ description: description })
-      .eq('id', channelId);
-    
-    if (error) { alert('Could not update description: ' + error.message); return; }
-    
-    await loadChannelDescription(channelId);
-    alert('Description updated successfully!');
-  }
-
-  // ============================================================
   // 8c. DELIVERED / SEEN TRACKING
   // ============================================================
   async function markDelivered(channelId) {
@@ -1458,7 +859,106 @@
   }
 
   // ============================================================
-  // 8d. SAFE FETCH FRESH HISTORY (NEW)
+  // SAFE MESSAGE MERGING
+  // ============================================================
+  function mergeMessagesSafely(newMessages) {
+    if (state.isMerging) {
+      console.log('⏳ Merge already in progress, skipping');
+      return;
+    }
+    
+    state.isMerging = true;
+    
+    try {
+      const messagesToAdd = Array.isArray(newMessages) ? newMessages : [newMessages];
+      
+      const messageMap = new Map();
+      
+      state.messages.forEach(msg => {
+        messageMap.set(msg.id, msg);
+      });
+      
+      messagesToAdd.forEach(msg => {
+        if (msg && msg.id) {
+          if (msg.id.startsWith('temp_') || msg.isPending) {
+            const realVersion = messagesToAdd.find(m => 
+              !m.isPending && m.client_id === msg.client_id
+            );
+            if (realVersion) {
+              messageMap.set(realVersion.id, realVersion);
+              messageMap.delete(msg.id);
+              return;
+            }
+          }
+          messageMap.set(msg.id, msg);
+        }
+      });
+      
+      const mergedMessages = Array.from(messageMap.values());
+      
+      mergedMessages.sort((a, b) => {
+        const dateA = new Date(a.created_at || a.createdAt || 0);
+        const dateB = new Date(b.created_at || b.createdAt || 0);
+        return dateA - dateB;
+      });
+      
+      state.messages = mergedMessages;
+      
+      if (state.currentChannel) {
+        saveCachedMessages(state.currentChannel.id, mergedMessages);
+      }
+      
+      renderMessages();
+      
+      console.log(`✅ Merged ${messagesToAdd.length} messages, total: ${mergedMessages.length}`);
+      
+    } catch (error) {
+      console.error('Error merging messages:', error);
+    } finally {
+      state.isMerging = false;
+    }
+  }
+
+  // ============================================================
+  // CACHED MESSAGES
+  // ============================================================
+  function getCachedMessages(channelId) {
+    try {
+      const cacheKey = `cached_chat_history_${channelId}`;
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        console.log(`📦 Loaded ${parsed.length} cached messages for channel ${channelId}`);
+        return parsed;
+      }
+    } catch (e) {
+      console.warn('Failed to load cached messages:', e);
+    }
+    return null;
+  }
+
+  function saveCachedMessages(channelId, messages) {
+    try {
+      const cacheKey = `cached_chat_history_${channelId}`;
+      const toCache = messages.slice(-50);
+      localStorage.setItem(cacheKey, JSON.stringify(toCache));
+      console.log(`💾 Cached ${toCache.length} messages for channel ${channelId}`);
+    } catch (e) {
+      console.warn('Failed to cache messages:', e);
+    }
+  }
+
+  function clearCachedMessages(channelId) {
+    try {
+      const cacheKey = `cached_chat_history_${channelId}`;
+      localStorage.removeItem(cacheKey);
+    } catch (e) {
+      console.warn('Failed to clear cached messages:', e);
+    }
+  }
+
+  // ============================================================
+  // FETCH FRESH HISTORY
   // ============================================================
   async function fetchFreshHistory(channelId) {
     if (!channelId) return;
@@ -1479,7 +979,6 @@
       }
 
       if (data && data.length > 0) {
-        // Use the safe merge function
         mergeMessagesSafely(data);
         console.log(`✅ Fetched ${data.length} fresh messages`);
       }
@@ -1492,70 +991,393 @@
   }
 
   // ============================================================
-  // 8e. CLASS SCHEDULING
+  // 8b. REALTIME MESSAGE SYNC
   // ============================================================
-  let scheduleSubscription = null;
+  function subscribeToMessages(channelId) {
+    if (state.messagesSubscription) {
+      supabase.removeChannel(state.messagesSubscription);
+      state.messagesSubscription = null;
+    }
 
-  async function loadSchedule(channelId) {
-    const { data, error } = await supabase
-      .from('class_schedule')
-      .select('*')
-      .eq('channel_id', channelId)
-      .gte('scheduled_time', new Date(Date.now() - 60 * 60 * 1000).toISOString())
-      .order('scheduled_time', { ascending: true })
-      .limit(1);
+    state.messagesSubscription = supabase
+      .channel(`messages:${channelId}`)
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: CONFIG.SUPABASE.TABLES.MESSAGES, 
+        filter: `channel_id=eq.${channelId}` 
+      }, async (payload) => {
+        const newMessage = payload.new;
+        
+        if (state.messages.some(msg => msg.id === newMessage.id)) {
+          console.log(`✋ Message ${newMessage.id} already exists, skipping`);
+          return;
+        }
+        
+        if (newMessage.client_id) {
+          const optimisticIndex = state.messages.findIndex(m => 
+            m.client_id === newMessage.client_id || 
+            (m.isPending && m.id && m.id.includes('temp_'))
+          );
+          
+          if (optimisticIndex !== -1) {
+            console.log(`✅ Replacing optimistic message (clientId: ${newMessage.client_id})`);
+            state.messages[optimisticIndex] = newMessage;
+            delete state.messages[optimisticIndex].isPending;
+            renderMessages();
+            saveCachedMessages(channelId, state.messages);
+            
+            if (newMessage.username !== state.currentUser?.username) {
+              playNotifySound();
+              markDelivered(channelId);
+              markSeen(channelId);
+            }
+            return;
+          }
+        }
+        
+        console.log(`📥 Adding new message (ID: ${newMessage.id})`);
+        mergeMessagesSafely(newMessage);
+        
+        refreshUnreadBadges();
+        
+        if (newMessage.username !== state.currentUser?.username) {
+          playNotifySound();
+          markDelivered(channelId);
+          markSeen(channelId);
+        }
+        
+        if (state.inactivityTimer) {
+          clearTimeout(state.inactivityTimer);
+          state.inactivityTimer = null;
+        }
+      })
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: CONFIG.SUPABASE.TABLES.MESSAGES, 
+        filter: `channel_id=eq.${channelId}` 
+      }, (payload) => {
+        const idx = state.messages.findIndex((m) => m.id === payload.new.id);
+        if (idx !== -1) { 
+          state.messages[idx] = payload.new; 
+          renderMessages();
+          saveCachedMessages(channelId, state.messages);
+        }
+      })
+      .on('postgres_changes', { 
+        event: 'DELETE', 
+        schema: 'public', 
+        table: CONFIG.SUPABASE.TABLES.MESSAGES, 
+        filter: `channel_id=eq.${channelId}` 
+      }, (payload) => {
+        const initialCount = state.messages.length;
+        state.messages = state.messages.filter((m) => m.id !== payload.old.id);
+        
+        if (state.messages.length < initialCount) {
+          console.log(`🗑️ Message deleted (ID: ${payload.old.id})`);
+          renderMessages();
+          saveCachedMessages(channelId, state.messages);
+        }
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          state.isChannelActive = true;
+          console.log(`✅ Subscribed to channel ${channelId}`);
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error(`❌ Channel error for ${channelId}`);
+          state.isChannelActive = false;
+        }
+      });
+  }
 
-    if (error || !data || !data.length) {
-      DOM.scheduleBanner.classList.add('hidden');
+  // ============================================================
+  // LOAD MESSAGES
+  // ============================================================
+  async function loadMessages(channelId) {
+    if (!channelId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+        .select('*')
+        .eq('channel_id', channelId)
+        .order('created_at', { ascending: true })
+        .limit(50);
+
+      if (error) {
+        console.warn('Messages fallback:', error);
+        if (state.messages.length === 0) {
+          state.messages = [{ id: '1', content: 'Welcome to the channel!', username: 'system', created_at: Date.now() }];
+        }
+        renderMessages();
+        return;
+      }
+
+      if (data && data.length > 0) {
+        mergeMessagesSafely(data);
+        console.log(`📥 Loaded ${data.length} messages from Supabase`);
+      } else if (state.messages.length === 0) {
+        state.messages = [];
+        renderMessages();
+      }
+      
+      updateProfileScreen();
+    } catch (error) {
+      console.error('Error loading messages:', error);
+      if (state.messages.length === 0) {
+        state.messages = [{ id: '1', content: 'Welcome to the channel!', username: 'system', created_at: Date.now() }];
+        renderMessages();
+      }
+    }
+  }
+
+  function ticksHtml(msg) {
+    if (msg.seen_at) return `<span class="msg-ticks seen" title="Seen"><i class="fas fa-check-double"></i></span>`;
+    if (msg.delivered_at) return `<span class="msg-ticks delivered" title="Delivered"><i class="fas fa-check-double"></i></span>`;
+    return `<span class="msg-ticks" title="Sent"><i class="fas fa-check"></i></span>`;
+  }
+
+  function renderMessages() {
+    if (!DOM.chatMessages) return;
+    
+    DOM.chatMessages.innerHTML = '';
+
+    if (!state.messages.length) {
+      DOM.chatMessages.innerHTML = '<div class="empty-note center-text" style="width:100%;">No messages yet — say hello</div>';
       return;
     }
-    renderScheduleBanner(data[0]);
-  }
 
-  function renderScheduleBanner(schedule) {
-    const when = new Date(schedule.scheduled_time);
-    const formatted = when.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-    DOM.scheduleBannerText.textContent = `Class with ${getDisplayName(schedule.teacher_username)} scheduled for ${formatted} (${schedule.duration_minutes} min)`;
-    DOM.scheduleBanner.classList.remove('hidden');
-  }
+    state.messages.forEach((msg) => {
+      const isMine = msg.username === state.currentUser?.username;
+      const wrap = document.createElement('div');
+      wrap.className = `msg ${isMine ? 'msg-mine' : 'msg-theirs'}`;
+      wrap.dataset.id = msg.id;
+      wrap.dataset.role = roleKey(msg.username);
 
-  function subscribeToSchedule(channelId) {
-    if (scheduleSubscription) {
-      supabase.removeChannel(scheduleSubscription);
-      scheduleSubscription = null;
-    }
-    scheduleSubscription = supabase
-      .channel(`schedule:${channelId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'class_schedule', filter: `channel_id=eq.${channelId}` }, () => loadSchedule(channelId))
-      .subscribe();
-  }
+      let replyHtml = '';
+      if (msg.reply_to) {
+        replyHtml = `
+          <div class="msg-reply-quote">
+            <span class="reply-author">${escapeHtml(getDisplayName(msg.reply_username || 'Message'))}</span>
+            <span class="reply-text">${escapeHtml(truncate(msg.reply_content || '', 60))}</span>
+          </div>
+        `;
+      }
 
-  async function setClassSchedule(teacherUsername, datetimeLocal, durationMinutes) {
-    if (!state.currentChannel) { alert('Select a channel first.'); return; }
-    teacherUsername = normalizeUsername(teacherUsername);
-    if (!teacherUsername || !datetimeLocal) { alert('Enter a teacher username and a date/time.'); return; }
+      let bubbleHtml = '';
+      if (msg.content) {
+        bubbleHtml += `<div class="msg-bubble">${replyHtml}${escapeHtml(msg.content)}</div>`;
+      } else if (replyHtml) {
+        bubbleHtml += `<div class="msg-bubble">${replyHtml}</div>`;
+      }
+      if (msg.file_url) {
+        bubbleHtml += `
+          <a href="${escapeHtml(msg.file_url)}" target="_blank" rel="noopener" class="msg-file">
+            <i class="fas fa-paperclip"></i> Attached file
+          </a>
+        `;
+      }
 
-    const registeredRole = state.roleCache[teacherUsername.toLowerCase()];
-    if (registeredRole !== CONFIG.AUTH.ROLES.TEACHER) {
-      alert(`"${teacherUsername}" isn't a registered teacher account. Create it first from Settings → Add teacher or student.`);
-      return;
-    }
+      const footerHtml = isMine
+        ? `<div class="msg-meta" style="margin-top:2px;">${ticksHtml(msg)}${msg.seen_at ? `<span class="msg-seen-time">Seen ${formatDate(msg.seen_at)}</span>` : ''}</div>`
+        : '';
 
-    const { error } = await supabase.from('class_schedule').insert({
-      channel_id: state.currentChannel.id,
-      teacher_username: teacherUsername,
-      scheduled_time: new Date(datetimeLocal).toISOString(),
-      duration_minutes: durationMinutes || 45,
-      set_by: state.currentUser.username,
+      const displayName = getDisplayName(msg.username);
+      wrap.innerHTML = `
+        ${avatarHtml(msg.username, 'sm')}
+        <div class="msg-body">
+          <div class="msg-meta">
+            <span class="msg-author">${escapeHtml(displayName)}</span>
+            <span class="msg-time">${formatDate(msg.created_at)}</span>
+          </div>
+          ${bubbleHtml}
+          ${footerHtml}
+        </div>
+        <div class="msg-actions">
+          <button class="msg-reply-btn" title="Reply" data-reply-id="${msg.id}"><i class="fas fa-reply"></i></button>
+          ${state.isAdmin ? `<button class="msg-reply-btn" title="Delete message" data-delete-id="${msg.id}" style="margin-left:4px;"><i class="fas fa-trash" style="color:var(--danger);"></i></button>` : ''}
+        </div>
+      `;
+      DOM.chatMessages.appendChild(wrap);
     });
 
-    if (error) { alert('Could not set schedule: ' + error.message); return; }
-    alert(`✅ Class time set for ${teacherUsername}`);
-    await loadSchedule(state.currentChannel.id);
+    if (DOM.chatContainer) {
+      DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
+    }
+  }
+
+  async function deleteMessage(messageId) {
+    if (!confirm('Delete this message for everyone?')) return;
+    const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.MESSAGES).delete().eq('id', messageId);
+    if (error) { alert('Delete failed: ' + error.message); return; }
+    state.messages = state.messages.filter((m) => m.id !== messageId);
+    renderMessages();
+    if (state.currentChannel) {
+      saveCachedMessages(state.currentChannel.id, state.messages);
+    }
+  }
+
+  DOM.chatMessages.addEventListener('click', (e) => {
+    const btn = e.target.closest('.msg-reply-btn');
+    if (!btn) return;
+
+    if (btn.dataset.deleteId) { deleteMessage(btn.dataset.deleteId); return; }
+
+    const id = btn.dataset.replyId;
+    const msg = state.messages.find((m) => m.id === id);
+    if (!msg) return;
+
+    state.replyingTo = msg;
+    DOM.replyPreviewAuthor.textContent = getDisplayName(msg.username);
+    DOM.replyPreviewText.textContent = msg.content || (msg.file_url ? 'Attached file' : '');
+    DOM.replyPreview.classList.remove('hidden');
+    DOM.messageInput.focus();
+  });
+
+  DOM.replyPreviewCancel.addEventListener('click', () => {
+    state.replyingTo = null;
+    DOM.replyPreview.classList.add('hidden');
+  });
+
+  // ============================================================
+  // 9. SEND MESSAGE
+  // ============================================================
+  async function sendMessage(content, file) {
+    if (!state.currentChannel || !state.currentUser) { 
+      alert('Please select a channel first.'); 
+      return; 
+    }
+
+    let fileUrl = null;
+
+    if (file) {
+      if (file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
+        alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
+        return;
+      }
+
+      const path = generateStoragePath(state.currentChannel.id, file.name);
+
+      try {
+        const { error } = await supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).upload(path, file);
+        if (error) throw error;
+
+        const { data: urlData } = supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).getPublicUrl(path);
+        fileUrl = urlData.publicUrl;
+
+        DOM.fileUploadStatus.textContent = `📎 ${file.name} uploaded`;
+        DOM.fileUploadStatus.classList.remove('hidden');
+        setTimeout(() => DOM.fileUploadStatus.classList.add('hidden'), 4000);
+      } catch (e) {
+        console.error('Upload error:', e);
+        alert(`File upload failed: ${e.message}`);
+        return;
+      }
+    }
+
+    const replyPayload = state.replyingTo
+      ? { 
+          reply_to: state.replyingTo.id, 
+          reply_username: state.replyingTo.username, 
+          reply_content: state.replyingTo.content || (state.replyingTo.file_url ? '📎 Attached file' : '') 
+        }
+      : {};
+
+    const clientId = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    const newMessage = {
+      channel_id: state.currentChannel.id,
+      username: state.currentUser.username,
+      content: content || '',
+      file_url: fileUrl,
+      client_id: clientId,
+      ...replyPayload,
+    };
+
+    const tempId = `temp_${clientId}`;
+    const optimisticMessage = { 
+      id: tempId, 
+      ...newMessage,
+      created_at: new Date().toISOString(),
+      isPending: true 
+    };
+    
+    mergeMessagesSafely(optimisticMessage);
+    console.log(`✉️ Message added (optimistic, clientId: ${clientId})`);
+
+    const { error, data } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+      .insert(newMessage)
+      .select();
+
+    if (error) {
+      console.error('Send error:', error);
+      alert('Failed to send message.');
+      state.messages = state.messages.filter((m) => m.id !== tempId);
+      renderMessages();
+      console.log('❌ Message rolled back');
+    } else if (data && data[0]) {
+      const realMessage = data[0];
+      
+      const index = state.messages.findIndex((m) => m.id === tempId);
+      if (index !== -1) {
+        state.messages[index] = realMessage;
+        delete state.messages[index].isPending;
+        renderMessages();
+        console.log(`✅ Message replaced: ${tempId} → ${realMessage.id}`);
+      } else {
+        mergeMessagesSafely(realMessage);
+      }
+      
+      state.channelPreviews = await loadChannelPreviews(allChannels.map((c) => c.id));
+      renderChatList(allChannels);
+      
+      if (state.currentChannel) {
+        saveCachedMessages(state.currentChannel.id, state.messages);
+      }
+    }
+
+    state.replyingTo = null;
+    DOM.replyPreview.classList.add('hidden');
   }
 
   // ============================================================
-  // 8f. GROUP MEMBER MANAGEMENT
+  // 7b. PRESENCE (who's online)
+  // ============================================================
+  let presenceChannel = null;
+
+  function setupPresence() {
+    if (!state.currentUser) return;
+    presenceChannel = supabase.channel('presence:orbit', {
+      config: { presence: { key: state.currentUser.username.toLowerCase() } },
+    });
+
+    presenceChannel
+      .on('presence', { event: 'sync' }, () => {
+        const s = presenceChannel.presenceState();
+        state.onlineUsers = new Set(Object.keys(s));
+        renderMembers();
+        updateChatDetailSubtitle();
+        updateProfileMeta();
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await presenceChannel.track({ username: state.currentUser.username, online_at: new Date().toISOString() });
+        }
+      });
+  }
+
+  function teardownPresence() {
+    if (presenceChannel) {
+      supabase.removeChannel(presenceChannel);
+      presenceChannel = null;
+    }
+    state.onlineUsers = new Set();
+  }
+
+  // ============================================================
+  // 8d. GROUP MEMBER MANAGEMENT
   // ============================================================
   async function loadMembers(channelId) {
     const { data, error } = await supabase
@@ -1688,6 +1510,448 @@
     const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.MEMBERS).delete().eq('id', memberId);
     if (error) { alert('Remove failed: ' + error.message); return; }
     await loadMembers(state.currentChannel.id);
+  }
+
+  // ============================================================
+  // 8e. CLASS SCHEDULING
+  // ============================================================
+  let scheduleSubscription = null;
+
+  async function loadSchedule(channelId) {
+    const { data, error } = await supabase
+      .from('class_schedule')
+      .select('*')
+      .eq('channel_id', channelId)
+      .gte('scheduled_time', new Date(Date.now() - 60 * 60 * 1000).toISOString())
+      .order('scheduled_time', { ascending: true })
+      .limit(1);
+
+    if (error || !data || !data.length) {
+      DOM.scheduleBanner.classList.add('hidden');
+      return;
+    }
+    renderScheduleBanner(data[0]);
+  }
+
+  function renderScheduleBanner(schedule) {
+    const when = new Date(schedule.scheduled_time);
+    const formatted = when.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    DOM.scheduleBannerText.textContent = `Class with ${getDisplayName(schedule.teacher_username)} scheduled for ${formatted} (${schedule.duration_minutes} min)`;
+    DOM.scheduleBanner.classList.remove('hidden');
+  }
+
+  function subscribeToSchedule(channelId) {
+    if (scheduleSubscription) {
+      supabase.removeChannel(scheduleSubscription);
+      scheduleSubscription = null;
+    }
+    scheduleSubscription = supabase
+      .channel(`schedule:${channelId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'class_schedule', filter: `channel_id=eq.${channelId}` }, () => loadSchedule(channelId))
+      .subscribe();
+  }
+
+  async function setClassSchedule(teacherUsername, datetimeLocal, durationMinutes) {
+    if (!state.currentChannel) { alert('Select a channel first.'); return; }
+    teacherUsername = normalizeUsername(teacherUsername);
+    if (!teacherUsername || !datetimeLocal) { alert('Enter a teacher username and a date/time.'); return; }
+
+    const registeredRole = state.roleCache[teacherUsername.toLowerCase()];
+    if (registeredRole !== CONFIG.AUTH.ROLES.TEACHER) {
+      alert(`"${teacherUsername}" isn't a registered teacher account. Create it first from Settings → Add teacher or student.`);
+      return;
+    }
+
+    const { error } = await supabase.from('class_schedule').insert({
+      channel_id: state.currentChannel.id,
+      teacher_username: teacherUsername,
+      scheduled_time: new Date(datetimeLocal).toISOString(),
+      duration_minutes: durationMinutes || 45,
+      set_by: state.currentUser.username,
+    });
+
+    if (error) { alert('Could not set schedule: ' + error.message); return; }
+    alert(`✅ Class time set for ${teacherUsername}`);
+    await loadSchedule(state.currentChannel.id);
+  }
+
+  // ============================================================
+  // 8a. CHANNEL DESCRIPTION (admin editable)
+  // ============================================================
+  async function loadChannelDescription(channelId) {
+    if (!channelId) return;
+    
+    const { data, error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.CHANNELS)
+      .select('description')
+      .eq('id', channelId)
+      .single();
+    
+    if (error || !data) {
+      DOM.profileChannelDesc.textContent = `Group workspace for ${state.currentChannel?.name || 'this group'}. Share updates, chat with the group, and join live sessions together.`;
+      return;
+    }
+    
+    const desc = data.description || `Group workspace for ${state.currentChannel?.name || 'this group'}. Share updates, chat with the group, and join live sessions together.`;
+    DOM.profileChannelDesc.textContent = desc;
+    DOM.channelDescInput.value = desc || '';
+    
+    DOM.adminDescEdit.classList.toggle('hidden', !state.isAdmin);
+  }
+
+  async function updateChannelDescription(channelId, description) {
+    if (!channelId) { alert('Select a channel first.'); return; }
+    if (!description) { alert('Enter a description.'); return; }
+    
+    const { error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.CHANNELS)
+      .update({ description: description })
+      .eq('id', channelId);
+    
+    if (error) { alert('Could not update description: ' + error.message); return; }
+    
+    await loadChannelDescription(channelId);
+    alert('Description updated successfully!');
+  }
+
+  // ============================================================
+  // 13. PROFILE & SHARED MEDIA SCREEN
+  // ============================================================
+  function updateProfileMeta() {
+    if (!state.currentChannel) return;
+    const total = state.currentMembers.length;
+    const online = state.currentMembers.filter((m) => state.onlineUsers.has((m.username || '').toLowerCase())).length;
+    DOM.profileChannelMeta.textContent = total ? `${total} member${total === 1 ? '' : 's'} · ${online} online` : '';
+  }
+
+  function updateProfileScreen() {
+    if (!state.currentChannel) return;
+    DOM.profileChannelName.textContent = state.currentChannel.name;
+    loadChannelDescription(state.currentChannel.id);
+    updateProfileMeta();
+
+    const media = state.messages.filter((m) => isImageFile(m.file_url));
+    if (!media.length) {
+      DOM.sharedMediaGrid.innerHTML = '<div class="empty-note">No shared media yet</div>';
+      DOM.profileSeeAllMedia.classList.add('hidden');
+      return;
+    }
+    const showAll = DOM.sharedMediaGrid.dataset.showAll === 'true';
+    const shown = showAll ? media : media.slice(-6);
+    DOM.sharedMediaGrid.innerHTML = shown.map((m) => `<img src="${escapeHtml(m.file_url)}" alt="Shared media" loading="lazy">`).join('');
+    DOM.profileSeeAllMedia.classList.toggle('hidden', media.length <= 6);
+  }
+
+  // ============================================================
+  // 10. STATUS UPDATES
+  // ============================================================
+  async function loadStatuses() {
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.STATUSES)
+      .select('*')
+      .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (error) {
+      state.statuses = [{ id: '1', content: 'Welcome to Nous Complex Orbit!', username: 'admin', created_at: Date.now() }];
+    } else {
+      state.statuses = data || [];
+    }
+    renderStatuses();
+  }
+
+  function renderStatuses() {
+    DOM.statusTray.innerHTML = '';
+
+    if (!state.statuses.length) {
+      DOM.statusTray.innerHTML = '<div class="empty-note">No updates yet</div>';
+    } else {
+      state.statuses.forEach((st) => {
+        const item = document.createElement('div');
+        item.className = 'update-row';
+        const displayName = getDisplayName(st.username);
+        const preview = st.content
+          ? escapeHtml(truncate(st.content, 46))
+          : (st.media_url ? '<i class="fas fa-camera"></i> Photo/video' : '');
+        item.innerHTML = `
+          ${avatarHtml(st.username)}
+          <div class="update-row-body">
+            <div class="update-row-name">${escapeHtml(displayName)}</div>
+            <div class="update-row-preview">${preview}</div>
+          </div>
+          <div class="update-row-time">${formatTimeAgo(st.created_at)}</div>
+          ${state.isAdmin ? `
+            <button class="icon-btn" style="width:26px;height:26px;" title="Delete status" data-delete-status="${st.id}">
+              <i class="fas fa-trash" style="font-size:11px;color:var(--danger);"></i>
+            </button>
+          ` : ''}
+        `;
+        item.addEventListener('pointerup', (e) => {
+          if (e.target.closest('[data-delete-status]')) return;
+          showStatusModal(st);
+        });
+        DOM.statusTray.appendChild(item);
+      });
+    }
+
+    const shouldShow = (state.isAdmin || state.isTeacher) && CONFIG.FEATURES.ENABLE_STATUS_UPDATES;
+    DOM.statusAddBtn.classList.toggle('hidden', !shouldShow);
+    if (DOM.postStatusFab) DOM.postStatusFab.classList.add('hidden');
+  }
+
+  async function deleteStatus(statusId) {
+    if (!confirm('Delete this status update?')) return;
+    const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.STATUSES).delete().eq('id', statusId);
+    if (error) { alert('Delete failed: ' + error.message); return; }
+    await loadStatuses();
+  }
+
+  function generateStatusStoragePath(username, filename) {
+    const ext = (filename.split('.').pop() || 'dat').toLowerCase();
+    const rand = Math.random().toString(36).slice(2, 8);
+    return `status/${username}/${Date.now()}-${rand}.${ext}`;
+  }
+
+  const STATUS_EXPIRY_MS = {
+    '1h': 60 * 60 * 1000,
+    '6h': 6 * 60 * 60 * 1000,
+    '24h': 24 * 60 * 60 * 1000,
+    '3d': 3 * 24 * 60 * 60 * 1000,
+    '7d': 7 * 24 * 60 * 60 * 1000,
+    never: null,
+  };
+
+  async function postStatus({ content, file, expiryKey }) {
+    if (!state.currentUser) return;
+
+    let mediaUrl = null;
+    if (file) {
+      if (file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
+        alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
+        return;
+      }
+      const path = generateStatusStoragePath(state.currentUser.username, file.name);
+      try {
+        const { error: uploadError } = await supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).upload(path, file);
+        if (uploadError) throw uploadError;
+        const { data: urlData } = supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).getPublicUrl(path);
+        mediaUrl = urlData.publicUrl;
+      } catch (e) {
+        console.error('Status media upload error:', e);
+        alert(`Media upload failed: ${e.message || 'unknown error — check console for details.'}`);
+        return;
+      }
+    }
+
+    const ms = STATUS_EXPIRY_MS[expiryKey];
+    const expiresAt = ms ? new Date(Date.now() + ms).toISOString() : null;
+
+    const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.STATUSES).insert({
+      username: state.currentUser.username,
+      content: content || '',
+      media_url: mediaUrl,
+      expires_at: expiresAt,
+      created_at: new Date().toISOString(),
+    });
+    if (error) { console.error('Status error:', error); alert('Failed to post status: ' + error.message); return; }
+    await loadStatuses();
+  }
+
+  function openStatusComposer() {
+    if (!CONFIG.FEATURES.ENABLE_STATUS_UPDATES) { alert('Status updates are disabled.'); return; }
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="modal-card">
+        <h3 class="modal-title"><i class="fas fa-bullhorn"></i> Post an update</h3>
+        <textarea id="statusComposeText" class="field" rows="3" placeholder="Write something..." style="resize:vertical; margin-bottom:10px;"></textarea>
+
+        <label class="section-label" style="display:block; margin-bottom:6px;">Photo or video (optional)</label>
+        <input id="statusComposeFile" type="file" accept="image/*,video/*" class="field" style="margin-bottom:4px;">
+        <div id="statusComposeFileName" class="modal-body" style="margin:2px 0 10px; font-size:12.5px;"></div>
+
+        <label class="section-label" style="display:block; margin-bottom:6px;">Expires</label>
+        <select id="statusComposeExpiry" class="field" style="margin-bottom:16px;">
+          <option value="1h">In 1 hour</option>
+          <option value="6h">In 6 hours</option>
+          <option value="24h" selected>In 24 hours</option>
+          <option value="3d">In 3 days</option>
+          <option value="7d">In 7 days</option>
+          <option value="never">Never</option>
+        </select>
+
+        <div style="display:flex; gap:10px;">
+          <button id="statusComposeCancel" class="btn btn-ghost" style="flex:1;">Cancel</button>
+          <button id="statusComposePost" class="btn btn-primary" style="flex:1;"><i class="fas fa-paper-plane"></i> Post</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const textEl = modal.querySelector('#statusComposeText');
+    const fileEl = modal.querySelector('#statusComposeFile');
+    const fileNameEl = modal.querySelector('#statusComposeFileName');
+    const expiryEl = modal.querySelector('#statusComposeExpiry');
+
+    fileEl.addEventListener('change', () => {
+      fileNameEl.textContent = fileEl.files[0] ? `📎 ${fileEl.files[0].name}` : '';
+    });
+
+    const close = () => modal.remove();
+    modal.querySelector('#statusComposeCancel').addEventListener('click', close);
+    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+
+    modal.querySelector('#statusComposePost').addEventListener('click', async () => {
+      const content = textEl.value.trim();
+      const file = fileEl.files[0] || null;
+      if (!content && !file) { alert('Add some text or a photo/video first.'); return; }
+
+      const postBtn = modal.querySelector('#statusComposePost');
+      postBtn.disabled = true;
+      postBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Posting...';
+
+      await postStatus({ content, file, expiryKey: expiryEl.value });
+      close();
+    });
+  }
+
+  let statusProgressValue = 0;
+  let statusPaused = false;
+
+  function showStatusModal(status) {
+    setAvatarEl(DOM.statusViewerAvatar, status.username, 'sm status-viewer-avatar');
+    DOM.statusModalTitle.textContent = getDisplayName(status.username);
+    DOM.statusModalTime.textContent = formatFullDate(status.created_at);
+    DOM.statusModalContent.textContent = status.content || '';
+
+    if (status.media_url && isVideoFile(status.media_url)) {
+      DOM.statusModalMedia.innerHTML = `<video src="${escapeHtml(status.media_url)}" controls autoplay muted playsinline></video>`;
+    } else if (status.media_url) {
+      DOM.statusModalMedia.innerHTML = `<img src="${escapeHtml(status.media_url)}" alt="Status media">`;
+    } else {
+      DOM.statusModalMedia.innerHTML = '';
+    }
+
+    DOM.statusProgress.style.width = '0%';
+    DOM.statusModal.classList.remove('hidden');
+    
+    if (window.innerWidth < 560) {
+      const inner = document.querySelector('.status-viewer-inner');
+      if (inner) {
+        inner.style.maxHeight = '100vh';
+        inner.style.height = '100vh';
+      }
+    }
+
+    statusProgressValue = 0;
+    statusPaused = false;
+    updateStatusPauseIcon();
+    if (state.progressInterval) clearInterval(state.progressInterval);
+
+    state.progressInterval = setInterval(() => {
+      if (statusPaused) return;
+      statusProgressValue += 1.2;
+      if (statusProgressValue >= 100) {
+        clearInterval(state.progressInterval);
+        state.progressInterval = null;
+        DOM.statusModal.classList.add('hidden');
+      }
+      DOM.statusProgress.style.width = Math.min(statusProgressValue, 100) + '%';
+    }, 50);
+  }
+
+  function toggleStatusPause() {
+    statusPaused = !statusPaused;
+    updateStatusPauseIcon();
+  }
+
+  function updateStatusPauseIcon() {
+    if (!DOM.statusPauseBtn) return;
+    DOM.statusPauseBtn.innerHTML = statusPaused ? '<i class="fas fa-play"></i>' : '<i class="fas fa-pause"></i>';
+    DOM.statusPauseBtn.title = statusPaused ? 'Resume' : 'Pause';
+  }
+
+  function closeStatusViewer() {
+    DOM.statusModal.classList.add('hidden');
+    if (state.progressInterval) { clearInterval(state.progressInterval); state.progressInterval = null; }
+    statusPaused = false;
+    DOM.statusModalMedia.innerHTML = '';
+  }
+
+  // ============================================================
+  // 11. VIDEO / LIVEKIT
+  // ============================================================
+  function buildLiveUrl() {
+    const settings = { ...CONFIG.LIVEKIT.ROOM_SETTINGS };
+    if (state.isTeacher) {
+      settings.lock_webcam = false;
+      settings.hide_host_management_controls = false;
+    }
+    const params = new URLSearchParams(settings);
+    return `${CONFIG.LIVEKIT.URL}?${params.toString()}`;
+  }
+
+  async function joinLiveClass() {
+    if (!state.currentUser || !state.currentChannel) { alert('Please select a channel first.'); return; }
+
+    if (CONFIG.FEATURES.ENABLE_ATTENDANCE_LOGGING) {
+      try {
+        await supabase.from(CONFIG.SUPABASE.TABLES.ATTENDANCE).insert({
+          student_name: state.currentUser.username,
+          channel_id: state.currentChannel.id,
+          join_time: new Date().toISOString(),
+          status: 'Present',
+        });
+      } catch (e) {
+        console.warn('Attendance log skipped:', e);
+      }
+    }
+
+    DOM.videoContainer.classList.remove('hidden');
+    DOM.videoIframe.src = buildLiveUrl();
+    state.videoActive = true;
+    DOM.liveBtnText.textContent = state.isTeacher ? 'Start Live Session' : 'Join Live Session';
+  }
+
+  // ============================================================
+  // 12. ADMIN FUNCTIONS
+  // ============================================================
+
+  async function exportAttendance() {
+    const { data, error } = await supabase.from(CONFIG.SUPABASE.TABLES.ATTENDANCE).select('*');
+    if (error) { alert('No attendance data found.'); return; }
+
+    let csv = 'Student,Channel,Join Time,Status\n';
+    data.forEach(r => csv += `${r.student_name},${r.channel_id},${r.join_time},${r.status}\n`);
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'attendance_log.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  async function requestMediaPermissions() {
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      console.log('Media permissions granted.');
+    } catch (e) {
+      const modal = document.createElement('div');
+      modal.className = 'modal-overlay';
+      modal.innerHTML = `
+        <div class="modal-card">
+          <h3 class="modal-title"><i class="fas fa-triangle-exclamation" style="color:var(--role-admin); font-size:14px;"></i> Permissions required</h3>
+          <p class="modal-body">Camera and microphone access are blocked. Allow permissions in your browser settings, then reload the page.</p>
+          <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-ghost btn-block">Got it</button>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    }
   }
 
   // ============================================================
@@ -1849,369 +2113,150 @@
   }
 
   // ============================================================
-  // 8g. REALTIME MESSAGE SYNC (UPDATED WITH SAFE MERGE)
+  // 5g. INACTIVITY DISCONNECTION MANAGEMENT
   // ============================================================
-
-  function subscribeToMessages(channelId) {
-    if (state.messagesSubscription) {
-      supabase.removeChannel(state.messagesSubscription);
-      state.messagesSubscription = null;
+  function setupInactivityManager() {
+    if (state.inactivityTimer) {
+      clearTimeout(state.inactivityTimer);
+      state.inactivityTimer = null;
     }
 
-    state.messagesSubscription = supabase
-      .channel(`messages:${channelId}`)
-      .on('postgres_changes', { 
-        event: 'INSERT', 
-        schema: 'public', 
-        table: CONFIG.SUPABASE.TABLES.MESSAGES, 
-        filter: `channel_id=eq.${channelId}` 
-      }, async (payload) => {
-        const newMessage = payload.new;
-        
-        // Check if message already exists
-        if (state.messages.some(msg => msg.id === newMessage.id)) {
-          console.log(`✋ Message ${newMessage.id} already exists, skipping`);
-          return;
-        }
-        
-        // Check if this is replacing an optimistic message
-        if (newMessage.client_id) {
-          const optimisticIndex = state.messages.findIndex(m => 
-            m.client_id === newMessage.client_id || 
-            (m.isPending && m.id && m.id.includes('temp_'))
-          );
-          
-          if (optimisticIndex !== -1) {
-            console.log(`✅ Replacing optimistic message (clientId: ${newMessage.client_id})`);
-            state.messages[optimisticIndex] = newMessage;
-            delete state.messages[optimisticIndex].isPending;
-            renderMessages();
-            saveCachedMessages(channelId, state.messages);
-            
-            // Play sound for messages from others
-            if (newMessage.username !== state.currentUser?.username) {
-              playNotifySound();
-              markDelivered(channelId);
-              markSeen(channelId);
-            }
-            return;
-          }
-        }
-        
-        // Use safe merge for new message
-        console.log(`📥 Adding new message (ID: ${newMessage.id})`);
-        mergeMessagesSafely(newMessage);
-        
-        // Refresh unread badges
-        refreshUnreadBadges();
-        
-        // Play sound for messages from others
-        if (newMessage.username !== state.currentUser?.username) {
-          playNotifySound();
-          markDelivered(channelId);
-          markSeen(channelId);
-        }
-        
-        // Reset inactivity timer
-        if (state.inactivityTimer) {
-          clearTimeout(state.inactivityTimer);
-          state.inactivityTimer = null;
-        }
-      })
-      .on('postgres_changes', { 
-        event: 'UPDATE', 
-        schema: 'public', 
-        table: CONFIG.SUPABASE.TABLES.MESSAGES, 
-        filter: `channel_id=eq.${channelId}` 
-      }, (payload) => {
-        const idx = state.messages.findIndex((m) => m.id === payload.new.id);
-        if (idx !== -1) { 
-          state.messages[idx] = payload.new; 
-          renderMessages();
-          saveCachedMessages(channelId, state.messages);
-        }
-      })
-      .on('postgres_changes', { 
-        event: 'DELETE', 
-        schema: 'public', 
-        table: CONFIG.SUPABASE.TABLES.MESSAGES, 
-        filter: `channel_id=eq.${channelId}` 
-      }, (payload) => {
-        const initialCount = state.messages.length;
-        state.messages = state.messages.filter((m) => m.id !== payload.old.id);
-        
-        if (state.messages.length < initialCount) {
-          console.log(`🗑️ Message deleted (ID: ${payload.old.id})`);
-          renderMessages();
-          saveCachedMessages(channelId, state.messages);
-        }
-      })
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          state.isChannelActive = true;
-          console.log(`✅ Subscribed to channel ${channelId}`);
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error(`❌ Channel error for ${channelId}`);
-          state.isChannelActive = false;
-        }
-      });
-  }
-
-  async function loadMessages(channelId) {
-    if (!channelId) return;
-
-    try {
-      const { data, error } = await supabase
-        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
-        .select('*')
-        .eq('channel_id', channelId)
-        .order('created_at', { ascending: true })
-        .limit(50);
-
-      if (error) {
-        console.warn('Messages fallback:', error);
-        if (state.messages.length === 0) {
-          state.messages = [{ id: '1', content: 'Welcome to the channel!', username: 'system', created_at: Date.now() }];
-        }
-        renderMessages();
-        return;
-      }
-
-      if (data && data.length > 0) {
-        // Use safe merge instead of direct assignment
-        mergeMessagesSafely(data);
-        console.log(`📥 Loaded ${data.length} messages from Supabase`);
-      } else if (state.messages.length === 0) {
-        state.messages = [];
-        renderMessages();
+    function resetInactivityTimer() {
+      if (state.inactivityTimer) {
+        clearTimeout(state.inactivityTimer);
+        state.inactivityTimer = null;
       }
       
-      updateProfileScreen();
-    } catch (error) {
-      console.error('Error loading messages:', error);
-      if (state.messages.length === 0) {
-        state.messages = [{ id: '1', content: 'Welcome to the channel!', username: 'system', created_at: Date.now() }];
-        renderMessages();
+      if (state.messagesSubscription && state.messagesSubscription.state === 'closed') {
+        console.log("🔄 User active! Reconnecting...");
+        if (state.currentChannel) {
+          subscribeToMessages(state.currentChannel.id);
+        }
       }
-    }
-  }
 
-  function ticksHtml(msg) {
-    if (msg.seen_at) return `<span class="msg-ticks seen" title="Seen"><i class="fas fa-check-double"></i></span>`;
-    if (msg.delivered_at) return `<span class="msg-ticks delivered" title="Delivered"><i class="fas fa-check-double"></i></span>`;
-    return `<span class="msg-ticks" title="Sent"><i class="fas fa-check"></i></span>`;
-  }
-
-  function renderMessages() {
-    DOM.chatMessages.innerHTML = '';
-
-    if (!state.messages.length) {
-      DOM.chatMessages.innerHTML = '<div class="empty-note center-text" style="width:100%;">No messages yet — say hello</div>';
-      return;
+      state.inactivityTimer = setTimeout(() => {
+        if (state.messagesSubscription && state.isTabFocused) {
+          console.log("⏰ 5 min idle. Disconnecting to save resources.");
+          supabase.removeChannel(state.messagesSubscription);
+          state.messagesSubscription = null;
+          state.isChannelActive = false;
+          console.log("💤 Channel disconnected. Will reconnect when active.");
+        }
+      }, state.INACTIVITY_TIMEOUT);
     }
 
-    state.messages.forEach((msg) => {
-      const isMine = msg.username === state.currentUser?.username;
-      const wrap = document.createElement('div');
-      wrap.className = `msg ${isMine ? 'msg-mine' : 'msg-theirs'}`;
-      wrap.dataset.id = msg.id;
-      wrap.dataset.role = roleKey(msg.username);
+    resetInactivityTimer();
 
-      let replyHtml = '';
-      if (msg.reply_to) {
-        replyHtml = `
-          <div class="msg-reply-quote">
-            <span class="reply-author">${escapeHtml(getDisplayName(msg.reply_username || 'Message'))}</span>
-            <span class="reply-text">${escapeHtml(truncate(msg.reply_content || '', 60))}</span>
-          </div>
-        `;
-      }
-
-      let bubbleHtml = '';
-      if (msg.content) {
-        bubbleHtml += `<div class="msg-bubble">${replyHtml}${escapeHtml(msg.content)}</div>`;
-      } else if (replyHtml) {
-        bubbleHtml += `<div class="msg-bubble">${replyHtml}</div>`;
-      }
-      if (msg.file_url) {
-        bubbleHtml += `
-          <a href="${escapeHtml(msg.file_url)}" target="_blank" rel="noopener" class="msg-file">
-            <i class="fas fa-paperclip"></i> Attached file
-          </a>
-        `;
-      }
-
-      const footerHtml = isMine
-        ? `<div class="msg-meta" style="margin-top:2px;">${ticksHtml(msg)}${msg.seen_at ? `<span class="msg-seen-time">Seen ${formatDate(msg.seen_at)}</span>` : ''}</div>`
-        : '';
-
-      const displayName = getDisplayName(msg.username);
-      wrap.innerHTML = `
-        ${avatarHtml(msg.username, 'sm')}
-        <div class="msg-body">
-          <div class="msg-meta">
-            <span class="msg-author">${escapeHtml(displayName)}</span>
-            <span class="msg-time">${formatDate(msg.created_at)}</span>
-          </div>
-          ${bubbleHtml}
-          ${footerHtml}
-        </div>
-        <div class="msg-actions">
-          <button class="msg-reply-btn" title="Reply" data-reply-id="${msg.id}"><i class="fas fa-reply"></i></button>
-          ${state.isAdmin ? `<button class="msg-reply-btn" title="Delete message" data-delete-id="${msg.id}" style="margin-left:4px;"><i class="fas fa-trash" style="color:var(--danger);"></i></button>` : ''}
-        </div>
-      `;
-      DOM.chatMessages.appendChild(wrap);
+    const activityEvents = ['mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+    activityEvents.forEach(event => {
+      window.addEventListener(event, resetInactivityTimer);
     });
 
-    DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
+    state._inactivityCleanup = function() {
+      if (state.inactivityTimer) {
+        clearTimeout(state.inactivityTimer);
+        state.inactivityTimer = null;
+      }
+      activityEvents.forEach(event => {
+        window.removeEventListener(event, resetInactivityTimer);
+      });
+    };
+
+    console.log('⏱️ Inactivity manager initialized');
   }
 
-  async function deleteMessage(messageId) {
-    if (!confirm('Delete this message for everyone?')) return;
-    const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.MESSAGES).delete().eq('id', messageId);
-    if (error) { alert('Delete failed: ' + error.message); return; }
-    state.messages = state.messages.filter((m) => m.id !== messageId);
-    renderMessages();
+  function cleanupInactivityManager() {
+    if (state._inactivityCleanup) {
+      state._inactivityCleanup();
+      state._inactivityCleanup = null;
+    }
+    if (state.inactivityTimer) {
+      clearTimeout(state.inactivityTimer);
+      state.inactivityTimer = null;
+    }
+    console.log('⏱️ Inactivity manager cleaned up');
+  }
+
+  // ============================================================
+  // 5h. TAB FOCUS MANAGER
+  // ============================================================
+  function setupTabFocusManager() {
+    if (state.tabChannel) {
+      supabase.removeChannel(state.tabChannel);
+      state.tabChannel = null;
+    }
+
     if (state.currentChannel) {
-      saveCachedMessages(state.currentChannel.id, state.messages);
+      state.tabChannel = supabase.channel(`tab-focus-${state.currentChannel.id}`);
+      state.tabChannel.subscribe();
     }
+
+    const handleVisibilityChange = async () => {
+      if (document.hidden) {
+        console.log("🔴 Tab hidden. Dropping connection to save free tier slots.");
+        state.isTabFocused = false;
+        
+        if (state.messagesSubscription) {
+          supabase.removeChannel(state.messagesSubscription);
+          state.messagesSubscription = null;
+          state.isChannelActive = false;
+        }
+        
+        if (state.tabChannel) {
+          await supabase.removeChannel(state.tabChannel);
+          state.tabChannel = null;
+        }
+      } else {
+        console.log("🟢 Tab focused again! Reconnecting...");
+        state.isTabFocused = true;
+        
+        if (!state.tabChannel && state.currentChannel) {
+          state.tabChannel = supabase.channel(`tab-focus-${state.currentChannel.id}`);
+          state.tabChannel.subscribe();
+        }
+        
+        if (!state.messagesSubscription && state.currentChannel) {
+          subscribeToMessages(state.currentChannel.id);
+        }
+        
+        if (state.currentChannel && !state.isRefreshing) {
+          state.isRefreshing = true;
+          console.log("📥 Catching up on messages missed while tab was inactive...");
+          try {
+            await fetchFreshHistory(state.currentChannel.id);
+            console.log("✅ Catch-up complete!");
+          } catch (e) {
+            console.warn('Catch-up failed:', e);
+          } finally {
+            state.isRefreshing = false;
+          }
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    state._tabFocusCleanup = function() {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (state.tabChannel) {
+        supabase.removeChannel(state.tabChannel);
+        state.tabChannel = null;
+      }
+    };
+
+    console.log('📋 Tab focus manager initialized');
   }
 
-  DOM.chatMessages.addEventListener('click', (e) => {
-    const btn = e.target.closest('.msg-reply-btn');
-    if (!btn) return;
-
-    if (btn.dataset.deleteId) { deleteMessage(btn.dataset.deleteId); return; }
-
-    const id = btn.dataset.replyId;
-    const msg = state.messages.find((m) => m.id === id);
-    if (!msg) return;
-
-    state.replyingTo = msg;
-    DOM.replyPreviewAuthor.textContent = getDisplayName(msg.username);
-    DOM.replyPreviewText.textContent = msg.content || (msg.file_url ? 'Attached file' : '');
-    DOM.replyPreview.classList.remove('hidden');
-    DOM.messageInput.focus();
-  });
-
-  DOM.replyPreviewCancel.addEventListener('click', () => {
-    state.replyingTo = null;
-    DOM.replyPreview.classList.add('hidden');
-  });
-
-
-  // ============================================================
-  // 9. SEND MESSAGE (UPDATED WITH SAFE MERGE)
-  // ============================================================
-  async function sendMessage(content, file) {
-    if (!state.currentChannel || !state.currentUser) { 
-      alert('Please select a channel first.'); 
-      return; 
+  function cleanupTabFocusManager() {
+    if (state._tabFocusCleanup) {
+      state._tabFocusCleanup();
+      state._tabFocusCleanup = null;
     }
-
-    let fileUrl = null;
-
-    if (file) {
-      if (file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
-        alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
-        return;
-      }
-
-      const path = generateStoragePath(state.currentChannel.id, file.name);
-
-      try {
-        const { error } = await supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).upload(path, file);
-        if (error) throw error;
-
-        const { data: urlData } = supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).getPublicUrl(path);
-        fileUrl = urlData.publicUrl;
-
-        DOM.fileUploadStatus.textContent = `📎 ${file.name} uploaded`;
-        DOM.fileUploadStatus.classList.remove('hidden');
-        setTimeout(() => DOM.fileUploadStatus.classList.add('hidden'), 4000);
-      } catch (e) {
-        console.error('Upload error:', e);
-        alert(`File upload failed: ${e.message}`);
-        return;
-      }
+    if (state.tabChannel) {
+      supabase.removeChannel(state.tabChannel);
+      state.tabChannel = null;
     }
-
-    const replyPayload = state.replyingTo
-      ? { 
-          reply_to: state.replyingTo.id, 
-          reply_username: state.replyingTo.username, 
-          reply_content: state.replyingTo.content || (state.replyingTo.file_url ? '📎 Attached file' : '') 
-        }
-      : {};
-
-    const clientId = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-    const newMessage = {
-      channel_id: state.currentChannel.id,
-      username: state.currentUser.username,
-      content: content || '',
-      file_url: fileUrl,
-      client_id: clientId,
-      ...replyPayload,
-    };
-
-    const tempId = `temp_${clientId}`;
-    const optimisticMessage = { 
-      id: tempId, 
-      ...newMessage,
-      created_at: new Date().toISOString(),
-      isPending: true 
-    };
-    
-    // Add optimistic message using safe merge
-    mergeMessagesSafely(optimisticMessage);
-    console.log(`✉️ Message added (optimistic, clientId: ${clientId})`);
-
-    const { error, data } = await supabase
-      .from(CONFIG.SUPABASE.TABLES.MESSAGES)
-      .insert(newMessage)
-      .select();
-
-    if (error) {
-      console.error('Send error:', error);
-      alert('Failed to send message.');
-      // Remove the optimistic message
-      state.messages = state.messages.filter((m) => m.id !== tempId);
-      renderMessages();
-      console.log('❌ Message rolled back');
-    } else if (data && data[0]) {
-      const realMessage = data[0];
-      
-      // Replace the optimistic message with the real one
-      const index = state.messages.findIndex((m) => m.id === tempId);
-      if (index !== -1) {
-        state.messages[index] = realMessage;
-        delete state.messages[index].isPending;
-        renderMessages();
-        console.log(`✅ Message replaced: ${tempId} → ${realMessage.id}`);
-      } else {
-        // If temp message wasn't found, add the real one
-        mergeMessagesSafely(realMessage);
-      }
-      
-      // Send push notifications
-      sendVapidNotificationsToOfflineStudents(
-        state.currentUser.username,
-        content || '📎 New attachment',
-        state.currentChannel.id
-      );
-
-      state.channelPreviews = await loadChannelPreviews(allChannels.map((c) => c.id));
-      renderChatList(allChannels);
-      
-      if (state.currentChannel) {
-        saveCachedMessages(state.currentChannel.id, state.messages);
-      }
-    }
-
-    state.replyingTo = null;
-    DOM.replyPreview.classList.add('hidden');
+    console.log('📋 Tab focus manager cleaned up');
   }
 
   async function selectChannel(channel) {
@@ -2240,35 +2285,483 @@
     setupTabFocusManager();
   }
 
-  // ============================================================
-  // 10. STATUS UPDATES (unchanged)
-  // ============================================================
-  // ... (status updates code remains the same) ...
+  function updateChatDetailHeader() {
+    if (!state.currentChannel) return;
+    DOM.chatDetailName.textContent = state.currentChannel.name;
+    updateChatDetailSubtitle();
+  }
+
+  function updateChatDetailSubtitle() {
+    if (!state.currentChannel) return;
+    const total = state.currentMembers.length;
+    const online = state.currentMembers.filter((m) => state.onlineUsers.has((m.username || '').toLowerCase())).length;
+    DOM.chatDetailSub.textContent = total ? `${total} member${total === 1 ? '' : 's'} · ${online} online` : '';
+  }
 
   // ============================================================
-  // 11. VIDEO / LIVEKIT (unchanged)
+  // 14. LOGIN FLOW
   // ============================================================
-  // ... (video code remains the same) ...
+  async function completeLogin(username, user) {
+    console.log('🔐 Completing login for:', username);
+    
+    await loadRoleCache();
+    const role = getRoleFromUsername(username);
+    const key = roleKey(username);
+    const displayName = getDisplayName(username);
+
+    state.currentUser = { id: user.id, username: username, email: user.email, role: role };
+    state.isAdmin = role === CONFIG.AUTH.ROLES.ADMIN;
+    state.isTeacher = role === CONFIG.AUTH.ROLES.TEACHER || state.isAdmin;
+
+    DOM.authCard.classList.add('hidden');
+    DOM.dashboard.classList.remove('hidden');
+
+    DOM.userBadge.textContent = displayName;
+    DOM.userBadge.className = `role-chip role-${key}-chip`;
+
+    setAvatarEl(DOM.settingsAvatar, username, 'lg');
+    DOM.settingsName.textContent = displayName;
+    DOM.settingsEmail.textContent = user.email || generateEmail(username);
+    DOM.settingsDisplayName.textContent = `Username: ${username}`;
+
+    DOM.adminSettingsCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
+    DOM.adminCreateUserCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
+    DOM.adminUserManagementCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
+    DOM.adminProfileSchedule.classList.toggle('hidden', !state.isAdmin);
+
+    setupPresence();
+    await requestMediaPermissions();
+    await renderChannels();
+    await loadStatuses();
+    
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          console.log('✅ Notification permission granted');
+        }
+      }
+    } catch (e) {
+      console.warn('Notification permission request failed:', e);
+    }
+
+    screenHistory = [];
+    goToScreen('chats');
+    
+    console.log('✅ Login complete!');
+  }
+
+  async function handleLogin() {
+    const username = normalizeUsername(DOM.usernameInput.value);
+    const password = DOM.passwordInput.value;
+
+    if (!username || !password) {
+      showError('Enter both your School ID and password.');
+      return;
+    }
+    hideError();
+
+    try {
+      const user = await loginWithUsername(username, password);
+      DOM.passwordInput.value = '';
+      await completeLogin(username, user);
+    } catch (e) {
+      DOM.passwordInput.value = '';
+      showError(e.message || 'Login error. Please try again.');
+    }
+  }
+
+  async function restoreSession() {
+    try {
+      console.log('🔄 Checking for existing session...');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session || !session.user || !session.user.email) {
+        console.log('No active session found');
+        return;
+      }
+
+      const suffix = CONFIG.AUTH.EMAIL_SUFFIX;
+      if (!session.user.email.endsWith(suffix)) {
+        console.log('Session email does not match expected suffix');
+        return;
+      }
+
+      const username = normalizeUsername(session.user.email.slice(0, -suffix.length));
+      console.log('🔄 Restoring session for:', username);
+      await completeLogin(username, session.user);
+    } catch (e) {
+      console.warn('Session restore skipped:', e);
+    }
+  }
+
+  async function handleSignOut() {
+    if (!confirm('Sign out?')) return;
+
+    try { 
+      await supabase.auth.signOut(); 
+    } catch (e) { 
+      console.warn('Sign out error:', e); 
+    }
+
+    if (state.messagesSubscription) { 
+      supabase.removeChannel(state.messagesSubscription); 
+      state.messagesSubscription = null; 
+    }
+    if (scheduleSubscription) { 
+      supabase.removeChannel(scheduleSubscription); 
+      scheduleSubscription = null; 
+    }
+    teardownPresence();
+    cleanupInactivityManager();
+    cleanupTabFocusManager();
+
+    state.currentUser = null;
+    state.currentChannel = null;
+    state.currentMembers = [];
+    state.isAdmin = false;
+    state.isTeacher = false;
+    state.messages = [];
+    state.statuses = [];
+    state.replyingTo = null;
+    state.isChannelActive = false;
+    state.isTabFocused = true;
+
+    try {
+      const keys = Object.keys(localStorage);
+      keys.forEach(key => {
+        if (key.startsWith('cached_chat_history_')) {
+          localStorage.removeItem(key);
+        }
+      });
+      console.log('🗑️ Cleared cached messages on logout');
+    } catch (e) {
+      console.warn('Failed to clear cache:', e);
+    }
+
+    DOM.dashboard.classList.add('hidden');
+    DOM.videoContainer.classList.add('hidden');
+    DOM.authCard.classList.remove('hidden');
+    DOM.usernameInput.value = '';
+    DOM.passwordInput.value = '';
+    hideError();
+    
+    screenHistory = [];
+  }
 
   // ============================================================
-  // 12. ADMIN FUNCTIONS (unchanged)
+  // 15. EVENT BINDINGS
   // ============================================================
-  // ... (admin code remains the same) ...
+  DOM.loginBtn.addEventListener('click', handleLogin);
+  DOM.usernameInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleLogin(); }
+  });
+  DOM.passwordInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleLogin(); }
+  });
+
+  DOM.bottomNav.querySelectorAll('.nav-btn').forEach((btn) => {
+    btn.addEventListener('pointerup', () => goToScreen(btn.dataset.tab));
+  });
+
+  DOM.chatSearchInput.addEventListener('input', () => filterChatList(DOM.chatSearchInput.value));
+
+  DOM.backFromChat.addEventListener('click', () => goToScreen('chats'));
+  DOM.backFromUpdates.addEventListener('click', () => goToScreen('chats'));
+  DOM.chatDetailTitleBtn.addEventListener('click', () => {
+    if (!state.currentChannel) return;
+    updateProfileScreen();
+    goToScreen('profile');
+  });
+
+  DOM.sendMsgBtn.addEventListener('click', async () => {
+    const content = DOM.messageInput.value.trim();
+    const file = DOM.fileInput.files[0];
+    if (!content && !file) return;
+    await sendMessage(content, file);
+    DOM.messageInput.value = '';
+    DOM.fileInput.value = '';
+    DOM.filePreview.classList.add('hidden');
+    
+    if (state.inactivityTimer) {
+      clearTimeout(state.inactivityTimer);
+      state.inactivityTimer = null;
+    }
+  });
+
+  DOM.messageInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') { 
+      e.preventDefault(); 
+      DOM.sendMsgBtn.click(); 
+    }
+    if (state.inactivityTimer) {
+      clearTimeout(state.inactivityTimer);
+      state.inactivityTimer = null;
+    }
+  });
+
+  DOM.messageInput.addEventListener('focus', () => {
+    if (state.inactivityTimer) {
+      clearTimeout(state.inactivityTimer);
+      state.inactivityTimer = null;
+    }
+  });
+
+  DOM.postStatusBtn.addEventListener('click', () => openStatusComposer());
+  if (DOM.postStatusFab) DOM.postStatusFab.addEventListener('click', () => openStatusComposer());
+
+  DOM.joinLiveBtn.addEventListener('click', () => {
+    if (!CONFIG.FEATURES.ENABLE_VIDEO_CONFERENCE) { alert('Video conferencing is disabled.'); return; }
+    joinLiveClass();
+  });
+
+  DOM.closeVideoBtn.addEventListener('click', () => {
+    DOM.videoContainer.classList.add('hidden');
+    DOM.videoIframe.src = '';
+    state.videoActive = false;
+  });
+
+  DOM.fileInput.addEventListener('change', function() {
+    const file = this.files[0];
+    if (!file) { DOM.filePreview.classList.add('hidden'); return; }
+    if (file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
+      alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
+      this.value = '';
+      DOM.filePreview.classList.add('hidden');
+      return;
+    }
+    DOM.filePreviewName.textContent = file.name;
+    DOM.filePreview.classList.remove('hidden');
+    
+    if (state.inactivityTimer) {
+      clearTimeout(state.inactivityTimer);
+      state.inactivityTimer = null;
+    }
+  });
+
+  DOM.filePreviewRemove.addEventListener('click', () => {
+    DOM.fileInput.value = '';
+    DOM.filePreview.classList.add('hidden');
+  });
+
+  async function handleCreateChannel() {
+    const name = prompt('Enter new channel name:');
+    if (name) await createChannel(name);
+  }
+  DOM.createChannelBtn.addEventListener('click', handleCreateChannel);
+
+  DOM.generatePasswordBtn.addEventListener('click', () => {
+    DOM.newUserPassword.value = generatePassword();
+  });
+  DOM.createUserBtn.addEventListener('click', () => {
+    createUserAccount(
+      DOM.newUserUsername.value.trim(),
+      DOM.newUserDisplayName.value.trim(),
+      DOM.newUserRole.value,
+      DOM.newUserPassword.value.trim()
+    );
+  });
+
+  DOM.loadUserBtn.addEventListener('click', () => {
+    loadUserForEdit(DOM.manageUserSearch.value);
+  });
+
+  DOM.updateUserBtn.addEventListener('click', () => {
+    const currentUser = DOM.editUsername.value;
+    const newUser = DOM.editNewUsername.value || currentUser;
+    const displayName = DOM.editDisplayName.value || currentUser;
+    const role = DOM.editRole.value;
+    const password = DOM.editPassword.value;
+    updateUserAccount(currentUser, newUser, displayName, role, password);
+  });
+
+  DOM.deleteUserBtn.addEventListener('click', () => {
+    deleteUserAccount(DOM.editUsername.value);
+  });
+
+  DOM.setScheduleBtn.addEventListener('click', async () => {
+    await setClassSchedule(
+      DOM.scheduleTeacherInput.value.trim(),
+      DOM.scheduleTimeInput.value,
+      parseInt(DOM.scheduleDurationInput.value, 10)
+    );
+    DOM.scheduleTeacherInput.value = '';
+    DOM.scheduleTimeInput.value = '';
+  });
+
+  DOM.assignStudentBtn.addEventListener('click', async () => {
+    const username = DOM.assignStudentInput.value.trim();
+    const role = DOM.assignRoleSelect.value;
+    await addMemberToChannel(username, role);
+    DOM.assignStudentInput.value = '';
+  });
+
+  DOM.updateDescBtn.addEventListener('click', () => {
+    if (!state.currentChannel) return;
+    updateChannelDescription(state.currentChannel.id, DOM.channelDescInput.value.trim());
+  });
+
+  DOM.channelDescInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      DOM.updateDescBtn.click();
+    }
+  });
+
+  DOM.backFromMembers.addEventListener('click', () => goToScreen('profile'));
+  DOM.memberSearchInput.addEventListener('input', () => renderMembers());
+  DOM.profileMembersBtn.addEventListener('click', () => {
+    if (!state.currentChannel) { alert('Select a channel first.'); return; }
+    renderMembers();
+    goToScreen('members');
+  });
+
+  DOM.backFromProfile.addEventListener('click', () => goToScreen('chatDetail'));
+  DOM.profileSeeAllMedia.addEventListener('click', (e) => {
+    e.preventDefault();
+    DOM.sharedMediaGrid.dataset.showAll = 'true';
+    updateProfileScreen();
+  });
+
+  DOM.closeStatusModal.addEventListener('click', closeStatusViewer);
+  DOM.statusModal.addEventListener('click', (e) => { if (e.target === DOM.statusModal) closeStatusViewer(); });
+  DOM.statusPauseBtn.addEventListener('click', toggleStatusPause);
+
+  DOM.statusTray.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-delete-status]');
+    if (btn) {
+      e.stopPropagation();
+      deleteStatus(btn.dataset.deleteStatus);
+    }
+  });
+
+  DOM.notifToggle.addEventListener('change', () => setNotificationsEnabled(DOM.notifToggle.checked));
+  DOM.darkToggle.addEventListener('change', () => {
+    document.body.classList.toggle('theme-dark', DOM.darkToggle.checked);
+    try { localStorage.setItem('orbit-theme', DOM.darkToggle.checked ? 'dark' : 'light'); } catch (e) { /* ignore */ }
+  });
+  DOM.darkToggle.checked = document.body.classList.contains('theme-dark');
+
+  DOM.signOutBtn.addEventListener('click', handleSignOut);
 
   // ============================================================
-  // 13. PROFILE & SHARED MEDIA SCREEN (unchanged)
+  // 7a. ADMIN: CREATE TEACHER / STUDENT ACCOUNT
   // ============================================================
-  // ... (profile code remains the same) ...
+  async function createUserAccount(username, displayName, role, password) {
+    username = normalizeUsername(username);
+    if (!username) { alert('Enter a username.'); return; }
+    if (!password) { alert('Enter or generate a password.'); return; }
+
+    const email = generateEmail(username);
+
+    try {
+      const { data: signUpData, error: signUpError } = await adminAuthClient.auth.signUp({ email, password });
+      await adminAuthClient.auth.signOut();
+
+      const isAlreadyRegistered =
+        signUpError && /already registered|already exists/i.test(signUpError.message || '');
+
+      if (signUpError && !isAlreadyRegistered) throw signUpError;
+
+      const { error: roleError } = await supabase
+        .from('user_roles')
+        .upsert({ 
+          username, 
+          role, 
+          display_name: displayName || username 
+        }, { onConflict: 'username' });
+      if (roleError) throw roleError;
+
+      const key = username.toLowerCase();
+      state.roleCache[key] = role;
+      state.displayNameCache[key] = displayName || username;
+      populateRegisteredUsersDatalist();
+      DOM.newUserUsername.value = '';
+      DOM.newUserDisplayName.value = '';
+      DOM.newUserPassword.value = '';
+      DOM.newUserRole.value = 'student';
+
+      if (isAlreadyRegistered) {
+        alert(
+          `"${username}" already had an account.\n\n` +
+          `Role set to ${role}, but the password shown here was NOT applied.`
+        );
+      } else if (signUpData && !signUpData.session) {
+        alert(
+          `Account created for "${username}" (${role}).\n\n` +
+          `Turn off "Confirm email" in Supabase → Authentication → Sign In / Providers → Email.`
+        );
+      } else {
+        alert(`Account created for "${username}" (${role}).\n\nPassword: ${password}`);
+      }
+    } catch (e) {
+      console.error('Create user error:', e);
+      alert('Could not create account: ' + (e.message || e));
+    }
+  }
 
   // ============================================================
-  // 14. LOGIN FLOW (unchanged)
+  // 5c. PUSH NOTIFICATIONS
   // ============================================================
-  // ... (login code remains the same) ...
+  async function syncVapidSubscriptionOnLogin(username) {
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        console.warn('Push notifications not supported on this browser/device.');
+        return false;
+      }
 
-  // ============================================================
-  // 15. EVENT BINDINGS (unchanged)
-  // ============================================================
-  // ... (event bindings remain the same) ...
+      if (!CONFIG.PUSH || !CONFIG.PUSH.VAPID_PUBLIC_KEY) {
+        console.warn('No VAPID public key configured — push sync skipped.');
+        return false;
+      }
+
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData?.user) {
+        console.warn('Could not get user UUID:', userError);
+        return false;
+      }
+      
+      const userUuid = userData.user.id;
+      console.log(`🔑 Using user UUID: ${userUuid}`);
+
+      const registration = await navigator.serviceWorker.ready;
+
+      let subscription = await registration.pushManager.getSubscription();
+
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(CONFIG.PUSH.VAPID_PUBLIC_KEY)
+        });
+      }
+
+      if (!subscription) {
+        console.warn('Could not create push subscription');
+        return false;
+      }
+
+      const subscriptionJson = subscription.toJSON();
+      
+      const { error } = await supabase
+        .from('user_device_tokens')
+        .upsert({
+          user_id: userUuid,
+          subscription_data: subscriptionJson,
+          endpoint: subscriptionJson.endpoint,
+          p256dh: subscriptionJson.keys?.p256dh,
+          auth: subscriptionJson.keys?.auth,
+          username: username,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+
+      if (error) throw error;
+      console.log("✅ VAPID Push Subscription safely stored in Supabase.");
+      return true;
+
+    } catch (err) {
+      console.error("Failed to sync push configurations:", err);
+      return false;
+    }
+  }
 
   // ============================================================
   // 16. BOOTSTRAP
