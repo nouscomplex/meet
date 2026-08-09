@@ -2048,6 +2048,7 @@
     DOM.replyPreview.classList.add('hidden');
   });
 
+
   async function sendMessage(content, file) {
     if (!state.currentChannel || !state.currentUser) { 
       alert('Please select a channel first.'); 
@@ -2101,12 +2102,7 @@
       ...replyPayload,
     };
 
-    // ================================================================
     // OPTIMISTIC UPDATE: Add message to local state FIRST
-    // This ensures it appears immediately in the UI while the
-    // database insert happens in the background.
-    // This prevents the race condition where messages would disappear.
-    // ================================================================
     state.messages.push(newMessage);
     renderMessages();
     console.log('✉️ Message added to local state (optimistic update)');
@@ -2117,39 +2113,28 @@
       .insert(newMessage);
 
     if (error) {
-      // Handle database insert error
       console.error('Send error:', error);
       alert('Failed to send message.');
       
-      // ================================================================
-      // ROLLBACK: If the database insert fails, remove the message
-      // we optimistically added to the local state. This prevents
-      // the user from seeing a phantom message that doesn't actually
-      // exist in the database.
-      // ================================================================
+      // ROLLBACK: Remove optimistically added message if insert fails
       state.messages = state.messages.filter((m) => 
         !(m.username === state.currentUser.username && m.created_at === newMessage.created_at)
       );
       renderMessages();
       console.log('❌ Message removed (rollback due to error)');
     } else {
-      // Success: message was inserted to the database
       console.log('✅ Message sent to database');
       
-      // Fire the push notification exactly once, from the sender's own
-      // client, scoped to this channel's members.
       sendVapidNotificationsToOfflineStudents(
         state.currentUser.username,
         content || '📎 New attachment',
         state.currentChannel.id
       );
 
-      // Update channel previews so sidebar shows new message count
       state.channelPreviews = await loadChannelPreviews(allChannels.map((c) => c.id));
       renderChatList(allChannels);
     }
 
-    // Clear the reply state and hide reply preview box
     state.replyingTo = null;
     DOM.replyPreview.classList.add('hidden');
   }
