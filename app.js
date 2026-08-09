@@ -835,27 +835,61 @@
   }
 
   // ============================================================
-  // 8c. DELIVERED / SEEN TRACKING
+  // DELIVERED / SEEN TRACKING (FIXED)
   // ============================================================
   async function markDelivered(channelId) {
     if (!state.currentUser) return;
-    await supabase
-      .from(CONFIG.SUPABASE.TABLES.MESSAGES)
-      .update({ delivered_at: new Date().toISOString() })
-      .eq('channel_id', channelId)
-      .neq('username', state.currentUser.username)
-      .is('delivered_at', null);
+    
+    try {
+      console.log(`📬 Marking messages as delivered for channel ${channelId}`);
+      
+      const { error } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+        .update({ 
+          delivered_at: new Date().toISOString() 
+        })
+        .eq('channel_id', channelId)
+        .neq('username', state.currentUser.username)
+        .is('delivered_at', null);
+        
+      if (error) {
+        console.warn('Failed to mark delivered:', error);
+      } else {
+        console.log('✅ Messages marked as delivered');
+      }
+    } catch (e) {
+      console.warn('Mark delivered error:', e);
+    }
   }
 
   async function markSeen(channelId) {
-    if (!state.currentUser || !document.hasFocus()) return;
-    await supabase
-      .from(CONFIG.SUPABASE.TABLES.MESSAGES)
-      .update({ seen_at: new Date().toISOString(), seen_by: state.currentUser.username })
-      .eq('channel_id', channelId)
-      .neq('username', state.currentUser.username)
-      .is('seen_at', null);
-    await refreshUnreadBadges();
+    if (!state.currentUser || !document.hasFocus()) {
+      console.log('⏭️ Skipping markSeen - no user or tab not focused');
+      return;
+    }
+    
+    try {
+      console.log(`👁️ Marking messages as seen for channel ${channelId}`);
+      
+      const { error } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+        .update({ 
+          seen_at: new Date().toISOString(),
+          seen_by: state.currentUser.username
+        })
+        .eq('channel_id', channelId)
+        .neq('username', state.currentUser.username)
+        .is('seen_at', null);
+        
+      if (error) {
+        console.warn('Failed to mark seen:', error);
+      } else {
+        console.log('✅ Messages marked as seen');
+        await refreshUnreadBadges();
+      }
+    } catch (e) {
+      console.warn('Mark seen error:', e);
+    }
   }
 
   // ============================================================
@@ -991,7 +1025,7 @@
   }
 
   // ============================================================
-  // 8b. REALTIME MESSAGE SYNC
+  // 8b. REALTIME MESSAGE SYNC (FIXED WITH DELIVERY)
   // ============================================================
   function subscribeToMessages(channelId) {
     if (state.messagesSubscription) {
@@ -1009,11 +1043,13 @@
       }, async (payload) => {
         const newMessage = payload.new;
         
+        // Check for duplicates
         if (state.messages.some(msg => msg.id === newMessage.id)) {
           console.log(`✋ Message ${newMessage.id} already exists, skipping`);
           return;
         }
         
+        // Handle optimistic replacement
         if (newMessage.client_id) {
           const optimisticIndex = state.messages.findIndex(m => 
             m.client_id === newMessage.client_id || 
@@ -1027,26 +1063,33 @@
             renderMessages();
             saveCachedMessages(channelId, state.messages);
             
+            // Mark delivered for messages from others
             if (newMessage.username !== state.currentUser?.username) {
+              console.log('🔔 New message from someone else - marking delivered');
               playNotifySound();
-              markDelivered(channelId);
-              markSeen(channelId);
+              await markDelivered(channelId);
+              await markSeen(channelId);
             }
             return;
           }
         }
         
+        // Add new message
         console.log(`📥 Adding new message (ID: ${newMessage.id})`);
         mergeMessagesSafely(newMessage);
         
+        // Refresh unread badges
         refreshUnreadBadges();
         
+        // Mark delivered for messages from others
         if (newMessage.username !== state.currentUser?.username) {
+          console.log('🔔 New message from someone else - marking delivered');
           playNotifySound();
-          markDelivered(channelId);
-          markSeen(channelId);
+          await markDelivered(channelId);
+          await markSeen(channelId);
         }
         
+        // Reset inactivity timer
         if (state.inactivityTimer) {
           clearTimeout(state.inactivityTimer);
           state.inactivityTimer = null;
@@ -1138,6 +1181,9 @@
     return `<span class="msg-ticks" title="Sent"><i class="fas fa-check"></i></span>`;
   }
 
+  // ============================================================
+  // RENDER MESSAGES (FIXED WITH DELIVERY STATUS)
+  // ============================================================
   function renderMessages() {
     if (!DOM.chatMessages) return;
     
@@ -1179,6 +1225,18 @@
         `;
       }
 
+      // ✅ FIX: Show delivery status for messages from others
+      let deliveryStatus = '';
+      if (!isMine && msg.username !== 'system') {
+        if (msg.seen_at) {
+          deliveryStatus = `<span class="msg-delivery-status seen"><i class="fas fa-check-double"></i> Seen</span>`;
+        } else if (msg.delivered_at) {
+          deliveryStatus = `<span class="msg-delivery-status delivered"><i class="fas fa-check-double"></i> Delivered</span>`;
+        } else {
+          deliveryStatus = `<span class="msg-delivery-status sent"><i class="fas fa-check"></i> Sent</span>`;
+        }
+      }
+
       const footerHtml = isMine
         ? `<div class="msg-meta" style="margin-top:2px;">${ticksHtml(msg)}${msg.seen_at ? `<span class="msg-seen-time">Seen ${formatDate(msg.seen_at)}</span>` : ''}</div>`
         : '';
@@ -1190,6 +1248,7 @@
           <div class="msg-meta">
             <span class="msg-author">${escapeHtml(displayName)}</span>
             <span class="msg-time">${formatDate(msg.created_at)}</span>
+            ${deliveryStatus}
           </div>
           ${bubbleHtml}
           ${footerHtml}
@@ -1241,7 +1300,7 @@
   });
 
   // ============================================================
-  // 9. SEND MESSAGE
+  // 9. SEND MESSAGE (FIXED)
   // ============================================================
   async function sendMessage(content, file) {
     if (!state.currentChannel || !state.currentUser) { 
@@ -2449,6 +2508,262 @@
   }
 
   // ============================================================
+  // 7a. ADMIN: CREATE TEACHER / STUDENT ACCOUNT
+  // ============================================================
+  async function createUserAccount(username, displayName, role, password) {
+    username = normalizeUsername(username);
+    if (!username) { alert('Enter a username.'); return; }
+    if (!password) { alert('Enter or generate a password.'); return; }
+
+    const email = generateEmail(username);
+
+    try {
+      const { data: signUpData, error: signUpError } = await adminAuthClient.auth.signUp({ email, password });
+      await adminAuthClient.auth.signOut();
+
+      const isAlreadyRegistered =
+        signUpError && /already registered|already exists/i.test(signUpError.message || '');
+
+      if (signUpError && !isAlreadyRegistered) throw signUpError;
+
+      const { error: roleError } = await supabase
+        .from('user_roles')
+        .upsert({ 
+          username, 
+          role, 
+          display_name: displayName || username 
+        }, { onConflict: 'username' });
+      if (roleError) throw roleError;
+
+      const key = username.toLowerCase();
+      state.roleCache[key] = role;
+      state.displayNameCache[key] = displayName || username;
+      populateRegisteredUsersDatalist();
+      DOM.newUserUsername.value = '';
+      DOM.newUserDisplayName.value = '';
+      DOM.newUserPassword.value = '';
+      DOM.newUserRole.value = 'student';
+
+      if (isAlreadyRegistered) {
+        alert(
+          `"${username}" already had an account.\n\n` +
+          `Role set to ${role}, but the password shown here was NOT applied.`
+        );
+      } else if (signUpData && !signUpData.session) {
+        alert(
+          `Account created for "${username}" (${role}).\n\n` +
+          `Turn off "Confirm email" in Supabase → Authentication → Sign In / Providers → Email.`
+        );
+      } else {
+        alert(`Account created for "${username}" (${role}).\n\nPassword: ${password}`);
+      }
+    } catch (e) {
+      console.error('Create user error:', e);
+      alert('Could not create account: ' + (e.message || e));
+    }
+  }
+
+  // ============================================================
+  // 5c. PUSH NOTIFICATIONS
+  // ============================================================
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = atob(base64);
+    return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+  }
+
+  async function syncVapidSubscriptionOnLogin(username) {
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        console.warn('Push notifications not supported on this browser/device.');
+        return false;
+      }
+
+      if (!CONFIG.PUSH || !CONFIG.PUSH.VAPID_PUBLIC_KEY) {
+        console.warn('No VAPID public key configured — push sync skipped.');
+        return false;
+      }
+
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData?.user) {
+        console.warn('Could not get user UUID:', userError);
+        return false;
+      }
+      
+      const userUuid = userData.user.id;
+      console.log(`🔑 Using user UUID: ${userUuid}`);
+
+      const registration = await navigator.serviceWorker.ready;
+
+      let subscription = await registration.pushManager.getSubscription();
+
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(CONFIG.PUSH.VAPID_PUBLIC_KEY)
+        });
+      }
+
+      if (!subscription) {
+        console.warn('Could not create push subscription');
+        return false;
+      }
+
+      const subscriptionJson = subscription.toJSON();
+      
+      const { error } = await supabase
+        .from('user_device_tokens')
+        .upsert({
+          user_id: userUuid,
+          subscription_data: subscriptionJson,
+          endpoint: subscriptionJson.endpoint,
+          p256dh: subscriptionJson.keys?.p256dh,
+          auth: subscriptionJson.keys?.auth,
+          username: username,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+
+      if (error) throw error;
+      console.log("✅ VAPID Push Subscription safely stored in Supabase.");
+      return true;
+
+    } catch (err) {
+      console.error("Failed to sync push configurations:", err);
+      return false;
+    }
+  }
+
+  async function subscribeToPush() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      console.warn('Push notifications not supported on this browser/device.');
+      return false;
+    }
+    if (!CONFIG.PUSH || !CONFIG.PUSH.VAPID_PUBLIC_KEY) {
+      console.warn('No VAPID public key configured — push notifications disabled.');
+      return false;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        console.warn('Notification permission not granted.');
+        return false;
+      }
+
+      return await syncVapidSubscriptionOnLogin(state.currentUser.username);
+    } catch (e) {
+      console.warn('Push subscription failed:', e);
+      return false;
+    }
+  }
+
+  async function unsubscribeFromPush() {
+    try {
+      if (!('serviceWorker' in navigator)) return;
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        const { data: userData } = await supabase.auth.getUser();
+        if (userData?.user) {
+          await supabase
+            .from('user_device_tokens')
+            .delete()
+            .eq('user_id', userData.user.id);
+        }
+        await subscription.unsubscribe();
+      }
+    } catch (e) {
+      console.warn('Push unsubscribe failed:', e);
+    }
+  }
+
+  async function setNotificationsEnabled(enabled) {
+    if (enabled) {
+      const ok = await subscribeToPush();
+      DOM.notifToggle.checked = !!ok;
+    } else {
+      await unsubscribeFromPush();
+    }
+  }
+
+  async function sendVapidNotificationsToOfflineStudents(senderId, messageContent, channelId) {
+    try {
+      if (!CONFIG.PUSH || !CONFIG.PUSH.VAPID_PUBLIC_KEY) {
+        console.log('Push notifications disabled - no VAPID key');
+        return;
+      }
+
+      const { data: members, error: memberError } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MEMBERS)
+        .select('username')
+        .eq('channel_id', channelId)
+        .neq('username', senderId);
+
+      if (memberError) {
+        console.error("Failed to look up channel members:", memberError.message);
+        return;
+      }
+
+      const memberUsernames = (members || []).map((m) => m.username);
+      if (!memberUsernames.length) {
+        console.log('No other channel members to notify');
+        return;
+      }
+
+      const { data: offlineStudents, error: queryError } = await supabase
+        .from('user_device_tokens')
+        .select('username, subscription_data, endpoint')
+        .in('username', memberUsernames);
+
+      if (queryError) {
+        console.error("Failed to lookup student push destinations:", queryError.message);
+        return;
+      }
+
+      if (!offlineStudents || offlineStudents.length === 0) {
+        console.log('No offline students with VAPID subscriptions found');
+        return;
+      }
+
+      const senderName = getDisplayName(senderId);
+      const channelName = state.currentChannel?.name || 'Class';
+
+      const payload = {
+        title: `${senderName} in ${channelName}`,
+        body: messageContent.length > 100 ? messageContent.substring(0, 100) + '…' : messageContent,
+        icon: CONFIG.BRANDING.LOGO.PATH || '/favicon.ico',
+        badge: '/favicon.ico',
+        data: {
+          url: window.location.href,
+          type: 'chat_message',
+          channel_id: channelId,
+          sender: senderId
+        }
+      };
+
+      console.log(`📨 Sending VAPID notifications to ${offlineStudents.length} offline students via Edge Function`);
+
+      const { data, error } = await supabase.functions.invoke('send-push-notifications', {
+        body: {
+          subscriptions: offlineStudents.map(s => s.subscription_data).filter(s => s !== null),
+          payload: payload
+        }
+      });
+
+      if (error) {
+        console.error('Edge Function error:', error);
+        return;
+      }
+
+      console.log('✅ VAPID notifications sent successfully:', data);
+
+    } catch (error) {
+      console.error('Failed to send VAPID notifications:', error);
+    }
+  }
+
+  // ============================================================
   // 15. EVENT BINDINGS
   // ============================================================
   DOM.loginBtn.addEventListener('click', handleLogin);
@@ -2642,126 +2957,6 @@
   DOM.darkToggle.checked = document.body.classList.contains('theme-dark');
 
   DOM.signOutBtn.addEventListener('click', handleSignOut);
-
-  // ============================================================
-  // 7a. ADMIN: CREATE TEACHER / STUDENT ACCOUNT
-  // ============================================================
-  async function createUserAccount(username, displayName, role, password) {
-    username = normalizeUsername(username);
-    if (!username) { alert('Enter a username.'); return; }
-    if (!password) { alert('Enter or generate a password.'); return; }
-
-    const email = generateEmail(username);
-
-    try {
-      const { data: signUpData, error: signUpError } = await adminAuthClient.auth.signUp({ email, password });
-      await adminAuthClient.auth.signOut();
-
-      const isAlreadyRegistered =
-        signUpError && /already registered|already exists/i.test(signUpError.message || '');
-
-      if (signUpError && !isAlreadyRegistered) throw signUpError;
-
-      const { error: roleError } = await supabase
-        .from('user_roles')
-        .upsert({ 
-          username, 
-          role, 
-          display_name: displayName || username 
-        }, { onConflict: 'username' });
-      if (roleError) throw roleError;
-
-      const key = username.toLowerCase();
-      state.roleCache[key] = role;
-      state.displayNameCache[key] = displayName || username;
-      populateRegisteredUsersDatalist();
-      DOM.newUserUsername.value = '';
-      DOM.newUserDisplayName.value = '';
-      DOM.newUserPassword.value = '';
-      DOM.newUserRole.value = 'student';
-
-      if (isAlreadyRegistered) {
-        alert(
-          `"${username}" already had an account.\n\n` +
-          `Role set to ${role}, but the password shown here was NOT applied.`
-        );
-      } else if (signUpData && !signUpData.session) {
-        alert(
-          `Account created for "${username}" (${role}).\n\n` +
-          `Turn off "Confirm email" in Supabase → Authentication → Sign In / Providers → Email.`
-        );
-      } else {
-        alert(`Account created for "${username}" (${role}).\n\nPassword: ${password}`);
-      }
-    } catch (e) {
-      console.error('Create user error:', e);
-      alert('Could not create account: ' + (e.message || e));
-    }
-  }
-
-  // ============================================================
-  // 5c. PUSH NOTIFICATIONS
-  // ============================================================
-  async function syncVapidSubscriptionOnLogin(username) {
-    try {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        console.warn('Push notifications not supported on this browser/device.');
-        return false;
-      }
-
-      if (!CONFIG.PUSH || !CONFIG.PUSH.VAPID_PUBLIC_KEY) {
-        console.warn('No VAPID public key configured — push sync skipped.');
-        return false;
-      }
-
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      if (userError || !userData?.user) {
-        console.warn('Could not get user UUID:', userError);
-        return false;
-      }
-      
-      const userUuid = userData.user.id;
-      console.log(`🔑 Using user UUID: ${userUuid}`);
-
-      const registration = await navigator.serviceWorker.ready;
-
-      let subscription = await registration.pushManager.getSubscription();
-
-      if (!subscription) {
-        subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(CONFIG.PUSH.VAPID_PUBLIC_KEY)
-        });
-      }
-
-      if (!subscription) {
-        console.warn('Could not create push subscription');
-        return false;
-      }
-
-      const subscriptionJson = subscription.toJSON();
-      
-      const { error } = await supabase
-        .from('user_device_tokens')
-        .upsert({
-          user_id: userUuid,
-          subscription_data: subscriptionJson,
-          endpoint: subscriptionJson.endpoint,
-          p256dh: subscriptionJson.keys?.p256dh,
-          auth: subscriptionJson.keys?.auth,
-          username: username,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'user_id' });
-
-      if (error) throw error;
-      console.log("✅ VAPID Push Subscription safely stored in Supabase.");
-      return true;
-
-    } catch (err) {
-      console.error("Failed to sync push configurations:", err);
-      return false;
-    }
-  }
 
   // ============================================================
   // 16. BOOTSTRAP
