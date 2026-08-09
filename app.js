@@ -81,13 +81,10 @@
     currentTab: 'chats',
     screenReturn: 'chats',
     currentScreen: 'chats',
-    // Cache for messages to enable instant loading
     cachedMessages: {},
-    // Inactivity management
     inactivityTimer: null,
-    INACTIVITY_TIMEOUT: 300000, // 5 minutes
+    INACTIVITY_TIMEOUT: 300000,
     isChannelActive: false,
-    // Tab focus management
     isTabFocused: true,
     tabChannel: null,
     isRefreshing: false,
@@ -284,42 +281,39 @@
       console.warn('Notification sound unavailable:', e);
     }
 
-    // SHOW BROWSER NOTIFICATION (NEW)
+    // SHOW BROWSER NOTIFICATION - Only if tab is hidden
     try {
-      // Only show if we have permission and the tab is not focused
-      if (Notification.permission === 'granted' && document.hidden) {
+      if (typeof Notification !== 'undefined' && 
+          Notification.permission === 'granted' && 
+          document.hidden) {
         const senderName = state.currentUser ? getDisplayName(state.currentUser.username) : 'Someone';
         const channelName = state.currentChannel?.name || 'Class';
         
-        // Create and show notification
         const notification = new Notification(`💬 ${senderName} in ${channelName}`, {
           body: 'New message! Tap to open.',
           icon: CONFIG.BRANDING.LOGO.PATH || '/favicon.ico',
           badge: '/favicon.ico',
-          tag: 'new-message-' + Date.now(), // Unique tag to show each message
-          requireInteraction: true, // Keeps it visible until user interacts
-          silent: true, // We already play our custom sound
+          tag: 'new-message-' + Date.now(),
+          requireInteraction: true,
+          silent: true,
         });
         
-        // Keep notification visible longer (some browsers ignore this, but we try)
         setTimeout(() => {
           notification.close();
-        }, 10000); // 10 seconds
+        }, 10000);
         
-        // When user clicks the notification, focus the tab
         notification.onclick = function() {
           window.focus();
           notification.close();
         };
       }
     } catch (e) {
-      // Fallback: just play sound, no visual notification
       console.warn('Could not show notification:', e);
     }
   }
 
   // ============================================================
-  // 5c. PUSH NOTIFICATIONS
+  // 5c. PUSH NOTIFICATIONS (FIXED - uses UUID for user_id)
   // ============================================================
   function urlBase64ToUint8Array(base64String) {
     const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -329,9 +323,9 @@
   }
 
   // ============================================================
-  // 5d. VAPID SUBSCRIPTION SYNC
+  // 5d. VAPID SUBSCRIPTION SYNC (FIXED - uses UUID)
   // ============================================================
-  async function syncVapidSubscriptionOnLogin(userId) {
+  async function syncVapidSubscriptionOnLogin(username) {
     try {
       // Check if service workers and push are supported
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
@@ -345,10 +339,20 @@
         return false;
       }
 
+      // ⭐ FIX: Get the user's actual UUID from Supabase auth
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData?.user) {
+        console.warn('Could not get user UUID:', userError);
+        return false;
+      }
+      
+      const userUuid = userData.user.id;
+      console.log(`🔑 Using user UUID: ${userUuid}`);
+
       // 1. Ensure the Service Worker is running and ready
       const registration = await navigator.serviceWorker.ready;
 
-      // 2. Grab the existing subscription, or generate a fresh one via your VAPID key
+      // 2. Grab the existing subscription, or generate a fresh one
       let subscription = await registration.pushManager.getSubscription();
 
       if (!subscription) {
@@ -363,25 +367,27 @@
         return false;
       }
 
-      // 3. Upsert the complete raw subscription payload directly into your Supabase table
+      // 3. Store using the UUID
       const subscriptionJson = subscription.toJSON();
+      
       const { error } = await supabase
         .from('user_device_tokens')
         .upsert({
-          user_id: userId,
+          user_id: userUuid,
           subscription_data: subscriptionJson,
           endpoint: subscriptionJson.endpoint,
           p256dh: subscriptionJson.keys?.p256dh,
           auth: subscriptionJson.keys?.auth,
+          username: username, // Store username for lookups
           updated_at: new Date().toISOString()
         }, { onConflict: 'user_id' });
 
       if (error) throw error;
-      console.log("VAPID Push Subscription safely stored in Supabase.");
+      console.log("✅ VAPID Push Subscription safely stored in Supabase.");
       return true;
 
     } catch (err) {
-      console.error("Failed to sync your custom Web Push configurations:", err);
+      console.error("Failed to sync push configurations:", err);
       return false;
     }
   }
@@ -403,7 +409,6 @@
         return false;
       }
 
-      // Use the sync function to handle subscription
       return await syncVapidSubscriptionOnLogin(state.currentUser.username);
     } catch (e) {
       console.warn('Push subscription failed:', e);
@@ -417,12 +422,13 @@
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
       if (subscription) {
-        // Clean up from database
-        if (state.currentUser) {
+        // Clean up from database using the user's UUID
+        const { data: userData } = await supabase.auth.getUser();
+        if (userData?.user) {
           await supabase
             .from('user_device_tokens')
             .delete()
-            .eq('user_id', state.currentUser.username);
+            .eq('user_id', userData.user.id);
         }
         await subscription.unsubscribe();
       }
@@ -441,10 +447,16 @@
   }
 
   // ============================================================
-  // 5e. VAPID PUSH NOTIFICATION SENDING (via Supabase Edge Function)
+  // 5e. VAPID PUSH NOTIFICATION SENDING (FIXED - uses username column)
   // ============================================================
   async function sendVapidNotificationsToOfflineStudents(senderId, messageContent, channelId) {
     try {
+      // Skip if no VAPID key configured
+      if (!CONFIG.PUSH || !CONFIG.PUSH.VAPID_PUBLIC_KEY) {
+        console.log('Push notifications disabled - no VAPID key');
+        return;
+      }
+
       // 1. Find the OTHER members of this specific channel
       const { data: members, error: memberError } = await supabase
         .from(CONFIG.SUPABASE.TABLES.MEMBERS)
@@ -453,7 +465,7 @@
         .neq('username', senderId);
 
       if (memberError) {
-        console.error("Failed to look up channel members for push targeting:", memberError.message);
+        console.error("Failed to look up channel members:", memberError.message);
         return;
       }
 
@@ -463,11 +475,11 @@
         return;
       }
 
-      // 2. Find push subscriptions for those specific channel members
+      // ⭐ FIX: Find push subscriptions by username column
       const { data: offlineStudents, error: queryError } = await supabase
         .from('user_device_tokens')
-        .select('user_id, subscription_data, endpoint')
-        .in('user_id', memberUsernames);
+        .select('username, subscription_data, endpoint')
+        .in('username', memberUsernames);
 
       if (queryError) {
         console.error("Failed to lookup student push destinations:", queryError.message);
@@ -540,7 +552,6 @@
   function saveCachedMessages(channelId, messages) {
     try {
       const cacheKey = `cached_chat_history_${channelId}`;
-      // Only cache the last 50 messages
       const toCache = messages.slice(-50);
       localStorage.setItem(cacheKey, JSON.stringify(toCache));
       console.log(`💾 Cached ${toCache.length} messages for channel ${channelId}`);
@@ -581,7 +592,6 @@
       }
 
       state.inactivityTimer = setTimeout(() => {
-        // ⭐ FIX: Only disconnect if tab is actually focused
         if (state.messagesSubscription && state.isTabFocused) {
           console.log("⏰ 5 min idle. Disconnecting to save resources.");
           supabase.removeChannel(state.messagesSubscription);
@@ -628,54 +638,44 @@
   // 5h. TAB FOCUS MANAGER
   // ============================================================
   function setupTabFocusManager() {
-    // Clean up any existing tab channel
     if (state.tabChannel) {
       supabase.removeChannel(state.tabChannel);
       state.tabChannel = null;
     }
 
-    // Create a separate channel for tab focus management
     if (state.currentChannel) {
       state.tabChannel = supabase.channel(`tab-focus-${state.currentChannel.id}`);
       state.tabChannel.subscribe();
     }
 
-    // Handle visibility change
     const handleVisibilityChange = async () => {
       if (document.hidden) {
-        // 1. Student closed or minimized the tab -> Disconnect instantly!
         console.log("🔴 Tab hidden. Dropping connection to save free tier slots.");
         state.isTabFocused = false;
         
-        // Remove the main messages subscription
         if (state.messagesSubscription) {
           supabase.removeChannel(state.messagesSubscription);
           state.messagesSubscription = null;
           state.isChannelActive = false;
         }
         
-        // Also remove the tab channel
         if (state.tabChannel) {
           await supabase.removeChannel(state.tabChannel);
           state.tabChannel = null;
         }
       } else {
-        // 2. Student clicked back into the tab -> Reconnect silently!
         console.log("🟢 Tab focused again! Reconnecting...");
         state.isTabFocused = true;
         
-        // Recreate the tab channel
         if (!state.tabChannel && state.currentChannel) {
           state.tabChannel = supabase.channel(`tab-focus-${state.currentChannel.id}`);
           state.tabChannel.subscribe();
         }
         
-        // Reconnect the main messages subscription
         if (!state.messagesSubscription && state.currentChannel) {
           subscribeToMessages(state.currentChannel.id);
         }
         
-        // 3. SILENT CATCH-UP: Grab messages sent while the student was away
         if (state.currentChannel && !state.isRefreshing) {
           state.isRefreshing = true;
           console.log("📥 Catching up on messages missed while tab was inactive...");
@@ -691,10 +691,8 @@
       }
     };
 
-    // Attach listener to the browser document
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Store cleanup function
     state._tabFocusCleanup = function() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (state.tabChannel) {
@@ -923,7 +921,7 @@
   }
 
   // ============================================================
-  // 6b. SCREEN NAVIGATION - FIXED FOR DESKTOP
+  // 6b. SCREEN NAVIGATION
   // ============================================================
   const ROOT_TABS = ['chats', 'updates', 'settings'];
   const SCREEN_EL = {
@@ -946,32 +944,23 @@
   function goToScreen(name) {
     updateChatEmptyState();
     const isDesktop = isDesktopLayout();
-    
-    // On desktop, we want chats to always be visible when in chat-related screens
     const keepChatsVisible = isDesktop && CHAT_GROUP_SCREENS.includes(name);
 
-    // Handle all screens
     Object.entries(SCREEN_EL).forEach(([key, el]) => {
       if (!el) return;
       
-      // Determine if this screen should be visible
       let shouldBeVisible = false;
       
       if (key === name) {
         shouldBeVisible = true;
       } else if (isDesktop && key === 'chats' && CHAT_GROUP_SCREENS.includes(name)) {
-        // On desktop, always show chats when in a chat group
         shouldBeVisible = true;
       } else if (isDesktop && keepChatsVisible && key === 'chats') {
         shouldBeVisible = true;
       } else if (isDesktop && key === 'chatDetail' && name === 'chats') {
-        // WhatsApp-Web style: the right pane always shows something —
-        // either the open conversation or the "select a chat" welcome
-        // screen — instead of going blank on the chats tab.
         shouldBeVisible = true;
       }
       
-      // Apply visibility
       if (shouldBeVisible) {
         el.classList.remove('hidden');
         el.style.display = 'flex';
@@ -982,7 +971,6 @@
       }
     });
     
-    // Navigation visibility
     const isRoot = ROOT_TABS.includes(name);
     const hideNav = !isRoot && !isDesktop;
     DOM.bottomNav.classList.toggle('hidden', hideNav);
@@ -1073,21 +1061,16 @@
 
       if (isAlreadyRegistered) {
         alert(
-          `"${username}" already had an account (e.g. from before self-signup was disabled).\n\n` +
-          `Role set to ${role}, but the password shown here was NOT applied — a browser-side ` +
-          `signup can't change another account's password. Reset it from the Supabase ` +
-          `dashboard (Authentication → Users) or have them use their existing password.`
+          `"${username}" already had an account.\n\n` +
+          `Role set to ${role}, but the password shown here was NOT applied.`
         );
       } else if (signUpData && !signUpData.session) {
         alert(
-          `Account created for "${username}" (${role}), but it likely can't log in yet: this ` +
-          `Supabase project requires email confirmation, and confirmation emails can't reach a ` +
-          `fake address like ${email}.\n\n` +
-          `Turn off "Confirm email" in Supabase → Authentication → Sign In / Providers → Email, ` +
-          `then this account (and any others stuck the same way) will be able to log in.`
+          `Account created for "${username}" (${role}).\n\n` +
+          `Turn off "Confirm email" in Supabase → Authentication → Sign In / Providers → Email.`
         );
       } else {
-        alert(`Account created for "${username}" (${role}).\n\nPassword: ${password}\n\nShare this with them securely — it won't be shown again.`);
+        alert(`Account created for "${username}" (${role}).\n\nPassword: ${password}`);
       }
     } catch (e) {
       console.error('Create user error:', e);
@@ -1132,6 +1115,29 @@
   // ============================================================
   // 8. CHANNELS (CRUD)
   // ============================================================
+  async function createChannel(name) {
+    if (!name || !name.trim()) return;
+    
+    const { data, error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.CHANNELS)
+      .insert({ 
+        name: name.trim(),
+        created_by: state.currentUser?.username,
+        created_at: new Date().toISOString()
+      })
+      .select();
+      
+    if (error) {
+      alert('Could not create channel: ' + error.message);
+      return;
+    }
+    
+    await renderChannels();
+    if (data && data[0]) {
+      selectChannel(data[0]);
+    }
+  }
+
   async function loadChannels() {
     if (!state.currentUser) return [];
 
@@ -1402,7 +1408,6 @@
     updateChatEmptyState();
     highlightActiveChatRow();
     
-    // INSTANT LOAD: Show cached messages immediately (0ms)
     const cachedMessages = getCachedMessages(channel.id);
     if (cachedMessages) {
       state.messages = cachedMessages;
@@ -1410,9 +1415,7 @@
       console.log(`⚡ Instant load: ${cachedMessages.length} messages from cache`);
     }
     
-    // BACKGROUND FETCH: Load fresh messages from Supabase
     await loadMessages(channel.id);
-    
     await loadMembers(channel.id);
     subscribeToMessages(channel.id);
     await markDelivered(channel.id);
@@ -1422,10 +1425,7 @@
     updateChatDetailHeader();
     updateProfileScreen();
     
-    // Setup inactivity manager for this channel
     setupInactivityManager();
-    
-    // Setup tab focus manager for this channel
     setupTabFocusManager();
   }
 
@@ -1819,9 +1819,7 @@
       }, async (payload) => {
         const dbMessage = payload.new;
         
-        // ⭐ FIX: Improved duplicate detection
-        
-        // Check 1: Exact ID match (most reliable)
+        // Check 1: Exact ID match
         if (state.messages.some((m) => m.id === dbMessage.id)) {
           console.log(`✋ Message already exists (ID: ${dbMessage.id})`);
           return;
@@ -1844,13 +1842,13 @@
           }
         }
 
-        // Check 3: Prevent duplicates by content (only if no ID match)
+        // Check 3: Prevent duplicates by content
         const similarExists = state.messages.some((m) => 
           m.username === dbMessage.username &&
           m.content === dbMessage.content &&
           m.channel_id === dbMessage.channel_id &&
           !m.isPending &&
-          Math.abs(new Date(m.created_at) - new Date(dbMessage.created_at)) < 2000 // Within 2 seconds
+          Math.abs(new Date(m.created_at) - new Date(dbMessage.created_at)) < 2000
         );
 
         if (similarExists) {
@@ -1858,21 +1856,18 @@
           return;
         }
 
-        // ⭐ NEW MESSAGE: Add it
         console.log(`📥 New message from database (ID: ${dbMessage.id})`);
         state.messages.push(dbMessage);
         renderMessages();
         refreshUnreadBadges();
         saveCachedMessages(channelId, state.messages);
 
-        // Play sound for messages from others
         if (dbMessage.username !== state.currentUser?.username) {
           playNotifySound();
           markDelivered(channelId);
           markSeen(channelId);
         }
 
-        // Reset inactivity timer
         if (state.inactivityTimer) {
           clearTimeout(state.inactivityTimer);
           state.inactivityTimer = null;
@@ -2106,10 +2101,8 @@
         }
       : {};
 
-    // ⭐ FIX: Generate clientId for message tracking
     const clientId = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    // Create message WITHOUT created_at (database will generate it)
     const newMessage = {
       channel_id: state.currentChannel.id,
       username: state.currentUser.username,
@@ -2119,7 +2112,6 @@
       ...replyPayload,
     };
 
-    // ⭐ Show message immediately (optimistic update)
     const tempId = `temp_${clientId}`;
     const optimisticMessage = { 
       id: tempId, 
@@ -2132,7 +2124,6 @@
     renderMessages();
     console.log(`✉️ Message added (optimistic, clientId: ${clientId})`);
 
-    // SEND TO DATABASE
     const { error, data } = await supabase
       .from(CONFIG.SUPABASE.TABLES.MESSAGES)
       .insert(newMessage)
@@ -2141,32 +2132,23 @@
     if (error) {
       console.error('Send error:', error);
       alert('Failed to send message.');
-      // Remove the optimistic message
       state.messages = state.messages.filter((m) => m.id !== tempId);
       renderMessages();
       console.log('❌ Message rolled back');
     } else if (data && data[0]) {
-      // ✅ SUCCESS - Replace the temporary message with the real one
       const realMessage = data[0];
       
-      // Find and replace the temp message
       const index = state.messages.findIndex((m) => m.id === tempId);
       if (index !== -1) {
-        // Replace the temp message with the real one
         state.messages[index] = realMessage;
-        // Remove the isPending flag
         delete state.messages[index].isPending;
-        
-        // Force a re-render
         renderMessages();
         console.log(`✅ Message replaced: ${tempId} → ${realMessage.id}`);
       } else {
-        // If temp message wasn't found, just add the real one
         state.messages.push(realMessage);
         renderMessages();
       }
       
-      // Send push notifications to offline students
       sendVapidNotificationsToOfflineStudents(
         state.currentUser.username,
         content || '📎 New attachment',
@@ -2176,7 +2158,6 @@
       state.channelPreviews = await loadChannelPreviews(allChannels.map((c) => c.id));
       renderChatList(allChannels);
       
-      // Save to cache
       if (state.currentChannel) {
         saveCachedMessages(state.currentChannel.id, state.messages);
       }
@@ -2561,9 +2542,9 @@
     await renderChannels();
     await loadStatuses();
     
-    // REQUEST NOTIFICATION PERMISSION (NEW)
+    // Request notification permission
     try {
-      if ('Notification' in window && Notification.permission === 'default') {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
         const permission = await Notification.requestPermission();
         if (permission === 'granted') {
           console.log('✅ Notification permission granted');
@@ -2576,7 +2557,7 @@
     // Sync VAPID subscription on login
     await syncVapidSubscriptionOnLogin(username);
     
-    // Subscribe to push notifications (existing)
+    // Subscribe to push notifications
     subscribeToPush().then((ok) => { DOM.notifToggle.checked = !!ok; });
 
     screenHistory = [];
@@ -2624,24 +2605,25 @@
     // Clean up VAPID subscription before signing out
     try {
       if (state.currentUser) {
-        await supabase
-          .from('user_device_tokens')
-          .delete()
-          .eq('user_id', state.currentUser.username);
+        const { data: userData } = await supabase.auth.getUser();
+        if (userData?.user) {
+          await supabase
+            .from('user_device_tokens')
+            .delete()
+            .eq('user_id', userData.user.id);
+        }
         console.log('VAPID subscription cleaned up successfully');
       }
     } catch (e) {
       console.warn('Cleanup VAPID subscription error:', e);
     }
 
-    // Terminate login session cleanly
     try { 
       await supabase.auth.signOut(); 
     } catch (e) { 
       console.warn('Sign out error:', e); 
     }
 
-    // Clean up subscriptions and presence
     if (state.messagesSubscription) { 
       supabase.removeChannel(state.messagesSubscription); 
       state.messagesSubscription = null; 
@@ -2651,14 +2633,9 @@
       scheduleSubscription = null; 
     }
     teardownPresence();
-
-    // Clean up inactivity manager
     cleanupInactivityManager();
-    
-    // Clean up tab focus manager
     cleanupTabFocusManager();
 
-    // Reset state
     state.currentUser = null;
     state.currentChannel = null;
     state.currentMembers = [];
@@ -2670,7 +2647,6 @@
     state.isChannelActive = false;
     state.isTabFocused = true;
 
-    // Clear cached messages on logout
     try {
       const keys = Object.keys(localStorage);
       keys.forEach(key => {
@@ -2683,7 +2659,6 @@
       console.warn('Failed to clear cache:', e);
     }
 
-    // Update UI
     DOM.dashboard.classList.add('hidden');
     DOM.videoContainer.classList.add('hidden');
     DOM.authCard.classList.remove('hidden');
@@ -2728,7 +2703,6 @@
     DOM.fileInput.value = '';
     DOM.filePreview.classList.add('hidden');
     
-    // Reset inactivity timer on sending message (user is active)
     if (state.inactivityTimer) {
       clearTimeout(state.inactivityTimer);
       state.inactivityTimer = null;
@@ -2740,14 +2714,12 @@
       e.preventDefault(); 
       DOM.sendMsgBtn.click(); 
     }
-    // Reset inactivity timer on typing
     if (state.inactivityTimer) {
       clearTimeout(state.inactivityTimer);
       state.inactivityTimer = null;
     }
   });
 
-  // Message input focus/blur handlers for inactivity
   DOM.messageInput.addEventListener('focus', () => {
     if (state.inactivityTimer) {
       clearTimeout(state.inactivityTimer);
@@ -2781,7 +2753,6 @@
     DOM.filePreviewName.textContent = file.name;
     DOM.filePreview.classList.remove('hidden');
     
-    // Reset inactivity timer on file selection
     if (state.inactivityTimer) {
       clearTimeout(state.inactivityTimer);
       state.inactivityTimer = null;
