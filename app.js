@@ -411,11 +411,32 @@
   // ============================================================
   async function sendVapidNotificationsToOfflineStudents(senderId, messageContent, channelId) {
     try {
-      // 1. Find all students who are NOT the sender
+      // 1. Find the OTHER members of this specific channel — not every
+      // registered device in the whole school. Previously this queried
+      // user_device_tokens with no channel filter, so a message in any one
+      // class channel pushed a notification to every user in the app.
+      const { data: members, error: memberError } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MEMBERS)
+        .select('username')
+        .eq('channel_id', channelId)
+        .neq('username', senderId);
+
+      if (memberError) {
+        console.error("Failed to look up channel members for push targeting:", memberError.message);
+        return;
+      }
+
+      const memberUsernames = (members || []).map((m) => m.username);
+      if (!memberUsernames.length) {
+        console.log('No other channel members to notify');
+        return;
+      }
+
+      // 2. Find push subscriptions for those specific channel members
       const { data: offlineStudents, error: queryError } = await supabase
         .from('user_device_tokens')
         .select('user_id, subscription_data, endpoint')
-        .neq('user_id', senderId);
+        .in('user_id', memberUsernames);
 
       if (queryError) {
         console.error("Failed to lookup student push destinations:", queryError.message);
@@ -447,7 +468,7 @@
 
       console.log(`📨 Sending VAPID notifications to ${offlineStudents.length} offline students via Edge Function`);
 
-      // 2. Call the Supabase Edge Function to send notifications
+      // 3. Call the Supabase Edge Function to send notifications
       const { data, error } = await supabase.functions.invoke('send-push-notifications', {
         body: {
           subscriptions: offlineStudents.map(s => s.subscription_data).filter(s => s !== null),
@@ -722,8 +743,13 @@
 
     if (state.roleCache[key]) return state.roleCache[key];
 
-    if (key.includes(CONFIG.AUTH.ROLES.ADMIN)) return CONFIG.AUTH.ROLES.ADMIN;
-    if (key.includes(CONFIG.AUTH.ROLES.TEACHER)) return CONFIG.AUTH.ROLES.TEACHER;
+    // SECURITY: role must come from the server-loaded role cache (user_roles
+    // table), never guessed from the username text. A previous version granted
+    // admin/teacher access to any username merely *containing* those words
+    // (e.g. "teacherassistant" or "administrator2" would get elevated access).
+    // If the role cache hasn't loaded yet or the user isn't registered,
+    // fail safe to the lowest-privilege role.
+    console.warn(`No role found in role cache for "${username}" — defaulting to student.`);
     return CONFIG.AUTH.ROLES.STUDENT;
   }
 
@@ -1624,6 +1650,30 @@
     DOM.userEditForm.style.display = 'flex';
   }
 
+  // Privileged auth changes (changing another user's login email or password)
+  // require the Supabase service_role key, which must NEVER be shipped to the
+  // browser. This calls a Supabase Edge Function that holds the service_role
+  // key server-side and performs the auth.admin.* call there, looked up by the
+  // TARGET user's username/email — never by whichever admin happens to be
+  // logged in. You must deploy an 'admin-update-user' Edge Function that:
+  //   1. Verifies the caller is an admin (checks their JWT/role)
+  //   2. Looks up the target auth user by email (generateEmail(targetUsername))
+  //   3. Calls supabase.auth.admin.updateUserById(targetAuthUser.id, { email, password })
+  // See the accompanying admin-update-user-edge-function.md for a starting point.
+  async function callAdminUpdateUserFunction(targetUsername, { newEmail, newPassword } = {}) {
+    if (!newEmail && !newPassword) return { error: null };
+    const { data, error } = await supabase.functions.invoke('admin-update-user', {
+      body: {
+        targetUsername,
+        newEmail: newEmail || undefined,
+        newPassword: newPassword || undefined,
+      },
+    });
+    if (error) return { error };
+    if (data && data.error) return { error: new Error(data.error) };
+    return { error: null };
+  }
+
   async function updateUserAccount(username, newUsername, newDisplayName, newRole, newPassword) {
     username = normalizeUsername(username);
     newUsername = normalizeUsername(newUsername);
@@ -1642,10 +1692,11 @@
           });
         if (roleError) throw roleError;
         
-        const { error: authError } = await supabase.auth.admin.updateUserById(
-          state.currentUser.id,
-          { email: generateEmail(newUsername) }
-        );
+        // Update the TARGET user's auth email via the server-side function —
+        // identified by their username, not the currently logged-in admin.
+        const { error: authError } = await callAdminUpdateUserFunction(username, {
+          newEmail: generateEmail(newUsername),
+        });
         if (authError) throw authError;
         
         await supabase.from(CONFIG.SUPABASE.TABLES.MEMBERS)
@@ -1668,6 +1719,12 @@
         delete state.displayNameCache[username];
         state.roleCache[newUsername] = newRole;
         state.displayNameCache[newUsername] = newDisplayName || newUsername;
+
+        // Password change (if any) must apply to the NEW username going forward.
+        if (newPassword && newPassword.length > 0) {
+          const { error: passError } = await callAdminUpdateUserFunction(newUsername, { newPassword });
+          if (passError) throw passError;
+        }
       } else {
         const { error: roleError } = await supabase
           .from('user_roles')
@@ -1679,14 +1736,11 @@
         if (roleError) throw roleError;
         state.roleCache[username] = newRole;
         state.displayNameCache[username] = newDisplayName || username;
-      }
-      
-      if (newPassword && newPassword.length > 0) {
-        const { error: passError } = await supabase.auth.admin.updateUserById(
-          state.currentUser.id,
-          { password: newPassword }
-        );
-        if (passError) throw passError;
+
+        if (newPassword && newPassword.length > 0) {
+          const { error: passError } = await callAdminUpdateUserFunction(username, { newPassword });
+          if (passError) throw passError;
+        }
       }
       
       alert('User updated successfully!');
@@ -1699,6 +1753,20 @@
       console.error('Update user error:', e);
       alert('Could not update user: ' + (e.message || e));
     }
+  }
+
+  // Deleting another user's auth account also requires the service_role key.
+  // You must deploy an 'admin-delete-user' Edge Function that:
+  //   1. Verifies the caller is an admin
+  //   2. Looks up the target auth user by email (generateEmail(targetUsername))
+  //   3. Calls supabase.auth.admin.deleteUser(targetAuthUser.id)
+  async function callAdminDeleteUserFunction(targetUsername) {
+    const { data, error } = await supabase.functions.invoke('admin-delete-user', {
+      body: { targetUsername },
+    });
+    if (error) return { error };
+    if (data && data.error) return { error: new Error(data.error) };
+    return { error: null };
   }
 
   async function deleteUserAccount(username) {
@@ -1714,9 +1782,9 @@
       await supabase.from(CONFIG.SUPABASE.TABLES.STATUSES).delete().eq('username', username);
       await supabase.from('class_schedule').delete().eq('teacher_username', username);
       
-      const { error: authError } = await supabase.auth.admin.deleteUser(
-        state.currentUser.id
-      );
+      // Delete the TARGET user's auth account, identified by their own
+      // username — not whichever admin happens to be logged in.
+      const { error: authError } = await callAdminDeleteUserFunction(username);
       if (authError) throw authError;
       
       delete state.roleCache[username];
@@ -1767,18 +1835,15 @@
             state.inactivityTimer = null;
           }
 
-          // Only send notifications if the message is from someone else
+          // Only play the in-app sound / mark delivered+seen if the message
+          // is from someone else. Push notifications are NOT sent here —
+          // this handler fires once per client currently viewing the
+          // channel, so sending pushes here caused duplicate notification
+          // blasts whenever more than one person had the channel open. The
+          // sender's own client sends the push exactly once, from
+          // sendMessage(), right after the insert succeeds.
           if (payload.new.username !== state.currentUser?.username) {
-            // Play sound notification (existing)
             playNotifySound();
-            
-            // Send VAPID push notifications to offline students via Edge Function
-            await sendVapidNotificationsToOfflineStudents(
-              payload.new.username,
-              payload.new.content || '📎 New attachment',
-              channelId
-            );
-            
             markDelivered(channelId);
             markSeen(channelId);
           }
@@ -1917,7 +1982,7 @@
       }
       if (msg.file_url) {
         bubbleHtml += `
-          <a href="${msg.file_url}" target="_blank" rel="noopener" class="msg-file">
+          <a href="${escapeHtml(msg.file_url)}" target="_blank" rel="noopener" class="msg-file">
             <i class="fas fa-paperclip"></i> Attached file
           </a>
         `;
@@ -2026,7 +2091,18 @@
       ...replyPayload,
     });
 
-    if (error) { console.error('Send error:', error); alert('Failed to send message.'); }
+    if (error) {
+      console.error('Send error:', error);
+      alert('Failed to send message.');
+    } else {
+      // Fire the push notification exactly once, from the sender's own
+      // client, scoped to this channel's members.
+      sendVapidNotificationsToOfflineStudents(
+        state.currentUser.username,
+        content || '📎 New attachment',
+        state.currentChannel.id
+      );
+    }
 
     state.replyingTo = null;
     DOM.replyPreview.classList.add('hidden');
@@ -2222,9 +2298,9 @@
     DOM.statusModalContent.textContent = status.content || '';
 
     if (status.media_url && isVideoFile(status.media_url)) {
-      DOM.statusModalMedia.innerHTML = `<video src="${status.media_url}" controls autoplay muted playsinline></video>`;
+      DOM.statusModalMedia.innerHTML = `<video src="${escapeHtml(status.media_url)}" controls autoplay muted playsinline></video>`;
     } else if (status.media_url) {
-      DOM.statusModalMedia.innerHTML = `<img src="${status.media_url}" alt="Status media">`;
+      DOM.statusModalMedia.innerHTML = `<img src="${escapeHtml(status.media_url)}" alt="Status media">`;
     } else {
       DOM.statusModalMedia.innerHTML = '';
     }
@@ -2313,34 +2389,6 @@
   // ============================================================
   // 12. ADMIN FUNCTIONS
   // ============================================================
-  async function generateRoster() {
-    const students = [];
-    const count = CONFIG.FEATURES.ROSTER.STUDENT_COUNT;
-    const prefix = CONFIG.FEATURES.ROSTER.PREFIX;
-    const passLength = CONFIG.FEATURES.ROSTER.PASSWORD_LENGTH;
-
-    for (let i = 1; i <= count; i++) {
-      const uid = `${prefix}${String(i).padStart(3, '0')}`;
-      const pass = Math.random().toString(36).slice(2, 2 + passLength);
-      students.push({ username: uid, password: pass });
-      try {
-        await supabase.auth.signUp({ email: generateEmail(uid), password: pass });
-      } catch (e) { /* ignore duplicate errors */ }
-    }
-
-    let csv = 'Username,Password\n';
-    students.forEach(s => csv += `${s.username},${s.password}\n`);
-
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `roster_${count}_students.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    alert(`✅ ${count} student roster generated and downloaded!`);
-  }
 
   async function exportAttendance() {
     const { data, error } = await supabase.from(CONFIG.SUPABASE.TABLES.ATTENDANCE).select('*');
@@ -2400,7 +2448,7 @@
     }
     const showAll = DOM.sharedMediaGrid.dataset.showAll === 'true';
     const shown = showAll ? media : media.slice(-6);
-    DOM.sharedMediaGrid.innerHTML = shown.map((m) => `<img src="${m.file_url}" alt="Shared media" loading="lazy">`).join('');
+    DOM.sharedMediaGrid.innerHTML = shown.map((m) => `<img src="${escapeHtml(m.file_url)}" alt="Shared media" loading="lazy">`).join('');
     DOM.profileSeeAllMedia.classList.toggle('hidden', media.length <= 6);
   }
 
