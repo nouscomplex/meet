@@ -1035,13 +1035,55 @@
   // ============================================================
   // 8b. REALTIME MESSAGE SYNC (FIXED WITH DELIVERY)
   // ============================================================
+  // Guards against the reconnect storm bug: tracks a single pending
+  // reconnect timer so the CLOSED handler and the watchdog can never both
+  // schedule overlapping retries, and counts consecutive failures so we
+  // back off instead of hammering the socket forever.
+  let reconnectTimer = null;
+  let reconnectAttempts = 0;
+
+  function scheduleReconnect(channelId) {
+    if (reconnectTimer) return; // already scheduled, don't stack another
+    if (!state.isTabFocused || !state.currentChannel || state.currentChannel.id !== channelId) return;
+
+    reconnectAttempts += 1;
+    // Capped exponential backoff: 2s, 4s, 8s, ... up to 30s, so a channel
+    // that keeps failing (e.g. Realtime not enabled on the table, an RLS
+    // policy blocking it, or a genuinely offline connection) doesn't spin
+    // the socket in a tight loop.
+    const delay = Math.min(30000, 2000 * Math.pow(2, reconnectAttempts - 1));
+    console.log(`🔁 Reconnect attempt ${reconnectAttempts} in ${delay / 1000}s...`);
+
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      if (state.currentChannel && state.currentChannel.id === channelId) {
+        subscribeToMessages(channelId);
+      }
+    }, delay);
+  }
+
   function subscribeToMessages(channelId) {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+
     if (state.messagesSubscription) {
       supabase.removeChannel(state.messagesSubscription);
       state.messagesSubscription = null;
     }
 
-    state.messagesSubscription = supabase
+    // Local reference to THIS channel instance. The status callback below
+    // only acts when it's still the one referenced in state — this is what
+    // stops the recursive-close bug: calling removeChannel() on a channel
+    // from inside its own status callback (while it's already
+    // closing/closed) re-fires that same callback synchronously, and
+    // without this guard that becomes infinite recursion / a stack
+    // overflow. We simply never call removeChannel() again on a channel
+    // that is reporting its own closure — closed means it's already gone.
+    let thisChannel;
+
+    thisChannel = supabase
       .channel(`messages:${channelId}`)
       .on('postgres_changes', { 
         event: 'INSERT', 
@@ -1131,32 +1173,38 @@
           saveCachedMessages(channelId, state.messages);
         }
       })
-      .subscribe((status) => {
+      .subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {
+          reconnectAttempts = 0;
           state.isChannelActive = true;
           console.log(`✅ Subscribed to channel ${channelId}`);
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          // BUGFIX: previously only 'CHANNEL_ERROR' was handled and it only
-          // flipped a flag without ever clearing/replacing the dead
-          // subscription, so receivers stayed silently disconnected.
-          // Treat any non-alive status the same way: mark it inactive, drop
-          // the reference so the watchdog/inactivity reconnect logic can
-          // detect it's gone, and try to resubscribe immediately.
-          console.error(`❌ Channel ${status} for ${channelId} - attempting reconnect`);
+          if (err) console.error(`❌ Channel ${status} for ${channelId}:`, err.message || err);
+          else console.error(`❌ Channel ${status} for ${channelId}`);
           state.isChannelActive = false;
-          if (state.messagesSubscription) {
-            supabase.removeChannel(state.messagesSubscription);
+
+          // Only react if this callback belongs to the channel currently
+          // tracked in state. If it's stale (we've already moved on to a
+          // newer channel instance, or torn this one down ourselves) do
+          // nothing — critically, do NOT call removeChannel() again here.
+          if (state.messagesSubscription === thisChannel) {
             state.messagesSubscription = null;
-          }
-          if (state.isTabFocused && state.currentChannel && state.currentChannel.id === channelId) {
-            setTimeout(() => {
-              if (!state.messagesSubscription && state.currentChannel && state.currentChannel.id === channelId) {
-                subscribeToMessages(channelId);
-              }
-            }, 2000);
+            scheduleReconnect(channelId);
+
+            if (reconnectAttempts === 5) {
+              console.warn(
+                '⚠️ Realtime channel has failed to stay connected 5 times in a row. ' +
+                'This usually means Realtime replication is not enabled for the ' +
+                `"${CONFIG.SUPABASE.TABLES.MESSAGES}" table in the Supabase dashboard ` +
+                '(Database → Replication), or a Row Level Security policy is blocking it — ' +
+                'not a transient network issue. Still retrying, but check that config.'
+              );
+            }
           }
         }
       });
+
+    state.messagesSubscription = thisChannel;
   }
 
   // ============================================================
@@ -2258,7 +2306,11 @@
       const sub = state.messagesSubscription;
       const healthy = sub && sub.state === 'joined';
 
-      if (!healthy) {
+      // If a reconnect is already scheduled/in-flight (via the channel's
+      // own CLOSED/ERROR handler), let that run its course instead of also
+      // firing an immediate resubscribe here — that's what caused the
+      // reconnect storm in the first place.
+      if (!healthy && !reconnectTimer) {
         console.log('🩺 Watchdog: connection unhealthy, reconnecting...', sub ? sub.state : 'no subscription');
         subscribeToMessages(state.currentChannel.id);
       }
