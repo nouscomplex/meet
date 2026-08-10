@@ -1012,7 +1012,16 @@
         .from(CONFIG.SUPABASE.TABLES.MESSAGES)
         .select('*')
         .eq('channel_id', channelId)
-        .order('created_at', { ascending: true })
+        // BUGFIX: this was `ascending: true` with `limit(50)`, which fetches
+        // the OLDEST 50 messages in the channel and stops there. Once a
+        // channel passes 50 total messages, any message sent after that
+        // point can never be returned by this query — it's permanently
+        // excluded, on both initial load and refresh, even though the
+        // channel-list preview (a separate query, ordered descending)
+        // correctly shows it. Order by newest-first so the 50 most recent
+        // messages come back; mergeMessagesSafely() re-sorts them into
+        // ascending order for display, so no other change is needed.
+        .order('created_at', { ascending: false })
         .limit(50);
 
       if (error) {
@@ -1218,7 +1227,10 @@
         .from(CONFIG.SUPABASE.TABLES.MESSAGES)
         .select('*')
         .eq('channel_id', channelId)
-        .order('created_at', { ascending: true })
+        // Same bug as fetchFreshHistory() above: fetch the 50 most recent
+        // messages (descending), not the 50 oldest. mergeMessagesSafely()
+        // sorts them back into ascending order for display.
+        .order('created_at', { ascending: false })
         .limit(50);
 
       if (error) {
