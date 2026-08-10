@@ -249,6 +249,22 @@
   // ============================================================
   let audioCtx = null;
 
+  // Proactively create (and resume) the AudioContext on the very first
+  // user interaction with the page, rather than waiting until the first
+  // notification needs to play — that's still a user-gesture requirement
+  // met, but if a message arrives at the exact moment the context is being
+  // lazily created and is still 'suspended', resume() can race and the
+  // very first beep is silently dropped. Unlocking it early removes that
+  // window entirely.
+  function unlockAudioContext() {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    } catch (e) { /* ignore — playNotifySound() will retry and log if needed */ }
+    ['click', 'keydown', 'touchstart'].forEach((evt) => window.removeEventListener(evt, unlockAudioContext));
+  }
+  ['click', 'keydown', 'touchstart'].forEach((evt) => window.addEventListener(evt, unlockAudioContext, { once: false }));
+
   function playNotifySound() {
     try {
       audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
@@ -284,7 +300,17 @@
           badge: '/favicon.ico',
           tag: 'new-message-' + Date.now(),
           requireInteraction: true,
-          silent: true,
+          // BUGFIX: this was `silent: true`, which explicitly tells the OS
+          // to suppress its own notification sound. That left the custom
+          // Web Audio beep above as the only "ring" — and that beep
+          // depends on the browser's autoplay policy having been unlocked
+          // by a prior user gesture on the page, is quiet by design (a
+          // short, soft sine tone), and some browsers throttle or mute
+          // audio in background tabs outright. The OS-level sound is the
+          // reliable path: it respects system volume, isn't subject to
+          // page-level autoplay restrictions, and is what people actually
+          // expect a notification to sound like. Letting both play is
+          // deliberate — better a little redundant than silent.
         });
         
         setTimeout(() => {
