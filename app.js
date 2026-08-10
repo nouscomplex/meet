@@ -2864,40 +2864,65 @@
   }
 
   async function syncVapidSubscriptionOnLogin(username) {
+    // BUGFIX: every distinct failure mode here — no service worker, the
+    // push subscribe() call throwing, or the Supabase upsert failing —
+    // used to collapse into a single `return false`, which the caller then
+    // turned into the same generic "sync_failed" alert no matter which one
+    // actually happened. That made it impossible to tell, from the alert
+    // alone, whether the problem was the service worker never activating,
+    // the browser's push service rejecting the subscription, or a database
+    // /RLS error on the upsert — three completely different things to fix.
+    // Now each step reports its own reason (and the real error message for
+    // the database case, which is usually an RLS policy or a missing
+    // unique constraint on user_id).
     try {
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
         console.warn('Push notifications not supported on this browser/device.');
-        return false;
+        return { ok: false, reason: 'not_supported' };
       }
 
       if (!CONFIG.PUSH || !CONFIG.PUSH.VAPID_PUBLIC_KEY) {
         console.warn('No VAPID public key configured — push sync skipped.');
-        return false;
+        return { ok: false, reason: 'not_configured' };
       }
 
       const { data: userData, error: userError } = await supabase.auth.getUser();
       if (userError || !userData?.user) {
         console.warn('Could not get user UUID:', userError);
-        return false;
+        return { ok: false, reason: 'no_auth_user', detail: userError?.message };
       }
       
       const userUuid = userData.user.id;
       console.log(`🔑 Using user UUID: ${userUuid}`);
 
-      const registration = await navigator.serviceWorker.ready;
+      let registration;
+      try {
+        registration = await navigator.serviceWorker.ready;
+      } catch (swErr) {
+        console.error('Service worker never became ready:', swErr);
+        return { ok: false, reason: 'sw_not_ready', detail: swErr?.message };
+      }
 
       let subscription = await registration.pushManager.getSubscription();
 
       if (!subscription) {
-        subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(CONFIG.PUSH.VAPID_PUBLIC_KEY)
-        });
+        try {
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(CONFIG.PUSH.VAPID_PUBLIC_KEY)
+          });
+        } catch (subErr) {
+          // Common causes: a malformed/mismatched VAPID public key, or the
+          // browser's push service being unreachable (blocked by a
+          // firewall/extension).
+          console.error('pushManager.subscribe() failed:', subErr);
+          return { ok: false, reason: 'push_subscribe_failed', detail: subErr?.message };
+        }
       }
 
       if (!subscription) {
         console.warn('Could not create push subscription');
-        return false;
+        return { ok: false, reason: 'push_subscribe_failed' };
       }
 
       const subscriptionJson = subscription.toJSON();
@@ -2914,13 +2939,20 @@
           updated_at: new Date().toISOString()
         }, { onConflict: 'user_id' });
 
-      if (error) throw error;
+      if (error) {
+        // Almost always either: (a) no Row Level Security policy lets this
+        // user INSERT/UPDATE their own row in user_device_tokens, or (b)
+        // there's no UNIQUE constraint on user_id for onConflict to target.
+        console.error('Failed to save push subscription to Supabase:', error);
+        return { ok: false, reason: 'db_error', detail: error.message };
+      }
+
       console.log("✅ VAPID Push Subscription safely stored in Supabase.");
-      return true;
+      return { ok: true };
 
     } catch (err) {
       console.error("Failed to sync push configurations:", err);
-      return false;
+      return { ok: false, reason: 'error', detail: err?.message };
     }
   }
 
@@ -2944,11 +2976,10 @@
         return { ok: false, reason: 'permission_denied' };
       }
 
-      const synced = await syncVapidSubscriptionOnLogin(state.currentUser.username);
-      return { ok: !!synced, reason: synced ? null : 'sync_failed' };
+      return await syncVapidSubscriptionOnLogin(state.currentUser.username);
     } catch (e) {
       console.warn('Push subscription failed:', e);
-      return { ok: false, reason: 'error' };
+      return { ok: false, reason: 'error', detail: e?.message };
     }
   }
 
@@ -2976,7 +3007,10 @@
     not_supported: 'Push notifications are not supported on this browser/device.',
     not_configured: 'Push notifications are not configured for this app yet.',
     permission_denied: 'Notification permission was not granted. Enable notifications for this site in your browser settings and try again.',
-    sync_failed: 'Could not save your notification subscription. Check your connection and try again.',
+    no_auth_user: 'Could not verify your account. Try signing out and back in.',
+    sw_not_ready: 'The background service worker never started. Check that sw.js is deployed and registers without errors (see the console).',
+    push_subscribe_failed: 'The browser rejected the push subscription — this usually means the VAPID public key is wrong or missing.',
+    db_error: 'Could not save your notification subscription to the database.',
     error: 'Something went wrong turning on notifications. Please try again.',
   };
 
@@ -3011,17 +3045,21 @@
 
     try {
       if (enabled) {
-        const { ok, reason } = await subscribeToPush();
+        const { ok, reason, detail } = await subscribeToPush();
 
         // BUGFIX: previously this always overwrote DOM.notifToggle.checked
         // with the raw result, so any transient failure (permission dialog
         // dismissed, momentary network error while syncing the subscription
         // to Supabase, etc.) made the toggle silently snap back off with no
         // explanation. Now we only turn it back off when it genuinely
-        // failed, and we tell the user why.
+        // failed, and we tell the user why — including the actual database
+        // error text when it's a db_error, since that's almost always an
+        // RLS policy or a missing unique constraint and the exact message
+        // says which.
         DOM.notifToggle.checked = ok;
         if (!ok) {
-          alert(PUSH_FAILURE_MESSAGES[reason] || PUSH_FAILURE_MESSAGES.error);
+          const base = PUSH_FAILURE_MESSAGES[reason] || PUSH_FAILURE_MESSAGES.error;
+          alert(detail ? `${base}\n\nDetails: ${detail}` : base);
         }
       } else {
         await unsubscribeFromPush();
