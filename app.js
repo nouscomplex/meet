@@ -1310,17 +1310,13 @@
         `;
       }
 
-      // ✅ FIX: Show delivery status for messages from others
-      let deliveryStatus = '';
-      if (!isMine && msg.username !== 'system') {
-        if (msg.seen_at) {
-          deliveryStatus = `<span class="msg-delivery-status seen"><i class="fas fa-check-double"></i> Seen</span>`;
-        } else if (msg.delivered_at) {
-          deliveryStatus = `<span class="msg-delivery-status delivered"><i class="fas fa-check-double"></i> Delivered</span>`;
-        } else {
-          deliveryStatus = `<span class="msg-delivery-status sent"><i class="fas fa-check"></i> Sent</span>`;
-        }
-      }
+      // Delivery ticks (sent/delivered/seen) belong only on the sender's
+      // own outgoing messages — see the isMine footerHtml below, which uses
+      // ticksHtml(). They were previously also being rendered here on
+      // *incoming* messages (i.e. shown to the receiver, on messages sent
+      // TO them by someone else), which doesn't make sense: delivery status
+      // is information for the sender about their own message, not
+      // something the receiver needs to see on messages they're reading.
 
       const footerHtml = isMine
         ? `<div class="msg-meta" style="margin-top:2px;">${ticksHtml(msg)}${msg.seen_at ? `<span class="msg-seen-time">Seen ${formatDate(msg.seen_at)}</span>` : ''}</div>`
@@ -1333,7 +1329,6 @@
           <div class="msg-meta">
             <span class="msg-author">${escapeHtml(displayName)}</span>
             <span class="msg-time">${formatDate(msg.created_at)}</span>
-            ${deliveryStatus}
           </div>
           ${bubbleHtml}
           ${footerHtml}
