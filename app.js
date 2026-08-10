@@ -1178,7 +1178,12 @@
 
   function scheduleReconnect(channelId) {
     if (reconnectTimer) return; // already scheduled, don't stack another
-    if (!state.isTabFocused || !state.currentChannel || state.currentChannel.id !== channelId) return;
+    // BUGFIX: this used to also require state.isTabFocused, which made
+    // sense back when a hidden tab intentionally had no connection to
+    // reconnect. Now the connection is meant to stay alive (and self-heal)
+    // while backgrounded too, so this only needs to check that there's
+    // still a current channel to reconnect to.
+    if (!state.currentChannel || state.currentChannel.id !== channelId) return;
 
     reconnectAttempts += 1;
     // Capped exponential backoff: 2s, 4s, 8s, ... up to 30s, so a channel
@@ -2464,8 +2469,16 @@
     // could go unnoticed indefinitely and messages would stop arriving.
     // Poll the channel's actual state periodically and resubscribe if it's
     // not in a healthy 'joined' state.
+    //
+    // BUGFIX: this used to skip entirely while `!state.isTabFocused` (i.e.
+    // whenever the tab was backgrounded) — back when a hidden tab
+    // deliberately dropped the connection, that made sense. Now that the
+    // connection is intentionally kept alive while hidden (so background
+    // notifications can ring), the watchdog needs to keep monitoring it
+    // then too, or a dropped connection while backgrounded would just stay
+    // dropped silently until the tab was refocused.
     state.connectionWatchdog = setInterval(() => {
-      if (!state.isTabFocused || !state.currentChannel) return;
+      if (!state.currentChannel) return;
 
       const sub = state.messagesSubscription;
       const healthy = sub && sub.state === 'joined';
@@ -2526,14 +2539,17 @@
 
     const handleVisibilityChange = async () => {
       if (document.hidden) {
-        console.log("🔴 Tab hidden. Dropping connection to save free tier slots.");
+        // BUGFIX: this used to tear down state.messagesSubscription here —
+        // "save free tier slots" — which is fundamentally incompatible with
+        // wanting a live sound/notification while the tab is backgrounded:
+        // there is no way to ring from a connection that's deliberately
+        // closed the moment the tab isn't visible. A hidden tab is not a
+        // closed one — the browser keeps it running (throttled, but the
+        // WebSocket stays open fine) — so there's no need to disconnect at
+        // all here. Only stop tracking active-tab presence.
+        console.log("🔴 Tab hidden. Keeping message connection alive for background notifications.");
         state.isTabFocused = false;
-        
-        if (state.messagesSubscription) {
-          teardownMessagesSubscription();
-          state.isChannelActive = false;
-        }
-        
+
         if (state.tabChannel) {
           await supabase.removeChannel(state.tabChannel);
           state.tabChannel = null;
