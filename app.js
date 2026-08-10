@@ -2260,10 +2260,19 @@
   // 5g. INACTIVITY DISCONNECTION MANAGEMENT
   // ============================================================
   function setupInactivityManager() {
-    if (state.inactivityTimer) {
-      clearTimeout(state.inactivityTimer);
-      state.inactivityTimer = null;
-    }
+    // BUGFIX: this function is called from selectChannel() every single time
+    // a channel is opened or switched, but it was never paired with its own
+    // cleanup — only clearTimeout(state.inactivityTimer) ran here, while the
+    // watchdog setInterval() and the window activity-event listeners from
+    // every PREVIOUS call were left running forever. Browsing between
+    // channels a few times during a session left several duplicate
+    // watchdogs and listeners all firing at once, each independently calling
+    // subscribeToMessages() — which is exactly the kind of overlapping,
+    // rapid-fire resubscribe activity that causes channels to thrash and
+    // messages to go missing intermittently. Tearing down any previous
+    // instance before creating a new one makes this idempotent no matter
+    // how many times (or how quickly) it's called.
+    cleanupInactivityManager();
 
     function resetInactivityTimer() {
       if (state.inactivityTimer) {
@@ -2361,10 +2370,11 @@
   // 5h. TAB FOCUS MANAGER
   // ============================================================
   function setupTabFocusManager() {
-    if (state.tabChannel) {
-      supabase.removeChannel(state.tabChannel);
-      state.tabChannel = null;
-    }
+    // Same bug as setupInactivityManager() above: called on every channel
+    // switch without ever tearing down the previous visibilitychange
+    // listener, so they piled up and all fired together on every tab
+    // switch. Clean up any previous instance first.
+    cleanupTabFocusManager();
 
     if (state.currentChannel) {
       state.tabChannel = supabase.channel(`tab-focus-${state.currentChannel.id}`);
