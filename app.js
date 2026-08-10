@@ -813,10 +813,7 @@
     if (error) { alert('Delete failed: ' + error.message); return; }
     if (state.currentChannel?.id === channelId) {
       state.currentChannel = null;
-      if (state.messagesSubscription) {
-        supabase.removeChannel(state.messagesSubscription);
-        state.messagesSubscription = null;
-      }
+      teardownMessagesSubscription();
     }
     await renderChannels();
   }
@@ -1124,6 +1121,35 @@
   let reconnectTimer = null;
   let reconnectAttempts = 0;
 
+  // THE ACTUAL ROOT CAUSE of the reconnect loop coming back: supabase-js
+  // fires a channel's status callback with 'CLOSED' *synchronously*, as
+  // part of the very call to removeChannel() that tears it down — and it
+  // fires with the OLD channel still sitting in state.messagesSubscription
+  // (the line that nulls it out hasn't run yet). So every single
+  // *intentional* teardown — switching channels, the tab being hidden,
+  // deleting a channel, signing out — looked exactly like an unexpected
+  // drop to that channel's own callback, which then dutifully scheduled a
+  // reconnect for a channel we were deliberately replacing or tearing down.
+  // That reconnect fires later, calls subscribeToMessages() again, which
+  // tears down the (perfectly healthy) new channel the same way, which
+  // schedules ANOTHER reconnect — forever, without ever crashing, just
+  // continuously thrashing the connection so it's rarely actually joined
+  // when a message arrives.
+  //
+  // Every removeChannel(state.messagesSubscription) call in this file must
+  // go through this helper so the flag is set for the duration of the
+  // (synchronous) teardown, letting the status callback tell the two cases
+  // apart.
+  let isIntentionalTeardown = false;
+
+  function teardownMessagesSubscription() {
+    if (!state.messagesSubscription) return;
+    isIntentionalTeardown = true;
+    supabase.removeChannel(state.messagesSubscription);
+    isIntentionalTeardown = false;
+    state.messagesSubscription = null;
+  }
+
   function scheduleReconnect(channelId) {
     if (reconnectTimer) return; // already scheduled, don't stack another
     if (!state.isTabFocused || !state.currentChannel || state.currentChannel.id !== channelId) return;
@@ -1150,10 +1176,7 @@
       reconnectTimer = null;
     }
 
-    if (state.messagesSubscription) {
-      supabase.removeChannel(state.messagesSubscription);
-      state.messagesSubscription = null;
-    }
+    teardownMessagesSubscription();
 
     // Local reference to THIS channel instance. The status callback below
     // only acts when it's still the one referenced in state — this is what
@@ -1261,14 +1284,31 @@
           state.isChannelActive = true;
           console.log(`✅ Subscribed to channel ${channelId}`);
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          // Skip entirely if this closure is us tearing this channel down
+          // on purpose (teardownMessagesSubscription() sets this flag for
+          // the duration of the synchronous removeChannel() call). This is
+          // the actual fix for the reconnect-storm bug: previously every
+          // intentional teardown — switching channels, tab hidden, sign
+          // out, deleting a channel — looked identical to an unexpected
+          // drop to this callback (it fires synchronously, with the old
+          // channel still sitting in state.messagesSubscription), so it
+          // kept scheduling reconnects for channels we were deliberately
+          // replacing, which tore down the replacement the same way, on
+          // and on — a permanent thrash loop that never crashed but rarely
+          // left the channel actually joined when a message came in.
+          if (isIntentionalTeardown) {
+            console.log(`↩️ Channel ${status} for ${channelId} — intentional teardown, not reconnecting`);
+            return;
+          }
+
           if (err) console.error(`❌ Channel ${status} for ${channelId}:`, err.message || err);
           else console.error(`❌ Channel ${status} for ${channelId}`);
           state.isChannelActive = false;
 
           // Only react if this callback belongs to the channel currently
           // tracked in state. If it's stale (we've already moved on to a
-          // newer channel instance, or torn this one down ourselves) do
-          // nothing — critically, do NOT call removeChannel() again here.
+          // newer channel instance) do nothing — critically, do NOT call
+          // removeChannel() again here.
           if (state.messagesSubscription === thisChannel) {
             state.messagesSubscription = null;
             scheduleReconnect(channelId);
@@ -1549,17 +1589,15 @@
         saveCachedMessages(state.currentChannel.id, state.messages);
       }
 
-      // BUGFIX: this function existed and was fully implemented but was
-      // never actually called from anywhere — messages synced fine for
-      // anyone with the app open (that's the realtime channel), but no
-      // device ever "rang"/alerted while backgrounded or closed, because
-      // no push notification was ever sent. Fire-and-forget: it has its
-      // own try/catch and shouldn't block the send flow or the UI.
-      sendVapidNotificationsToOfflineStudents(
-        state.currentUser.username,
-        content || (fileUrl ? '📎 Sent an attachment' : ''),
-        state.currentChannel.id
-      );
+      // NOTE: push notifications are handled by a Database Webhook on the
+      // messages table (server-side, fires on every INSERT regardless of
+      // the sending browser). A client-side call to
+      // sendVapidNotificationsToOfflineStudents() used to live here too —
+      // remove it: with the webhook already covering this, calling it from
+      // both places sends every push notification twice. Keeping the
+      // server-side trigger as the single source of truth is also more
+      // reliable, since it fires even if the sender's tab closes
+      // immediately after sending.
     }
 
     state.replyingTo = null;
@@ -2380,8 +2418,7 @@
       state.inactivityTimer = setTimeout(() => {
         if (state.messagesSubscription && state.isTabFocused) {
           console.log("⏰ 5 min idle. Disconnecting to save resources.");
-          supabase.removeChannel(state.messagesSubscription);
-          state.messagesSubscription = null;
+          teardownMessagesSubscription();
           state.isChannelActive = false;
           console.log("💤 Channel disconnected. Will reconnect when active.");
         }
@@ -2467,8 +2504,7 @@
         state.isTabFocused = false;
         
         if (state.messagesSubscription) {
-          supabase.removeChannel(state.messagesSubscription);
-          state.messagesSubscription = null;
+          teardownMessagesSubscription();
           state.isChannelActive = false;
         }
         
@@ -2676,10 +2712,7 @@
       console.warn('Sign out error:', e); 
     }
 
-    if (state.messagesSubscription) { 
-      supabase.removeChannel(state.messagesSubscription); 
-      state.messagesSubscription = null; 
-    }
+    teardownMessagesSubscription();
     unsubscribeFromChannelListUpdates();
     if (scheduleSubscription) { 
       supabase.removeChannel(scheduleSubscription); 
