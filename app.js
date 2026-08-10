@@ -83,6 +83,7 @@
     currentScreen: 'chats',
     cachedMessages: {},
     inactivityTimer: null,
+    connectionWatchdog: null,
     INACTIVITY_TIMEOUT: 300000,
     isChannelActive: false,
     isTabFocused: true,
@@ -532,7 +533,14 @@
     }
     
     state.currentScreen = name;
-    
+
+    if (name === 'settings' && typeof syncNotificationToggleState === 'function') {
+      // Reflect the real subscription state whenever the user opens
+      // Settings, so the toggle never *looks* like it silently turned
+      // itself off (or on) behind the user's back.
+      syncNotificationToggleState();
+    }
+
     if (!isBackNavigation) {
       pushScreenState(name);
     }
@@ -1127,9 +1135,26 @@
         if (status === 'SUBSCRIBED') {
           state.isChannelActive = true;
           console.log(`✅ Subscribed to channel ${channelId}`);
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error(`❌ Channel error for ${channelId}`);
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          // BUGFIX: previously only 'CHANNEL_ERROR' was handled and it only
+          // flipped a flag without ever clearing/replacing the dead
+          // subscription, so receivers stayed silently disconnected.
+          // Treat any non-alive status the same way: mark it inactive, drop
+          // the reference so the watchdog/inactivity reconnect logic can
+          // detect it's gone, and try to resubscribe immediately.
+          console.error(`❌ Channel ${status} for ${channelId} - attempting reconnect`);
           state.isChannelActive = false;
+          if (state.messagesSubscription) {
+            supabase.removeChannel(state.messagesSubscription);
+            state.messagesSubscription = null;
+          }
+          if (state.isTabFocused && state.currentChannel && state.currentChannel.id === channelId) {
+            setTimeout(() => {
+              if (!state.messagesSubscription && state.currentChannel && state.currentChannel.id === channelId) {
+                subscribeToMessages(channelId);
+              }
+            }, 2000);
+          }
         }
       });
   }
@@ -2186,11 +2211,21 @@
         state.inactivityTimer = null;
       }
       
-      if (state.messagesSubscription && state.messagesSubscription.state === 'closed') {
+      // BUGFIX: after the idle timeout fires below, state.messagesSubscription is set
+      // to null (not left in a 'closed' state), so the old check here
+      // (`state.messagesSubscription && state.messagesSubscription.state === 'closed'`)
+      // could never be true and the channel was never resubscribed on the next
+      // activity. That silently left receivers permanently disconnected from
+      // realtime updates until a full page reload. Reconnect whenever there is
+      // no live subscription OR the existing one has closed/errored.
+      const needsReconnect = state.isTabFocused && state.currentChannel && (
+        !state.messagesSubscription ||
+        state.messagesSubscription.state === 'closed' ||
+        state.messagesSubscription.state === 'errored'
+      );
+      if (needsReconnect) {
         console.log("🔄 User active! Reconnecting...");
-        if (state.currentChannel) {
-          subscribeToMessages(state.currentChannel.id);
-        }
+        subscribeToMessages(state.currentChannel.id);
       }
 
       state.inactivityTimer = setTimeout(() => {
@@ -2211,10 +2246,32 @@
       window.addEventListener(event, resetInactivityTimer);
     });
 
+    // WATCHDOG: a receiver who is just reading messages (not moving the
+    // mouse/typing) never fires the activity events above, so a silently
+    // dropped realtime channel (network blip, Supabase closing the socket)
+    // could go unnoticed indefinitely and messages would stop arriving.
+    // Poll the channel's actual state periodically and resubscribe if it's
+    // not in a healthy 'joined' state.
+    state.connectionWatchdog = setInterval(() => {
+      if (!state.isTabFocused || !state.currentChannel) return;
+
+      const sub = state.messagesSubscription;
+      const healthy = sub && sub.state === 'joined';
+
+      if (!healthy) {
+        console.log('🩺 Watchdog: connection unhealthy, reconnecting...', sub ? sub.state : 'no subscription');
+        subscribeToMessages(state.currentChannel.id);
+      }
+    }, 20000);
+
     state._inactivityCleanup = function() {
       if (state.inactivityTimer) {
         clearTimeout(state.inactivityTimer);
         state.inactivityTimer = null;
+      }
+      if (state.connectionWatchdog) {
+        clearInterval(state.connectionWatchdog);
+        state.connectionWatchdog = null;
       }
       activityEvents.forEach(event => {
         window.removeEventListener(event, resetInactivityTimer);
@@ -2403,6 +2460,8 @@
     } catch (e) {
       console.warn('Notification permission request failed:', e);
     }
+
+    syncNotificationToggleState();
 
     screenHistory = [];
     goToScreen('chats');
@@ -2634,27 +2693,31 @@
     }
   }
 
+  // Returns { ok, reason } instead of a bare boolean so the caller can tell
+  // the user *why* the toggle didn't stay on, instead of it just silently
+  // flipping back off.
   async function subscribeToPush() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
       console.warn('Push notifications not supported on this browser/device.');
-      return false;
+      return { ok: false, reason: 'not_supported' };
     }
     if (!CONFIG.PUSH || !CONFIG.PUSH.VAPID_PUBLIC_KEY) {
       console.warn('No VAPID public key configured — push notifications disabled.');
-      return false;
+      return { ok: false, reason: 'not_configured' };
     }
 
     try {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
         console.warn('Notification permission not granted.');
-        return false;
+        return { ok: false, reason: 'permission_denied' };
       }
 
-      return await syncVapidSubscriptionOnLogin(state.currentUser.username);
+      const synced = await syncVapidSubscriptionOnLogin(state.currentUser.username);
+      return { ok: !!synced, reason: synced ? null : 'sync_failed' };
     } catch (e) {
       console.warn('Push subscription failed:', e);
-      return false;
+      return { ok: false, reason: 'error' };
     }
   }
 
@@ -2678,12 +2741,63 @@
     }
   }
 
+  const PUSH_FAILURE_MESSAGES = {
+    not_supported: 'Push notifications are not supported on this browser/device.',
+    not_configured: 'Push notifications are not configured for this app yet.',
+    permission_denied: 'Notification permission was not granted. Enable notifications for this site in your browser settings and try again.',
+    sync_failed: 'Could not save your notification subscription. Check your connection and try again.',
+    error: 'Something went wrong turning on notifications. Please try again.',
+  };
+
+  // Reflects the browser's real push subscription + permission state onto
+  // the toggle, instead of trusting whatever it happened to be left at.
+  async function syncNotificationToggleState() {
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        DOM.notifToggle.checked = false;
+        DOM.notifToggle.disabled = true;
+        return;
+      }
+      DOM.notifToggle.disabled = false;
+
+      if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+        DOM.notifToggle.checked = false;
+        return;
+      }
+
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      DOM.notifToggle.checked = !!subscription;
+    } catch (e) {
+      console.warn('Could not check notification status:', e);
+    }
+  }
+
   async function setNotificationsEnabled(enabled) {
-    if (enabled) {
-      const ok = await subscribeToPush();
-      DOM.notifToggle.checked = !!ok;
-    } else {
-      await unsubscribeFromPush();
+    // Disable the toggle briefly while we work, so a slow network request
+    // can't be mistaken for the toggle "not responding".
+    DOM.notifToggle.disabled = true;
+
+    try {
+      if (enabled) {
+        const { ok, reason } = await subscribeToPush();
+
+        // BUGFIX: previously this always overwrote DOM.notifToggle.checked
+        // with the raw result, so any transient failure (permission dialog
+        // dismissed, momentary network error while syncing the subscription
+        // to Supabase, etc.) made the toggle silently snap back off with no
+        // explanation. Now we only turn it back off when it genuinely
+        // failed, and we tell the user why.
+        DOM.notifToggle.checked = ok;
+        if (!ok) {
+          alert(PUSH_FAILURE_MESSAGES[reason] || PUSH_FAILURE_MESSAGES.error);
+        }
+      } else {
+        await unsubscribeFromPush();
+        DOM.notifToggle.checked = false;
+      }
+    } finally {
+      DOM.notifToggle.disabled = false;
     }
   }
 
