@@ -2895,36 +2895,6 @@
       const userUuid = userData.user.id;
       console.log(`🔑 Using user UUID: ${userUuid}`);
 
-      // DIAGNOSTIC: a maximally permissive RLS policy (WITH CHECK true) on
-      // user_device_tokens still rejected this insert, which points away
-      // from the policy's condition logic entirely — it suggests this
-      // request may not be carrying a valid session/JWT at all, so
-      // Postgres is evaluating it as the `anon` role rather than
-      // `authenticated`. This decodes the session token's own claims
-      // directly and surfaces it via alert() (not just console.log/warn),
-      // since a console log-level filter could otherwise hide this
-      // entirely and make it look like the code never ran.
-      try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData?.session?.access_token;
-        if (!token) {
-          alert('🩺 DIAGNOSTIC: no access_token on the current session at all — this request will hit Postgres as anon, which is why even a WITH CHECK (true) policy fails.');
-        } else {
-          const claims = JSON.parse(atob(token.split('.')[1]));
-          const now = Math.floor(Date.now() / 1000);
-          let msg = `🩺 DIAGNOSTIC: JWT role="${claims.role}", sub="${claims.sub}", exp=${claims.exp} (now=${now})`;
-          if (claims.role !== 'authenticated') {
-            msg += `\n\n⚠️ role is NOT "authenticated" — this is almost certainly why the RLS policy rejects it.`;
-          }
-          if (claims.exp && claims.exp < now) {
-            msg += `\n\n⚠️ token is EXPIRED — session refresh may be failing silently.`;
-          }
-          alert(msg);
-        }
-      } catch (diagErr) {
-        alert('🩺 DIAGNOSTIC: could not inspect session token: ' + (diagErr?.message || diagErr));
-      }
-
       let registration;
       try {
         registration = await navigator.serviceWorker.ready;
