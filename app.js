@@ -1548,6 +1548,18 @@
       if (state.currentChannel) {
         saveCachedMessages(state.currentChannel.id, state.messages);
       }
+
+      // BUGFIX: this function existed and was fully implemented but was
+      // never actually called from anywhere — messages synced fine for
+      // anyone with the app open (that's the realtime channel), but no
+      // device ever "rang"/alerted while backgrounded or closed, because
+      // no push notification was ever sent. Fire-and-forget: it has its
+      // own try/catch and shouldn't block the send flow or the UI.
+      sendVapidNotificationsToOfflineStudents(
+        state.currentUser.username,
+        content || (fileUrl ? '📎 Sent an attachment' : ''),
+        state.currentChannel.id
+      );
     }
 
     state.replyingTo = null;
