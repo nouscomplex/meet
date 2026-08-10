@@ -843,6 +843,79 @@
   }
 
   // ============================================================
+  // GLOBAL CHANNEL-LIST REALTIME (previews + unread badges)
+  // ============================================================
+  // The per-channel subscription (subscribeToMessages) only listens to the
+  // ONE channel currently open in the chat detail screen — messages
+  // arriving in any other channel never reach the client live, so the
+  // channel list's last-message preview, timestamp, and unread badge only
+  // ever updated on login, your own actions, or a manual refresh. This
+  // separate, unfiltered subscription listens for new messages across every
+  // channel and updates the list in place as they arrive.
+  let channelListSubscription = null;
+
+  function isKnownChannelId(channelId) {
+    return allChannels.some((c) => String(c.id) === String(channelId));
+  }
+
+  function handleGlobalMessageInsert(msg) {
+    if (!msg || !isKnownChannelId(msg.channel_id)) return;
+
+    const existing = state.channelPreviews[msg.channel_id];
+    if (!existing || new Date(msg.created_at) >= new Date(existing.created_at || 0)) {
+      state.channelPreviews[msg.channel_id] = msg;
+    }
+
+    // Only bump the unread badge for channels other than the one currently
+    // open (the open channel's own unread count is handled by
+    // markSeen()/refreshUnreadBadges() instead) and only for messages from
+    // someone else.
+    const isOpenChannel = state.currentChannel && String(state.currentChannel.id) === String(msg.channel_id);
+    if (!isOpenChannel && msg.username !== state.currentUser?.username) {
+      state.unreadByChannel[msg.channel_id] = (state.unreadByChannel[msg.channel_id] || 0) + 1;
+      const total = Object.values(state.unreadByChannel).reduce((a, b) => a + b, 0);
+      DOM.navChatsBadge.textContent = total > 99 ? '99+' : String(total);
+      DOM.navChatsBadge.classList.toggle('hidden', total === 0);
+    }
+
+    renderChatList(allChannels);
+  }
+
+  function subscribeToChannelListUpdates() {
+    if (channelListSubscription) {
+      supabase.removeChannel(channelListSubscription);
+      channelListSubscription = null;
+    }
+    if (!state.currentUser) return;
+
+    // Deliberately no channel_id filter — Row Level Security still limits
+    // what actually reaches this client to channels the user can read;
+    // isKnownChannelId() above is just a client-side safety net on top of
+    // that (and covers admins, whose RLS may allow every channel).
+    channelListSubscription = supabase
+      .channel('channel-list-updates')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: CONFIG.SUPABASE.TABLES.MESSAGES,
+      }, (payload) => handleGlobalMessageInsert(payload.new))
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Subscribed to channel-list updates');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          console.warn(`⚠️ channel-list-updates: ${status}`);
+        }
+      });
+  }
+
+  function unsubscribeFromChannelListUpdates() {
+    if (channelListSubscription) {
+      supabase.removeChannel(channelListSubscription);
+      channelListSubscription = null;
+    }
+  }
+
+  // ============================================================
   // DELIVERED / SEEN TRACKING (FIXED)
   // ============================================================
   async function markDelivered(channelId) {
@@ -2517,6 +2590,7 @@
     setupPresence();
     await requestMediaPermissions();
     await renderChannels();
+    subscribeToChannelListUpdates();
     await loadStatuses();
     
     try {
@@ -2594,6 +2668,7 @@
       supabase.removeChannel(state.messagesSubscription); 
       state.messagesSubscription = null; 
     }
+    unsubscribeFromChannelListUpdates();
     if (scheduleSubscription) { 
       supabase.removeChannel(scheduleSubscription); 
       scheduleSubscription = null; 
