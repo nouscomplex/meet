@@ -1132,18 +1132,22 @@ body.theme-dark .btn-live-pill { color: #FFFFFF; }
   color: var(--chat-blue);
 }
 
-/* Ticks for sent messages */
+/* Ticks for sent messages — shown only on the sender's own outgoing
+   bubbles. Single grey check = sent, double grey check = delivered,
+   double blue check = seen. Uses --chat-ink-soft (not --chat-grey) so it
+   stays visible in dark mode too — --chat-grey is a near-black navy tone
+   there, meant for borders, and is nearly invisible as text/icon color. */
 .msg-ticks {
   display: inline-flex;
   align-items: center;
   gap: 1px;
   font-size: 11px;
-  color: var(--chat-grey);
+  color: var(--chat-ink-soft);
   line-height: 1;
 }
 
 .msg-ticks.delivered {
-  color: var(--chat-blue);
+  color: var(--chat-ink-soft);
 }
 
 .msg-ticks.seen {
@@ -1169,9 +1173,10 @@ body.theme-dark .msg-ticks.seen {
   color: #7BB8FF;
 }
 
-body.theme-dark .msg-ticks.delivered {
-  color: #7BB8FF;
-}
+/* "delivered" stays grey (not blue) in dark mode too — only "seen" is
+   blue. --chat-ink-soft already resolves to a legible light grey
+   (#C8CBDD) here via the base .msg-ticks rule, so no override needed for
+   the delivered state. */
 
 /* ============================================================ */
 .msg-bubble {
