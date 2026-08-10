@@ -29,7 +29,12 @@ self.addEventListener('push', (event) => {
     tag: payload.tag || 'orbit-message',
     renotify: true,
     vibrate: [200, 100, 200],
-    data: { url: payload.url || '/' },
+    // BUGFIX: app.js sends the click-through URL nested under
+    // payload.data.url (alongside type/channel_id/sender), not as a
+    // top-level payload.url. Reading payload.url here always came back
+    // undefined, so every notification silently fell back to '/' instead
+    // of deep-linking to the actual chat.
+    data: { url: (payload.data && payload.data.url) || '/' },
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
