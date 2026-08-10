@@ -2901,25 +2901,28 @@
       // request may not be carrying a valid session/JWT at all, so
       // Postgres is evaluating it as the `anon` role rather than
       // `authenticated`. This decodes the session token's own claims
-      // directly, so the console tells us definitively instead of needing
-      // to dig through the Network tab.
+      // directly and surfaces it via alert() (not just console.log/warn),
+      // since a console log-level filter could otherwise hide this
+      // entirely and make it look like the code never ran.
       try {
         const { data: sessionData } = await supabase.auth.getSession();
         const token = sessionData?.session?.access_token;
         if (!token) {
-          console.warn('🩺 DIAGNOSTIC: no access_token on the current session at all — this request will hit Postgres as anon, which is why even a WITH CHECK (true) policy fails.');
+          alert('🩺 DIAGNOSTIC: no access_token on the current session at all — this request will hit Postgres as anon, which is why even a WITH CHECK (true) policy fails.');
         } else {
           const claims = JSON.parse(atob(token.split('.')[1]));
-          console.log('🩺 DIAGNOSTIC: session JWT claims →', { role: claims.role, sub: claims.sub, exp: claims.exp, now: Math.floor(Date.now() / 1000) });
+          const now = Math.floor(Date.now() / 1000);
+          let msg = `🩺 DIAGNOSTIC: JWT role="${claims.role}", sub="${claims.sub}", exp=${claims.exp} (now=${now})`;
           if (claims.role !== 'authenticated') {
-            console.warn(`🩺 DIAGNOSTIC: JWT role is "${claims.role}", not "authenticated" — this is almost certainly why the RLS policy (scoped TO authenticated) rejects it.`);
+            msg += `\n\n⚠️ role is NOT "authenticated" — this is almost certainly why the RLS policy rejects it.`;
           }
-          if (claims.exp && claims.exp < Math.floor(Date.now() / 1000)) {
-            console.warn('🩺 DIAGNOSTIC: this token is EXPIRED — session refresh may be failing silently.');
+          if (claims.exp && claims.exp < now) {
+            msg += `\n\n⚠️ token is EXPIRED — session refresh may be failing silently.`;
           }
+          alert(msg);
         }
       } catch (diagErr) {
-        console.warn('🩺 DIAGNOSTIC: could not inspect session token:', diagErr);
+        alert('🩺 DIAGNOSTIC: could not inspect session token: ' + (diagErr?.message || diagErr));
       }
 
       let registration;
