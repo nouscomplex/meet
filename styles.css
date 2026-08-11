@@ -1279,6 +1279,55 @@ body.theme-dark .msg-time {
 .msg-mine .msg-file { color: var(--chat-white); }
 .msg-file:hover { text-decoration: underline; }
 
+/* WhatsApp-style document card for non-image/video attachments —
+   file-type icon, recovered original filename, and extension badge,
+   instead of a bare "Attached file" text link. */
+.msg-doc-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.045);
+  text-decoration: none;
+  max-width: 260px;
+  transition: background 0.15s ease;
+}
+.msg-doc-card:hover { background: rgba(0,0,0,0.08); }
+.msg-mine .msg-doc-card { background: rgba(255,255,255,0.16); }
+.msg-mine .msg-doc-card:hover { background: rgba(255,255,255,0.24); }
+
+.msg-doc-icon {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: var(--chat-accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.msg-doc-info { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.msg-doc-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--chat-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+}
+.msg-mine .msg-doc-name { color: var(--chat-white); }
+.msg-doc-ext { font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em; color: var(--chat-ink-soft); }
+.msg-mine .msg-doc-ext { color: rgba(255,255,255,0.75); }
+
+.msg-doc-download { margin-left: auto; flex-shrink: 0; color: var(--chat-ink-soft); font-size: 13px; }
+.msg-mine .msg-doc-download { color: rgba(255,255,255,0.75); }
+
 /* WhatsApp-style attachment preview: capped height + object-fit:cover
    crops tall images so only part shows in the bubble ("shown half")
    until the user taps to open the full-resolution lightbox view. */
