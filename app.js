@@ -1524,11 +1524,34 @@
       bubbleHtml += `<div class="msg-bubble">${replyHtml}</div>`;
     }
     if (msg.file_url) {
-      bubbleHtml += `
-        <a href="${escapeHtml(msg.file_url)}" target="_blank" rel="noopener" class="msg-file">
-          <i class="fas fa-paperclip"></i> Attached file
-        </a>
-      `;
+      // BUGFIX / FEATURE: every attachment — image, video, or
+      // otherwise — used to render as identical plain text ("📎
+      // Attached file"), with no preview at all until you left the
+      // app entirely (opened it in a new tab). Now images/videos get
+      // a WhatsApp-style thumbnail: capped height (see .msg-media-img
+      // in styles.css), cropped rather than shown at full size, with
+      // a tap-to-expand affordance — the full-resolution view only
+      // opens when you actually tap it.
+      if (isImageFile(msg.file_url)) {
+        bubbleHtml += `
+          <div class="msg-media-preview" data-media-url="${escapeHtml(msg.file_url)}">
+            <img class="msg-media-img" src="${escapeHtml(msg.file_url)}" alt="Attached image" loading="lazy">
+            <span class="msg-media-expand"><i class="fas fa-expand"></i></span>
+          </div>
+        `;
+      } else if (isVideoFile(msg.file_url)) {
+        bubbleHtml += `
+          <div class="msg-media-preview msg-media-video-wrap">
+            <video class="msg-media-img" src="${escapeHtml(msg.file_url)}" controls preload="metadata"></video>
+          </div>
+        `;
+      } else {
+        bubbleHtml += `
+          <a href="${escapeHtml(msg.file_url)}" target="_blank" rel="noopener" class="msg-file">
+            <i class="fas fa-paperclip"></i> Attached file
+          </a>
+        `;
+      }
     }
 
     // Delivery ticks (sent/delivered/seen) belong only on the sender's
@@ -1663,6 +1686,12 @@
   }
 
   DOM.chatMessages.addEventListener('click', (e) => {
+    const mediaPreview = e.target.closest('.msg-media-preview:not(.msg-media-video-wrap)');
+    if (mediaPreview) {
+      openImageLightbox(mediaPreview.dataset.mediaUrl);
+      return;
+    }
+
     const btn = e.target.closest('.msg-reply-btn');
     if (!btn) return;
 
@@ -1678,6 +1707,23 @@
     DOM.replyPreview.classList.remove('hidden');
     DOM.messageInput.focus();
   });
+
+  // Full-resolution view for a tapped image thumbnail — the WhatsApp-
+  // style capped-height preview in the bubble only ever shows a crop
+  // of the image; this is what "opening" it actually means.
+  function openImageLightbox(url) {
+    if (!url) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'lightbox-overlay';
+    overlay.innerHTML = `
+      <button class="lightbox-close" aria-label="Close"><i class="fas fa-times"></i></button>
+      <img class="lightbox-img" src="${escapeHtml(url)}" alt="Attached image, full size">
+    `;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('.lightbox-close').addEventListener('click', close);
+  }
 
   DOM.replyPreviewCancel.addEventListener('click', () => {
     state.replyingTo = null;
