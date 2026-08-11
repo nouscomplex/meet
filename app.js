@@ -523,6 +523,42 @@
     return !!url && /\.(mp4|webm|mov|m4v|ogv)$/i.test(url.split('?')[0]);
   }
 
+  // generateStoragePath() embeds the original filename into the
+  // storage path (see CONFIG.UPLOAD.STORAGE_PATH's {filename} slot),
+  // so the real name survives in the public URL — it just wasn't
+  // being pulled back out anywhere. This recovers it for display.
+  function getFileNameFromUrl(url) {
+    if (!url) return 'File';
+    try {
+      const path = url.split('?')[0];
+      const last = path.substring(path.lastIndexOf('/') + 1);
+      const decoded = decodeURIComponent(last);
+      // Storage paths are prefixed with a timestamp (see
+      // generateStoragePath) — e.g. "1733920481123-report.pdf" —
+      // strip that back off so only the human filename shows.
+      return decoded.replace(/^\d{10,}-/, '') || 'File';
+    } catch {
+      return 'File';
+    }
+  }
+
+  function getFileExt(name) {
+    const match = /\.([a-z0-9]+)$/i.exec(name || '');
+    return match ? match[1].toUpperCase() : '';
+  }
+
+  function getFileIconClass(ext) {
+    const e = (ext || '').toLowerCase();
+    if (e === 'pdf') return 'fa-file-pdf';
+    if (['doc', 'docx'].includes(e)) return 'fa-file-word';
+    if (['xls', 'xlsx', 'csv'].includes(e)) return 'fa-file-excel';
+    if (['ppt', 'pptx'].includes(e)) return 'fa-file-powerpoint';
+    if (['zip', 'rar', '7z'].includes(e)) return 'fa-file-zipper';
+    if (['txt', 'md'].includes(e)) return 'fa-file-lines';
+    if (['mp3', 'wav', 'ogg', 'm4a'].includes(e)) return 'fa-file-audio';
+    return 'fa-file';
+  }
+
   function showError(message) {
     DOM.authErrorText.textContent = message;
     DOM.authError.classList.remove('hidden');
@@ -1546,9 +1582,16 @@
           </div>
         `;
       } else {
+        const fileName = getFileNameFromUrl(msg.file_url);
+        const ext = getFileExt(fileName);
         bubbleHtml += `
-          <a href="${escapeHtml(msg.file_url)}" target="_blank" rel="noopener" class="msg-file">
-            <i class="fas fa-paperclip"></i> Attached file
+          <a href="${escapeHtml(msg.file_url)}" target="_blank" rel="noopener" class="msg-doc-card">
+            <span class="msg-doc-icon"><i class="fas ${getFileIconClass(ext)}"></i></span>
+            <span class="msg-doc-info">
+              <span class="msg-doc-name">${escapeHtml(fileName)}</span>
+              <span class="msg-doc-ext">${escapeHtml(ext || 'FILE')}</span>
+            </span>
+            <span class="msg-doc-download"><i class="fas fa-download"></i></span>
           </a>
         `;
       }
