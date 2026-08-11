@@ -2402,15 +2402,36 @@
     
     try {
       if (newUsername && newUsername !== username) {
-        await supabase.from('user_roles').delete().eq('username', username);
-        const { error: roleError } = await supabase
+        // BUGFIX: this used to be delete-then-insert as two separate
+        // round trips. That has two problems: (1) it's not atomic — a
+        // failure between the two steps could leave the user with NO
+        // role row at all — and (2) if the Update button is clicked
+        // twice in quick succession (nothing disabled it while the
+        // request was in flight), the second call's insert collides
+        // with the row the first call just created, throwing this
+        // exact "duplicate key value violates unique constraint
+        // idx_user_roles_unique" error even for a single legitimate
+        // rename. A single UPDATE renaming the existing row in place
+        // is atomic, and a duplicate second click just matches zero
+        // rows (already renamed) instead of erroring.
+        const { error: roleError, count } = await supabase
           .from('user_roles')
-          .insert({ 
-            username: newUsername, 
+          .update({
+            username: newUsername,
             role: newRole,
             display_name: newDisplayName || newUsername
-          });
-        if (roleError) throw roleError;
+          }, { count: 'exact' })
+          .eq('username', username);
+
+        if (roleError) {
+          if (roleError.code === '23505' || /duplicate key/i.test(roleError.message || '')) {
+            throw new Error(`Username "${newUsername}" is already taken by another user.`);
+          }
+          throw roleError;
+        }
+        if (count === 0) {
+          throw new Error(`User "${username}" not found (already renamed or deleted?).`);
+        }
         
         const { error: authError } = await callAdminUpdateUserFunction(username, {
           newEmail: generateEmail(newUsername),
@@ -3383,13 +3404,23 @@
     loadUserForEdit(DOM.manageUserSearch.value);
   });
 
-  DOM.updateUserBtn.addEventListener('click', () => {
+  DOM.updateUserBtn.addEventListener('click', async () => {
     const currentUser = DOM.editUsername.value;
     const newUser = DOM.editNewUsername.value || currentUser;
     const displayName = DOM.editDisplayName.value || currentUser;
     const role = DOM.editRole.value;
     const password = DOM.editPassword.value;
-    updateUserAccount(currentUser, newUser, displayName, role, password);
+
+    // Guard against double-clicks firing two overlapping update
+    // requests (was the root cause of a rename occasionally throwing
+    // "duplicate key value violates unique constraint" on a single
+    // legitimate rename).
+    DOM.updateUserBtn.disabled = true;
+    try {
+      await updateUserAccount(currentUser, newUser, displayName, role, password);
+    } finally {
+      DOM.updateUserBtn.disabled = false;
+    }
   });
 
   DOM.deleteUserBtn.addEventListener('click', () => {
