@@ -1450,81 +1450,144 @@
   }
 
   // ============================================================
-  // RENDER MESSAGES (FIXED WITH DELIVERY STATUS)
+  // RENDER MESSAGES (DIFFED — NO FULL REBUILD)
   // ============================================================
+  // BUGFIX: this used to do `DOM.chatMessages.innerHTML = ''` and
+  // rebuild every single message bubble from scratch on every call —
+  // and renderMessages() is called repeatedly in the background as
+  // part of normal operation (cache paint, fresh fetch merging in,
+  // realtime INSERT/UPDATE/DELETE events, delivery/seen ticks
+  // updating). Even when the resulting content was identical, the
+  // whole message list flashed empty and repainted, which is what
+  // showed up as "blinking". Now each message gets a signature; a
+  // bubble is only rebuilt if its signature actually changed, and
+  // unaffected bubbles are left untouched in the DOM — so a
+  // background refresh that changes nothing visible now does nothing
+  // visible.
+  function messageSignature(msg) {
+    return JSON.stringify([
+      msg.content, msg.file_url, msg.reply_to, msg.reply_username, msg.reply_content,
+      msg.username, msg.created_at, msg.seen_at, msg.delivered_at, msg.isPending
+    ]);
+  }
+
+  function buildMessageEl(msg, signature) {
+    const isMine = msg.username === state.currentUser?.username;
+    const wrap = document.createElement('div');
+    wrap.className = `msg ${isMine ? 'msg-mine' : 'msg-theirs'}`;
+    wrap.dataset.id = msg.id;
+    wrap.dataset.role = roleKey(msg.username);
+    wrap.dataset.sig = signature;
+
+    let replyHtml = '';
+    if (msg.reply_to) {
+      replyHtml = `
+        <div class="msg-reply-quote">
+          <span class="reply-author">${escapeHtml(getDisplayName(msg.reply_username || 'Message'))}</span>
+          <span class="reply-text">${escapeHtml(truncate(msg.reply_content || '', 60))}</span>
+        </div>
+      `;
+    }
+
+    let bubbleHtml = '';
+    if (msg.content) {
+      bubbleHtml += `<div class="msg-bubble">${replyHtml}${escapeHtml(msg.content)}</div>`;
+    } else if (replyHtml) {
+      bubbleHtml += `<div class="msg-bubble">${replyHtml}</div>`;
+    }
+    if (msg.file_url) {
+      bubbleHtml += `
+        <a href="${escapeHtml(msg.file_url)}" target="_blank" rel="noopener" class="msg-file">
+          <i class="fas fa-paperclip"></i> Attached file
+        </a>
+      `;
+    }
+
+    // Delivery ticks (sent/delivered/seen) belong only on the sender's
+    // own outgoing messages. Shown on incoming messages this doesn't
+    // make sense: delivery status is info for the sender about their
+    // own message, not something the receiver needs to see.
+    const footerHtml = isMine
+      ? `<div class="msg-meta" style="margin-top:2px;">${ticksHtml(msg)}${msg.seen_at ? `<span class="msg-seen-time">Seen ${formatDate(msg.seen_at)}</span>` : ''}</div>`
+      : '';
+
+    const displayName = getDisplayName(msg.username);
+    wrap.innerHTML = `
+      ${avatarHtml(msg.username, 'sm')}
+      <div class="msg-body">
+        <div class="msg-meta">
+          <span class="msg-author">${escapeHtml(displayName)}</span>
+          <span class="msg-time">${formatDate(msg.created_at)}</span>
+        </div>
+        ${bubbleHtml}
+        ${footerHtml}
+      </div>
+      <div class="msg-actions">
+        <button class="msg-reply-btn" title="Reply" data-reply-id="${msg.id}"><i class="fas fa-reply"></i></button>
+        ${state.isAdmin ? `<button class="msg-reply-btn" title="Delete message" data-delete-id="${msg.id}" style="margin-left:4px;"><i class="fas fa-trash" style="color:var(--danger);"></i></button>` : ''}
+      </div>
+    `;
+    return wrap;
+  }
+
   function renderMessages() {
     if (!DOM.chatMessages) return;
-    
-    DOM.chatMessages.innerHTML = '';
 
     if (!state.messages.length) {
       DOM.chatMessages.innerHTML = '<div class="empty-note center-text" style="width:100%;">No messages yet — say hello</div>';
       return;
     }
 
+    // Clear the empty-state note (if that's what's currently shown) before
+    // diffing — it has no dataset.id so the diff below would otherwise
+    // just leave it sitting there alongside the real messages.
+    if (!DOM.chatMessages.querySelector('.msg') && DOM.chatMessages.querySelector('.empty-note')) {
+      DOM.chatMessages.innerHTML = '';
+    }
+
+    const existingNodes = new Map();
+    DOM.chatMessages.querySelectorAll('.msg').forEach((el) => existingNodes.set(el.dataset.id, el));
+
+    // Was the view already scrolled to (or near) the bottom before this
+    // update? Only auto-scroll in that case, so a background refresh
+    // doesn't yank someone back down while they're reading old messages.
+    const wasNearBottom = !DOM.chatContainer || (
+      DOM.chatContainer.scrollHeight - DOM.chatContainer.scrollTop - DOM.chatContainer.clientHeight < 80
+    );
+
+    let prevNode = null;
+    let changed = false;
+
     state.messages.forEach((msg) => {
-      const isMine = msg.username === state.currentUser?.username;
-      const wrap = document.createElement('div');
-      wrap.className = `msg ${isMine ? 'msg-mine' : 'msg-theirs'}`;
-      wrap.dataset.id = msg.id;
-      wrap.dataset.role = roleKey(msg.username);
+      const key = String(msg.id);
+      const signature = messageSignature(msg);
+      let node = existingNodes.get(key);
 
-      let replyHtml = '';
-      if (msg.reply_to) {
-        replyHtml = `
-          <div class="msg-reply-quote">
-            <span class="reply-author">${escapeHtml(getDisplayName(msg.reply_username || 'Message'))}</span>
-            <span class="reply-text">${escapeHtml(truncate(msg.reply_content || '', 60))}</span>
-          </div>
-        `;
+      if (node && node.dataset.sig === signature) {
+        existingNodes.delete(key);
+      } else {
+        const freshNode = buildMessageEl(msg, signature);
+        if (node) {
+          node.replaceWith(freshNode);
+          existingNodes.delete(key);
+        }
+        node = freshNode;
+        changed = true;
       }
 
-      let bubbleHtml = '';
-      if (msg.content) {
-        bubbleHtml += `<div class="msg-bubble">${replyHtml}${escapeHtml(msg.content)}</div>`;
-      } else if (replyHtml) {
-        bubbleHtml += `<div class="msg-bubble">${replyHtml}</div>`;
+      const desiredNext = prevNode ? prevNode.nextSibling : DOM.chatMessages.firstChild;
+      if (desiredNext !== node) {
+        DOM.chatMessages.insertBefore(node, desiredNext);
+        changed = true;
       }
-      if (msg.file_url) {
-        bubbleHtml += `
-          <a href="${escapeHtml(msg.file_url)}" target="_blank" rel="noopener" class="msg-file">
-            <i class="fas fa-paperclip"></i> Attached file
-          </a>
-        `;
-      }
-
-      // Delivery ticks (sent/delivered/seen) belong only on the sender's
-      // own outgoing messages — see the isMine footerHtml below, which uses
-      // ticksHtml(). They were previously also being rendered here on
-      // *incoming* messages (i.e. shown to the receiver, on messages sent
-      // TO them by someone else), which doesn't make sense: delivery status
-      // is information for the sender about their own message, not
-      // something the receiver needs to see on messages they're reading.
-
-      const footerHtml = isMine
-        ? `<div class="msg-meta" style="margin-top:2px;">${ticksHtml(msg)}${msg.seen_at ? `<span class="msg-seen-time">Seen ${formatDate(msg.seen_at)}</span>` : ''}</div>`
-        : '';
-
-      const displayName = getDisplayName(msg.username);
-      wrap.innerHTML = `
-        ${avatarHtml(msg.username, 'sm')}
-        <div class="msg-body">
-          <div class="msg-meta">
-            <span class="msg-author">${escapeHtml(displayName)}</span>
-            <span class="msg-time">${formatDate(msg.created_at)}</span>
-          </div>
-          ${bubbleHtml}
-          ${footerHtml}
-        </div>
-        <div class="msg-actions">
-          <button class="msg-reply-btn" title="Reply" data-reply-id="${msg.id}"><i class="fas fa-reply"></i></button>
-          ${state.isAdmin ? `<button class="msg-reply-btn" title="Delete message" data-delete-id="${msg.id}" style="margin-left:4px;"><i class="fas fa-trash" style="color:var(--danger);"></i></button>` : ''}
-        </div>
-      `;
-      DOM.chatMessages.appendChild(wrap);
+      prevNode = node;
     });
 
-    if (DOM.chatContainer) {
+    // Anything left in existingNodes is a message that's no longer in
+    // state.messages (deleted, or dropped off the loaded window).
+    existingNodes.forEach((el) => { el.remove(); changed = true; });
+
+    if (changed && wasNearBottom && DOM.chatContainer) {
       DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
     }
   }
