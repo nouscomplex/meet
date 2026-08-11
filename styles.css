@@ -528,6 +528,47 @@ button { font-family: inherit; }
 .btn-primary { background: var(--navy); color: #fff; padding: 13px 20px; }
 .btn-primary:hover { background: var(--accent-dark); }
 
+/* Standalone variants (not just .btn modifiers) — used by modal
+   button stacks like the delete-user data choice, which apply these
+   classes directly rather than alongside .btn. */
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 14px;
+  border: 1.5px solid var(--border);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink-soft);
+  padding: 12px 18px;
+  transition: transform 0.1s ease, background 0.15s ease;
+}
+.btn-secondary:hover { background: var(--border); }
+.btn-secondary:active { transform: scale(0.98); }
+
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  background: var(--danger);
+  color: #fff;
+  padding: 12px 18px;
+  transition: transform 0.1s ease, filter 0.15s ease;
+}
+.btn-danger:hover { filter: brightness(0.92); }
+.btn-danger:active { transform: scale(0.98); }
+
 .btn-ghost {
   background: var(--surface);
   color: var(--ink-soft);
