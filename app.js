@@ -55,7 +55,28 @@
   const adminAuthClient = window.supabase.createClient(
     CONFIG.SUPABASE.URL,
     CONFIG.SUPABASE.ANON_KEY,
-    { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        // BUGFIX: without an explicit storageKey, supabase-js defaults
+        // BOTH clients (this one and the main `supabase` client above)
+        // to the same localStorage key, since they point at the same
+        // project URL. persistSession:false meant this client never
+        // WROTE its own session there — but createUserAccount() calls
+        // adminAuthClient.auth.signOut() after creating a user, and
+        // signOut() unconditionally clears whatever session sits at
+        // that storage key regardless of persistSession. That silently
+        // wiped the ADMIN'S OWN logged-in session out of localStorage.
+        // Nothing looked wrong immediately (the in-memory `supabase`
+        // client was still authenticated), but the next page refresh —
+        // restoreSession() reading from storage — found nothing and
+        // dropped back to the login screen instead of resuming. Giving
+        // this client its own storage key isolates it completely.
+        storageKey: 'orbit-admin-auth-noop',
+      }
+    }
   );
 
   // ============================================================
@@ -2630,19 +2651,18 @@
     updateChatEmptyState();
     highlightActiveChatRow();
 
-    // BUGFIX: state.messages still held the PREVIOUS channel's messages
-    // at this point. loadMessages() -> mergeMessagesSafely() merges its
-    // results INTO state.messages rather than replacing it, so without
-    // clearing here, the old channel's messages stayed in the array and
-    // got merged together with the new channel's — which is why a newly
-    // opened chat showed messages from whatever group you were in before.
-    state.messages = [];
-    renderMessages();
-
+    // BUGFIX: this used to render an empty chat pane first and then
+    // immediately re-render again with the cached messages — two full
+    // innerHTML rebuilds back-to-back on every single channel click,
+    // which is what showed up as a visible "blink" (especially on
+    // desktop, where the chat pane is already on screen next to the
+    // list). Resolving cache first and rendering once avoids the
+    // empty-then-full flash; state.messages is still reset per-channel
+    // so the previous channel's messages never leak in.
     const cachedMessages = getCachedMessages(channel.id);
+    state.messages = cachedMessages || [];
+    renderMessages();
     if (cachedMessages) {
-      state.messages = cachedMessages;
-      renderMessages();
       console.log(`⚡ Instant load: ${cachedMessages.length} messages from cache`);
     }
     
