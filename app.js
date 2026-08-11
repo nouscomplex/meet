@@ -459,6 +459,34 @@
     return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
+  // Local-calendar-day bucket key (not UTC, so a message sent at
+  // 11:50pm doesn't get bucketed into "tomorrow" for someone west of
+  // UTC, or "yesterday" for someone east of it).
+  function dayKey(ts) {
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  }
+
+  function formatDayLabel(ts) {
+    const d = new Date(ts);
+    const now = new Date();
+    const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86400000);
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays > 1 && diffDays < 7) return d.toLocaleDateString([], { weekday: 'long' });
+    if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+    return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  function buildDayDivider(dk, label) {
+    const el = document.createElement('div');
+    el.className = 'day-divider';
+    el.dataset.day = dk;
+    el.innerHTML = `<span class="day-divider-label">${escapeHtml(label)}</span>`;
+    return el;
+  }
+
   function formatFullDate(ts) {
     return new Date(ts).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
   }
@@ -1549,8 +1577,15 @@
       DOM.chatMessages.innerHTML = '';
     }
 
+    // Day dividers ("Today" / "Yesterday" / "Wednesday" / "Aug 12")
+    // are diffed the same way as messages — keyed separately so a
+    // divider and a message never collide — so re-render never
+    // rebuilds the whole day header stack from scratch.
     const existingNodes = new Map();
-    DOM.chatMessages.querySelectorAll('.msg').forEach((el) => existingNodes.set(el.dataset.id, el));
+    DOM.chatMessages.querySelectorAll('.msg, .day-divider').forEach((el) => {
+      const key = el.classList.contains('day-divider') ? `day:${el.dataset.day}` : `msg:${el.dataset.id}`;
+      existingNodes.set(key, el);
+    });
 
     // Was the view already scrolled to (or near) the bottom before this
     // update? Only auto-scroll in that case, so a background refresh
@@ -1561,9 +1596,29 @@
 
     let prevNode = null;
     let changed = false;
+    let lastDayKey = null;
 
     state.messages.forEach((msg) => {
-      const key = String(msg.id);
+      const dk = dayKey(msg.created_at);
+      if (dk !== lastDayKey) {
+        lastDayKey = dk;
+        const dividerKey = `day:${dk}`;
+        let dividerNode = existingNodes.get(dividerKey);
+        if (dividerNode) {
+          existingNodes.delete(dividerKey);
+        } else {
+          dividerNode = buildDayDivider(dk, formatDayLabel(msg.created_at));
+          changed = true;
+        }
+        const desiredNext = prevNode ? prevNode.nextSibling : DOM.chatMessages.firstChild;
+        if (desiredNext !== dividerNode) {
+          DOM.chatMessages.insertBefore(dividerNode, desiredNext);
+          changed = true;
+        }
+        prevNode = dividerNode;
+      }
+
+      const key = `msg:${msg.id}`;
       const signature = messageSignature(msg);
       let node = existingNodes.get(key);
 
@@ -1587,8 +1642,8 @@
       prevNode = node;
     });
 
-    // Anything left in existingNodes is a message that's no longer in
-    // state.messages (deleted, or dropped off the loaded window).
+    // Anything left in existingNodes is a message or day divider that's
+    // no longer current (deleted message, or a day that emptied out).
     existingNodes.forEach((el) => { el.remove(); changed = true; });
 
     if (changed && wasNearBottom && DOM.chatContainer) {
