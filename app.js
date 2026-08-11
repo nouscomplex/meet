@@ -2548,7 +2548,7 @@
     }
   }
 
-  async function callAdminDeleteUserFunction(targetUsername) {
+  async function callAdminDeleteUserFunction(targetUsername, removeData) {
     // Was: supabase.functions.invoke('admin-delete-user', ...), which
     // required a separate Edge Function deployment that never
     // happened (that's what caused "Failed to send a request to the
@@ -2558,30 +2558,68 @@
     // needed.
     const { data, error } = await supabase.rpc('admin_delete_user', {
       target_username: targetUsername,
+      remove_data: removeData,
     });
     if (error) return { error };
-    return { error: null };
+    return { error: null, data };
+  }
+
+  // Small modal offering the admin an explicit choice, instead of a
+  // single confirm() that always wiped chat data. Resolves to true /
+  // false / null (cancelled).
+  function openDeleteUserChoiceModal(username) {
+    return new Promise((resolve) => {
+      const modal = document.createElement('div');
+      modal.className = 'modal-overlay';
+      modal.innerHTML = `
+        <div class="modal-card">
+          <h3 class="modal-title"><i class="fas fa-trash" style="color:var(--danger);"></i> Delete "${escapeHtml(username)}"</h3>
+          <p class="modal-body" style="margin-bottom:16px;">
+            This removes their login and role permanently. Choose what happens to the messages, statuses, and schedule entries they created:
+          </p>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <button id="deleteUserKeepDataBtn" class="btn-secondary" style="width:100%;">
+              Delete user only — keep their messages
+            </button>
+            <button id="deleteUserWipeDataBtn" class="btn-danger" style="width:100%;">
+              Delete user and all their chat data
+            </button>
+            <button id="deleteUserCancelBtn" class="btn-secondary" style="width:100%;">
+              Cancel
+            </button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+
+      const cleanup = (result) => { modal.remove(); resolve(result); };
+      modal.querySelector('#deleteUserKeepDataBtn').addEventListener('click', () => cleanup(false));
+      modal.querySelector('#deleteUserWipeDataBtn').addEventListener('click', () => cleanup(true));
+      modal.querySelector('#deleteUserCancelBtn').addEventListener('click', () => cleanup(null));
+      modal.addEventListener('click', (e) => { if (e.target === modal) cleanup(null); });
+    });
   }
 
   async function deleteUserAccount(username) {
     username = normalizeUsername(username);
     if (!username) { alert('No user selected.'); return; }
-    
-    if (!confirm(`Delete user "${username}" permanently? This cannot be undone and will remove all their data.`)) return;
-    
+
+    const removeData = await openDeleteUserChoiceModal(username);
+    if (removeData === null) return; // cancelled
+
     try {
-      await supabase.from('user_roles').delete().eq('username', username);
-      await supabase.from(CONFIG.SUPABASE.TABLES.MEMBERS).delete().eq('username', username);
-      await supabase.from(CONFIG.SUPABASE.TABLES.MESSAGES).delete().eq('username', username);
-      await supabase.from(CONFIG.SUPABASE.TABLES.STATUSES).delete().eq('username', username);
-      await supabase.from('class_schedule').delete().eq('teacher_username', username);
-      
-      const { error: authError } = await callAdminDeleteUserFunction(username);
+      // All the actual deletion — role, auth account, and (if
+      // removeData) their messages/statuses/memberships/schedule —
+      // happens atomically inside the admin_delete_user() Postgres
+      // function now, instead of being duplicated here client-side.
+      // That keeps this single choice authoritative: nothing gets
+      // wiped client-side that the admin chose to keep.
+      const { error: authError } = await callAdminDeleteUserFunction(username, removeData);
       if (authError) throw authError;
       
       delete state.roleCache[username];
       delete state.displayNameCache[username];
-      alert('User deleted successfully!');
+      alert(removeData ? 'User and their data deleted successfully!' : 'User deleted — their messages were kept.');
       DOM.userEditForm.style.display = 'none';
       DOM.manageUserSearch.value = '';
       populateRegisteredUsersDatalist();
