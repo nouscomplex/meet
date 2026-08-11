@@ -2473,11 +2473,17 @@
   }
 
   async function callAdminDeleteUserFunction(targetUsername) {
-    const { data, error } = await supabase.functions.invoke('admin-delete-user', {
-      body: { targetUsername },
+    // Was: supabase.functions.invoke('admin-delete-user', ...), which
+    // required a separate Edge Function deployment that never
+    // happened (that's what caused "Failed to send a request to the
+    // Edge Function"). Switched to a Postgres function instead —
+    // create it once via the admin_delete_user.sql script in the
+    // Supabase SQL Editor, no separate deploy step or CORS config
+    // needed.
+    const { data, error } = await supabase.rpc('admin_delete_user', {
+      target_username: targetUsername,
     });
     if (error) return { error };
-    if (data && data.error) return { error: new Error(data.error) };
     return { error: null };
   }
 
