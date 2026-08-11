@@ -1538,10 +1538,14 @@
       return;
     }
 
-    // Clear the empty-state note (if that's what's currently shown) before
-    // diffing — it has no dataset.id so the diff below would otherwise
-    // just leave it sitting there alongside the real messages.
-    if (!DOM.chatMessages.querySelector('.msg') && DOM.chatMessages.querySelector('.empty-note')) {
+    // Clear any placeholder content (the empty-state note, or the
+    // hardcoded "Select a chat..." welcome block that ships inside
+    // #chatMessages in the HTML for the desktop no-chat-selected view)
+    // before diffing — neither has a dataset.id, so the diff below
+    // would otherwise leave it sitting there forever once real
+    // messages start rendering, since it never matches a message
+    // signature to get replaced.
+    if (!DOM.chatMessages.querySelector('.msg')) {
       DOM.chatMessages.innerHTML = '';
     }
 
