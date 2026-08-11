@@ -645,16 +645,34 @@
   // ============================================================
   async function createChannel(name) {
     if (!name || !name.trim()) return;
-    
-    const { data, error } = await supabase
+
+    const basePayload = {
+      name: name.trim(),
+      created_by: state.currentUser?.username,
+      created_at: new Date().toISOString()
+    };
+
+    let { data, error } = await supabase
       .from(CONFIG.SUPABASE.TABLES.CHANNELS)
-      .insert({ 
-        name: name.trim(),
-        created_by: state.currentUser?.username,
-        created_at: new Date().toISOString()
-      })
+      .insert(basePayload)
       .select();
-      
+
+    // BUGFIX: some environments' `channels` table doesn't have a
+    // `created_by` column, which PostgREST reports as "Could not find
+    // the 'created_by' column of 'channels' in the schema cache".
+    // Rather than failing the whole action, retry once without that
+    // field so channel creation still succeeds. The real fix is to add
+    // the column in Supabase (see project notes / SQL migration), but
+    // this keeps the app usable either way.
+    if (error && /created_by.*schema cache/i.test(error.message || '')) {
+      console.warn('channels.created_by column missing — retrying insert without it.');
+      const { created_by, ...fallbackPayload } = basePayload;
+      ({ data, error } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.CHANNELS)
+        .insert(fallbackPayload)
+        .select());
+    }
+
     if (error) {
       alert('Could not create channel: ' + error.message);
       return;
