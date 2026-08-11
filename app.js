@@ -2629,7 +2629,16 @@
     state.currentChannel = channel;
     updateChatEmptyState();
     highlightActiveChatRow();
-    
+
+    // BUGFIX: state.messages still held the PREVIOUS channel's messages
+    // at this point. loadMessages() -> mergeMessagesSafely() merges its
+    // results INTO state.messages rather than replacing it, so without
+    // clearing here, the old channel's messages stayed in the array and
+    // got merged together with the new channel's — which is why a newly
+    // opened chat showed messages from whatever group you were in before.
+    state.messages = [];
+    renderMessages();
+
     const cachedMessages = getCachedMessages(channel.id);
     if (cachedMessages) {
       state.messages = cachedMessages;
