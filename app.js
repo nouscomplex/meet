@@ -1531,7 +1531,8 @@
   function messageSignature(msg) {
     return JSON.stringify([
       msg.content, msg.file_url, msg.reply_to, msg.reply_username, msg.reply_content,
-      msg.username, msg.created_at, msg.seen_at, msg.delivered_at, msg.isPending
+      msg.username, msg.created_at, msg.seen_at, msg.delivered_at, msg.isPending,
+      msg.deleted_at, msg.deleted_by
     ]);
   }
 
@@ -1554,12 +1555,17 @@
     }
 
     let bubbleHtml = '';
-    if (msg.content) {
+    if (msg.deleted_at) {
+      // WhatsApp-style tombstone: the row still exists (soft-deleted —
+      // see deleteMessage()), so this renders in place of the original
+      // content/attachment instead of the message just disappearing.
+      bubbleHtml = `<div class="msg-bubble msg-deleted"><i class="fas fa-ban"></i> This message was deleted by Nous Complex admin</div>`;
+    } else if (msg.content) {
       bubbleHtml += `<div class="msg-bubble">${replyHtml}${escapeHtml(msg.content)}</div>`;
     } else if (replyHtml) {
       bubbleHtml += `<div class="msg-bubble">${replyHtml}</div>`;
     }
-    if (msg.file_url) {
+    if (msg.file_url && !msg.deleted_at) {
       // BUGFIX / FEATURE: every attachment — image, video, or
       // otherwise — used to render as identical plain text ("📎
       // Attached file"), with no preview at all until you left the
@@ -1601,7 +1607,7 @@
     // own outgoing messages. Shown on incoming messages this doesn't
     // make sense: delivery status is info for the sender about their
     // own message, not something the receiver needs to see.
-    const footerHtml = isMine
+    const footerHtml = (isMine && !msg.deleted_at)
       ? `<div class="msg-meta" style="margin-top:2px;">${ticksHtml(msg)}${msg.seen_at ? `<span class="msg-seen-time">Seen ${formatDate(msg.seen_at)}</span>` : ''}</div>`
       : '';
 
@@ -1617,8 +1623,10 @@
         ${footerHtml}
       </div>
       <div class="msg-actions">
-        <button class="msg-reply-btn" title="Reply" data-reply-id="${msg.id}"><i class="fas fa-reply"></i></button>
-        ${state.isAdmin ? `<button class="msg-reply-btn" title="Delete message" data-delete-id="${msg.id}" style="margin-left:4px;"><i class="fas fa-trash" style="color:var(--danger);"></i></button>` : ''}
+        ${!msg.deleted_at ? `
+          <button class="msg-reply-btn" title="Reply" data-reply-id="${msg.id}"><i class="fas fa-reply"></i></button>
+          ${state.isAdmin ? `<button class="msg-reply-btn" title="Delete message" data-delete-id="${msg.id}" style="margin-left:4px;"><i class="fas fa-trash" style="color:var(--danger);"></i></button>` : ''}
+        ` : ''}
       </div>
     `;
     return wrap;
@@ -1719,9 +1727,36 @@
 
   async function deleteMessage(messageId) {
     if (!confirm('Delete this message for everyone?')) return;
-    const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.MESSAGES).delete().eq('id', messageId);
+
+    // BUGFIX/FEATURE: this used to be a hard DELETE, which removes the
+    // row entirely — nothing is left to render a placeholder for, so
+    // the message just silently vanished for everyone instead of
+    // showing WhatsApp's "This message was deleted by X" tombstone.
+    // Soft-delete instead: blank the content/attachment, keep the row,
+    // and record who deleted it. Requires deleted_at/deleted_by
+    // columns — see soft_delete_messages.sql.
+    const { error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+      .update({
+        content: null,
+        file_url: null,
+        deleted_at: new Date().toISOString(),
+        deleted_by: state.currentUser?.username || 'admin',
+      })
+      .eq('id', messageId);
+
     if (error) { alert('Delete failed: ' + error.message); return; }
-    state.messages = state.messages.filter((m) => m.id !== messageId);
+
+    const idx = state.messages.findIndex((m) => m.id === messageId);
+    if (idx !== -1) {
+      state.messages[idx] = {
+        ...state.messages[idx],
+        content: null,
+        file_url: null,
+        deleted_at: new Date().toISOString(),
+        deleted_by: state.currentUser?.username || 'admin',
+      };
+    }
     renderMessages();
     if (state.currentChannel) {
       saveCachedMessages(state.currentChannel.id, state.messages);
