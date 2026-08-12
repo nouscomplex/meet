@@ -1755,29 +1755,41 @@ body.theme-dark .btn-send { color: #FFFFFF; }
 .modal-title { font-family: var(--font-display); font-weight: 800; font-size: 16px; color: var(--ink); display: flex; align-items: center; gap: 8px; }
 .modal-body { color: var(--ink-soft); font-size: 14px; margin: 12px 0 16px; line-height: 1.55; }
 
-/* WhatsApp-style long-press "Info" pill that appears above your own
-   message, plus the message-info modal it opens (exact per-member
-   read timestamps rather than a collapsed summary). */
-.msg-info-toolbar {
-  position: fixed;
-  z-index: 80;
-  background: var(--ink, #262626);
-  border-radius: 20px;
-  box-shadow: var(--shadow-lg);
-  animation: msgIn 0.12s ease-out;
-}
-.msg-info-btn {
+/* WhatsApp-style message selection: click a message (desktop) or
+   long-press it (mobile) and, instead of a floating pill over the
+   bubble, the chat header itself swaps out for this bar — same
+   spot the group name normally sits in — with a close (X), a
+   "1 selected" label, and an Info button that opens the
+   read-receipt modal. See selectMessageForInfo()/exitMessageSelection()
+   in app.js. */
+.msg-select-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 9px 16px;
-  border: none;
-  background: transparent;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 700;
-  font-family: var(--font-body);
-  cursor: pointer;
+  gap: 10px;
+  padding: 14px 14px;
+  border-bottom: 1px solid var(--chat-grey);
+  background: var(--chat-white);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  flex-shrink: 0;
+  animation: msgIn 0.12s ease-out;
+}
+.msg-select-header.hidden { display: none; }
+.msg-select-count {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 15.5px;
+  color: var(--ink);
+}
+
+/* Highlight on the bubble currently backing the selection header,
+   so it's clear which message "1 selected" refers to. */
+.msg.msg-selected .msg-bubble {
+  outline: 2px solid var(--chat-accent);
+  outline-offset: 1px;
 }
 
 .msg-info-section-label {
@@ -1793,6 +1805,7 @@ body.theme-dark .btn-send { color: #FFFFFF; }
 .msg-info-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .msg-info-time { font-size: 12px; color: var(--ink-soft); flex-shrink: 0; }
 .msg-info-time.msg-info-pending { color: var(--danger); opacity: 0.8; }
+.msg-info-time.msg-info-notdelivered { color: var(--ink-soft); opacity: 0.6; }
 
 /* ============================================================
    RESPONSIVE TIGHTENING
