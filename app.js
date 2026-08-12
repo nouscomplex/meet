@@ -191,6 +191,10 @@
     msgSelectHeader: $('msgSelectHeader'),
     msgSelectCloseBtn: $('msgSelectCloseBtn'),
     msgSelectCount: $('msgSelectCount'),
+    msgSelectReplyBtn: $('msgSelectReplyBtn'),
+    msgSelectForwardBtn: $('msgSelectForwardBtn'),
+    msgSelectCopyBtn: $('msgSelectCopyBtn'),
+    msgSelectDeleteBtn: $('msgSelectDeleteBtn'),
     msgSelectInfoBtn: $('msgSelectInfoBtn'),
     joinLiveBtn: $('joinLiveBtn'),
     liveBtnText: $('liveBtnText'),
@@ -1924,7 +1928,7 @@
   // plain click — see the DOM.chatMessages 'click' listener below.
   function startLongPress(e) {
     const bubbleWrap = e.target.closest('.msg-mine');
-    if (!bubbleWrap || !bubbleWrap.dataset.id) return;
+    if (!bubbleWrap || !bubbleWrap.dataset.id || bubbleWrap.querySelector('.msg-deleted')) return;
     if (e.target.closest('.msg-actions, .msg-media-preview, .msg-doc-card')) return;
     clearLongPressTimer();
     longPressTimer = setTimeout(() => {
@@ -1948,11 +1952,15 @@
     if (!isDesktopLayout()) return;
     const bubbleWrap = e.target.closest('.msg-mine');
     if (!bubbleWrap || !bubbleWrap.dataset.id) return;
+    if (bubbleWrap.querySelector('.msg-deleted')) return;
     if (e.target.closest('.msg-actions, .msg-media-preview, .msg-doc-card')) return;
     selectMessageForInfo(bubbleWrap);
   });
 
   function selectMessageForInfo(bubbleWrap) {
+    const msg = state.messages.find((m) => m.id === bubbleWrap.dataset.id);
+    if (!msg || msg.deleted_at) return;
+
     exitMessageSelection();
     selectedMessageId = bubbleWrap.dataset.id;
     bubbleWrap.classList.add('msg-selected');
@@ -1960,6 +1968,12 @@
     if (DOM.chatDetailHeader) DOM.chatDetailHeader.classList.add('hidden');
     if (DOM.msgSelectHeader) DOM.msgSelectHeader.classList.remove('hidden');
     if (DOM.msgSelectCount) DOM.msgSelectCount.textContent = '1 selected';
+
+    // Copy only makes sense for a message with text; Delete only shows
+    // for admins (matches the existing per-bubble delete button's own
+    // admin gate).
+    if (DOM.msgSelectCopyBtn) DOM.msgSelectCopyBtn.classList.toggle('hidden', !msg.content);
+    if (DOM.msgSelectDeleteBtn) DOM.msgSelectDeleteBtn.classList.toggle('hidden', !state.isAdmin);
   }
 
   function exitMessageSelection() {
@@ -1984,14 +1998,123 @@
     if (el) el.classList.add('msg-selected');
   }
 
+  function getSelectedMessage() {
+    return state.messages.find((m) => m.id === selectedMessageId) || null;
+  }
+
   if (DOM.msgSelectCloseBtn) DOM.msgSelectCloseBtn.addEventListener('click', exitMessageSelection);
+
   if (DOM.msgSelectInfoBtn) {
     DOM.msgSelectInfoBtn.addEventListener('click', () => {
-      const msg = state.messages.find((m) => m.id === selectedMessageId);
+      const msg = getSelectedMessage();
       exitMessageSelection();
       if (msg) openMessageInfoModal(msg);
     });
   }
+
+  if (DOM.msgSelectReplyBtn) {
+    DOM.msgSelectReplyBtn.addEventListener('click', () => {
+      const msg = getSelectedMessage();
+      exitMessageSelection();
+      startReplyTo(msg);
+    });
+  }
+
+  if (DOM.msgSelectCopyBtn) {
+    DOM.msgSelectCopyBtn.addEventListener('click', async () => {
+      const msg = getSelectedMessage();
+      exitMessageSelection();
+      if (!msg || !msg.content) return;
+      try {
+        await navigator.clipboard.writeText(msg.content);
+      } catch (e) {
+        // Clipboard API needs a secure context (https/localhost) and
+        // user-permission; fall back to something the user can act on
+        // rather than failing silently.
+        console.warn('Clipboard write failed:', e);
+        alert('Could not copy automatically — your browser blocked clipboard access.');
+      }
+    });
+  }
+
+  if (DOM.msgSelectDeleteBtn) {
+    DOM.msgSelectDeleteBtn.addEventListener('click', () => {
+      const msg = getSelectedMessage();
+      exitMessageSelection();
+      if (msg) deleteMessage(msg.id);
+    });
+  }
+
+  if (DOM.msgSelectForwardBtn) {
+    DOM.msgSelectForwardBtn.addEventListener('click', () => {
+      const msg = getSelectedMessage();
+      exitMessageSelection();
+      if (msg) openForwardPicker(msg);
+    });
+  }
+
+  // Forward: pick a target channel from the channels this client
+  // already has (allChannels — the same list the chat list renders
+  // from), then insert a copy of the content/attachment straight into
+  // that channel. Uses a direct insert rather than routing through
+  // sendMessage(), since sendMessage() always targets
+  // state.currentChannel and this may target a channel that isn't
+  // open. No "Forwarded" tag is added — the messages table has no
+  // column for that; add one (e.g. forwarded_from) if you want the
+  // label WhatsApp shows.
+  function openForwardPicker(msg) {
+    const targets = allChannels.filter((c) => !state.currentChannel || c.id !== state.currentChannel.id);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-card">
+        <div class="modal-title"><i class="fas fa-share"></i> Forward to</div>
+        <div class="forward-channel-list">
+          ${targets.length
+            ? targets.map((c) => `
+                <button class="forward-channel-row" data-channel-id="${escapeHtml(String(c.id))}">
+                  <i class="fas fa-hashtag" style="color:var(--chat-accent);"></i>
+                  <span class="forward-channel-name">${escapeHtml(c.name)}</span>
+                </button>
+              `).join('')
+            : `<div class="empty-note">No other channels to forward to</div>`}
+        </div>
+        <button class="btn-secondary msg-info-close" style="width:100%;">Cancel</button>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('.msg-info-close').addEventListener('click', close);
+
+    overlay.querySelectorAll('.forward-channel-row').forEach((row) => {
+      row.addEventListener('click', async () => {
+        close();
+        await forwardMessageToChannel(msg, row.dataset.channelId);
+      });
+    });
+  }
+
+  async function forwardMessageToChannel(msg, targetChannelId) {
+    if (!state.currentUser) return;
+    const payload = {
+      channel_id: targetChannelId,
+      username: state.currentUser.username,
+      content: msg.content || '',
+      file_url: msg.file_url || null,
+      client_id: `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    };
+    const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.MESSAGES).insert(payload);
+    if (error) {
+      console.error('Forward failed:', error);
+      alert('Forward failed: ' + error.message);
+      return;
+    }
+    const targetName = allChannels.find((c) => String(c.id) === String(targetChannelId))?.name || 'the channel';
+    alert(`Forwarded to ${targetName}.`);
+  }
+
 
   // The exact, WhatsApp-style breakdown: who's actually read the
   // message and exactly when (from message_reads — see
@@ -2070,6 +2193,15 @@
     overlay.querySelector('.msg-info-close').addEventListener('click', close);
   }
 
+  function startReplyTo(msg) {
+    if (!msg) return;
+    state.replyingTo = msg;
+    DOM.replyPreviewAuthor.textContent = getDisplayName(msg.username);
+    DOM.replyPreviewText.textContent = msg.content || (msg.file_url ? 'Attached file' : '');
+    DOM.replyPreview.classList.remove('hidden');
+    DOM.messageInput.focus();
+  }
+
   DOM.chatMessages.addEventListener('click', (e) => {
     const mediaPreview = e.target.closest('.msg-media-preview:not(.msg-media-video-wrap)');
     if (mediaPreview) {
@@ -2084,13 +2216,7 @@
 
     const id = btn.dataset.replyId;
     const msg = state.messages.find((m) => m.id === id);
-    if (!msg) return;
-
-    state.replyingTo = msg;
-    DOM.replyPreviewAuthor.textContent = getDisplayName(msg.username);
-    DOM.replyPreviewText.textContent = msg.content || (msg.file_url ? 'Attached file' : '');
-    DOM.replyPreview.classList.remove('hidden');
-    DOM.messageInput.focus();
+    startReplyTo(msg);
   });
 
   // Full-resolution view for a tapped image thumbnail — the WhatsApp-
