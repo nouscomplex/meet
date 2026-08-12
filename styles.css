@@ -1784,6 +1784,27 @@ body.theme-dark .btn-send { color: #FFFFFF; }
   font-size: 15.5px;
   color: var(--ink);
 }
+.msg-select-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.msg-select-actions .icon-btn.hidden { display: none; }
+
+/* Forward-to-channel picker, reusing the modal-overlay/modal-card look. */
+.forward-channel-list { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; margin: 4px 0 16px; }
+.forward-channel-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 8px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md, 10px);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+  color: var(--ink);
+}
+.forward-channel-row:hover { background: var(--surface-sunken); }
+.forward-channel-name { font-size: 14px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Highlight on the bubble currently backing the selection header,
    so it's clear which message "1 selected" refers to. */
