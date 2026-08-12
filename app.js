@@ -1735,17 +1735,35 @@
     // Soft-delete instead: blank the content/attachment, keep the row,
     // and record who deleted it. Requires deleted_at/deleted_by
     // columns — see soft_delete_messages.sql.
-    const { error } = await supabase
+    const deletedAt = new Date().toISOString();
+    const deletedBy = state.currentUser?.username || 'admin';
+
+    // BUGFIX: a Postgres RLS policy blocking this UPDATE does NOT
+    // throw an error — Supabase just silently updates 0 rows, and
+    // `error` comes back null either way. The code used to trust that
+    // and update state.messages locally regardless, so the deleting
+    // admin saw the tombstone on their OWN screen even when the write
+    // never actually reached the database — explaining messages that
+    // looked deleted for the admin who deleted them, but still showed
+    // normally for everyone else (and reverted on refresh). Requesting
+    // the row back with .select() lets us tell "0 rows matched/allowed"
+    // apart from a real success.
+    const { data, error } = await supabase
       .from(CONFIG.SUPABASE.TABLES.MESSAGES)
       .update({
         content: null,
         file_url: null,
-        deleted_at: new Date().toISOString(),
-        deleted_by: state.currentUser?.username || 'admin',
+        deleted_at: deletedAt,
+        deleted_by: deletedBy,
       })
-      .eq('id', messageId);
+      .eq('id', messageId)
+      .select();
 
     if (error) { alert('Delete failed: ' + error.message); return; }
+    if (!data || data.length === 0) {
+      alert('Delete failed: the server didn\'t allow this change (likely a permissions/RLS issue) — the message was NOT deleted. Check that the admin-only UPDATE policy on messages is set up correctly (see soft_delete_messages.sql) and that this account\'s role is exactly "admin".');
+      return;
+    }
 
     const idx = state.messages.findIndex((m) => m.id === messageId);
     if (idx !== -1) {
@@ -1753,8 +1771,8 @@
         ...state.messages[idx],
         content: null,
         file_url: null,
-        deleted_at: new Date().toISOString(),
-        deleted_by: state.currentUser?.username || 'admin',
+        deleted_at: deletedAt,
+        deleted_by: deletedBy,
       };
     }
     renderMessages();
