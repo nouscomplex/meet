@@ -218,6 +218,17 @@
           </button>
         </header>
 
+        <!-- WhatsApp-style selection header: replaces the group-name
+             header above (not a floating pill over the bubble) once a
+             message is selected — click it on desktop, long-press it
+             on mobile. The Info button opens the read-receipt modal
+             for that message. -->
+        <div id="msgSelectHeader" class="msg-select-header hidden">
+          <button id="msgSelectCloseBtn" class="icon-btn back-btn" aria-label="Close"><i class="fas fa-times"></i></button>
+          <span class="msg-select-count" id="msgSelectCount">1 selected</span>
+          <button id="msgSelectInfoBtn" class="icon-btn" title="Message info" aria-label="Message info"><i class="fas fa-circle-info"></i></button>
+        </div>
+
         <div id="scheduleBanner" class="hidden schedule-banner">
           <i class="fas fa-calendar-day"></i>
           <span id="scheduleBannerText"></span>
