@@ -184,9 +184,14 @@
     deleteUserBtn: $('deleteUserBtn'),
 
     backFromChat: $('backFromChat'),
+    chatDetailHeader: document.querySelector('.chat-detail-header'),
     chatDetailTitleBtn: $('chatDetailTitleBtn'),
     chatDetailName: $('chatDetailName'),
     chatDetailSub: $('chatDetailSub'),
+    msgSelectHeader: $('msgSelectHeader'),
+    msgSelectCloseBtn: $('msgSelectCloseBtn'),
+    msgSelectCount: $('msgSelectCount'),
+    msgSelectInfoBtn: $('msgSelectInfoBtn'),
     joinLiveBtn: $('joinLiveBtn'),
     liveBtnText: $('liveBtnText'),
     scheduleBanner: $('scheduleBanner'),
@@ -602,6 +607,7 @@
   }
 
   function goToScreen(name) {
+    if (name !== 'chatDetail' && typeof exitMessageSelection === 'function') exitMessageSelection();
     updateChatEmptyState();
     const isDesktop = isDesktopLayout();
     const keepChatsVisible = isDesktop && CHAT_GROUP_SCREENS.includes(name);
@@ -1839,6 +1845,8 @@
     if (changed && wasNearBottom && DOM.chatContainer) {
       DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
     }
+
+    reapplySelectionHighlight();
   }
 
   async function deleteMessage(messageId) {
@@ -1897,25 +1905,30 @@
     }
   }
 
-  // Long-press (touch) / press-and-hold (mouse) on your OWN message —
-  // WhatsApp-style: shows a small "Info" pill above the message; tap
-  // it for the exact per-member read breakdown with real timestamps,
-  // instead of the collapsed "Seen by all" summary having to speak
-  // for the whole group.
+  // Select a message to see its info — WhatsApp-style: click your own
+  // message (desktop) or long-press it (mobile touch) and the chat
+  // header swaps out for a small selection bar in the SAME spot the
+  // group name normally sits (#msgSelectHeader), with an Info button.
+  // Tapping Info opens the exact per-member read breakdown, instead of
+  // a floating pill guessing where there's room above the bubble.
   let longPressTimer = null;
-  let longPressTarget = null;
+  let selectedMessageId = null;
 
   function clearLongPressTimer() {
     if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
   }
 
+  // Touch only: mobile has no hover/click-to-select affordance the way
+  // a mouse does, so selection there is gated behind a 500ms hold,
+  // matching WhatsApp's own long-press. Desktop instead reacts to a
+  // plain click — see the DOM.chatMessages 'click' listener below.
   function startLongPress(e) {
     const bubbleWrap = e.target.closest('.msg-mine');
     if (!bubbleWrap || !bubbleWrap.dataset.id) return;
-    longPressTarget = bubbleWrap;
+    if (e.target.closest('.msg-actions, .msg-media-preview, .msg-doc-card')) return;
     clearLongPressTimer();
     longPressTimer = setTimeout(() => {
-      showMessageInfoToolbar(bubbleWrap);
+      selectMessageForInfo(bubbleWrap);
     }, 500);
   }
 
@@ -1924,85 +1937,130 @@
   });
 
   DOM.chatMessages.addEventListener('touchstart', startLongPress, { passive: true });
-  DOM.chatMessages.addEventListener('mousedown', startLongPress);
-  ['touchend', 'touchmove', 'touchcancel', 'mouseup', 'mouseleave'].forEach((evt) => {
+  ['touchend', 'touchmove', 'touchcancel'].forEach((evt) => {
     DOM.chatMessages.addEventListener(evt, clearLongPressTimer);
   });
 
-  function showMessageInfoToolbar(bubbleWrap) {
-    document.querySelectorAll('.msg-info-toolbar').forEach((el) => el.remove());
+  // Desktop: a single click on your own message selects it immediately
+  // (no hold needed with a mouse). Reply/delete buttons and media taps
+  // keep their own existing behaviour instead of triggering selection.
+  DOM.chatMessages.addEventListener('click', (e) => {
+    if (!isDesktopLayout()) return;
+    const bubbleWrap = e.target.closest('.msg-mine');
+    if (!bubbleWrap || !bubbleWrap.dataset.id) return;
+    if (e.target.closest('.msg-actions, .msg-media-preview, .msg-doc-card')) return;
+    selectMessageForInfo(bubbleWrap);
+  });
 
-    const toolbar = document.createElement('div');
-    toolbar.className = 'msg-info-toolbar';
-    toolbar.innerHTML = `<button class="msg-info-btn"><i class="fas fa-circle-info"></i> Info</button>`;
-    document.body.appendChild(toolbar);
+  function selectMessageForInfo(bubbleWrap) {
+    exitMessageSelection();
+    selectedMessageId = bubbleWrap.dataset.id;
+    bubbleWrap.classList.add('msg-selected');
 
-    const rect = bubbleWrap.getBoundingClientRect();
-    toolbar.style.top = `${Math.max(8, rect.top - toolbar.offsetHeight - 44)}px`;
-    toolbar.style.left = `${Math.min(
-      window.innerWidth - toolbar.offsetWidth - 8,
-      Math.max(8, rect.left + rect.width / 2 - toolbar.offsetWidth / 2)
-    )}px`;
+    if (DOM.chatDetailHeader) DOM.chatDetailHeader.classList.add('hidden');
+    if (DOM.msgSelectHeader) DOM.msgSelectHeader.classList.remove('hidden');
+    if (DOM.msgSelectCount) DOM.msgSelectCount.textContent = '1 selected';
+  }
 
-    const messageId = bubbleWrap.dataset.id;
-    const dismiss = () => { toolbar.remove(); document.removeEventListener('click', outsideClick, true); };
-    const outsideClick = (ev) => { if (!toolbar.contains(ev.target)) dismiss(); };
+  function exitMessageSelection() {
+    if (!selectedMessageId) return;
+    const prev = DOM.chatMessages.querySelector('.msg-selected');
+    if (prev) prev.classList.remove('msg-selected');
+    selectedMessageId = null;
 
-    toolbar.querySelector('.msg-info-btn').addEventListener('click', () => {
-      dismiss();
-      const msg = state.messages.find((m) => m.id === messageId);
+    if (DOM.msgSelectHeader) DOM.msgSelectHeader.classList.add('hidden');
+    if (DOM.chatDetailHeader) DOM.chatDetailHeader.classList.remove('hidden');
+  }
+
+  // renderMessages() diffs and rebuilds only the bubbles whose content
+  // actually changed (see messageSignature()) — a rebuilt bubble is a
+  // fresh DOM node, so a selection highlight applied to the old node
+  // would silently vanish if a read receipt happened to land on the
+  // selected message while its info bar was open. Re-apply it here,
+  // called at the end of every renderMessages() pass.
+  function reapplySelectionHighlight() {
+    if (!selectedMessageId) return;
+    const el = DOM.chatMessages.querySelector(`.msg[data-id="${CSS.escape(selectedMessageId)}"]`);
+    if (el) el.classList.add('msg-selected');
+  }
+
+  if (DOM.msgSelectCloseBtn) DOM.msgSelectCloseBtn.addEventListener('click', exitMessageSelection);
+  if (DOM.msgSelectInfoBtn) {
+    DOM.msgSelectInfoBtn.addEventListener('click', () => {
+      const msg = state.messages.find((m) => m.id === selectedMessageId);
+      exitMessageSelection();
       if (msg) openMessageInfoModal(msg);
     });
-
-    // Let the current tap's own click finish propagating before
-    // arming the outside-click dismiss listener, or this closes the
-    // toolbar the instant it opens.
-    setTimeout(() => document.addEventListener('click', outsideClick, true), 0);
   }
 
   // The exact, WhatsApp-style breakdown: who's actually read the
   // message and exactly when (from message_reads — see
-  // message_reads.sql), versus everyone else in the channel who
-  // hasn't yet. No collapsing into a single ambiguous line.
+  // message_reads.sql), split from everyone else into two further
+  // buckets — delivered-but-unseen vs. not delivered.
+  //
+  // IMPORTANT CAVEAT: the schema only persists a per-member READ
+  // record (message_reads). There is no per-member DELIVERED record —
+  // delivered_at is a single column on the message itself, not one row
+  // per recipient — so a true "not delivered" state per member isn't
+  // actually tracked anywhere. The best available signal is live
+  // presence (state.onlineUsers, from the presence:orbit channel): a
+  // member who is online now almost certainly has the message via the
+  // realtime subscription (bucketed "Delivered"); a member who hasn't
+  // been seen online this session is bucketed "Not delivered". This is
+  // a reasonable approximation, not a stored fact — if you need it to
+  // be exactly accurate, add a message_deliveries table that mirrors
+  // message_reads and write to it wherever the realtime INSERT is
+  // received client-side, the same way markSeen() writes to
+  // message_reads.
   function openMessageInfoModal(msg) {
     const reads = (state.messageReads.get(msg.id) || [])
       .slice()
       .sort((a, b) => new Date(a.seen_at) - new Date(b.seen_at));
     const readUsernames = new Set(reads.map((r) => r.username));
 
-    const notYetRead = state.currentMembers
-      .filter((m) => m.username !== state.currentUser?.username && !readUsernames.has(m.username))
-      .map((m) => m.username);
+    const others = state.currentMembers.filter((m) => m.username !== state.currentUser?.username);
+    const delivered = [];
+    const notDelivered = [];
+    others.forEach((m) => {
+      if (readUsernames.has(m.username)) return;
+      if (state.onlineUsers.has((m.username || '').toLowerCase())) {
+        delivered.push(m.username);
+      } else {
+        notDelivered.push(m.username);
+      }
+    });
+
+    const rowHtml = (username, timeHtml) => `
+      <div class="msg-info-row">
+        ${avatarHtml(username, 'sm')}
+        <span class="msg-info-name">${escapeHtml(getDisplayName(username))}</span>
+        ${timeHtml}
+      </div>
+    `;
 
     const readRows = reads.length
-      ? reads.map((r) => `
-          <div class="msg-info-row">
-            ${avatarHtml(r.username, 'sm')}
-            <span class="msg-info-name">${escapeHtml(getDisplayName(r.username))}</span>
-            <span class="msg-info-time">${escapeHtml(formatFullDate(r.seen_at))}</span>
-          </div>
-        `).join('')
+      ? reads.map((r) => rowHtml(r.username, `<span class="msg-info-time">${escapeHtml(formatFullDate(r.seen_at))}</span>`)).join('')
       : `<div class="empty-note">No one yet</div>`;
 
-    const unreadRows = notYetRead.length
-      ? notYetRead.map((u) => `
-          <div class="msg-info-row">
-            ${avatarHtml(u, 'sm')}
-            <span class="msg-info-name">${escapeHtml(getDisplayName(u))}</span>
-            <span class="msg-info-time msg-info-pending">Not yet read</span>
-          </div>
-        `).join('')
-      : `<div class="empty-note">Everyone has read this</div>`;
+    const deliveredRows = delivered.length
+      ? delivered.map((u) => rowHtml(u, `<span class="msg-info-time">Delivered</span>`)).join('')
+      : `<div class="empty-note">No one in this state</div>`;
+
+    const notDeliveredRows = notDelivered.length
+      ? notDelivered.map((u) => rowHtml(u, `<span class="msg-info-time msg-info-notdelivered">Not delivered</span>`)).join('')
+      : `<div class="empty-note">No one in this state</div>`;
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
       <div class="modal-card">
         <div class="modal-title"><i class="fas fa-circle-info"></i> Message info</div>
-        <div class="msg-info-section-label">Read by (${reads.length})</div>
+        <div class="msg-info-section-label">Seen (${reads.length})</div>
         <div class="msg-info-list">${readRows}</div>
-        <div class="msg-info-section-label">Not yet read (${notYetRead.length})</div>
-        <div class="msg-info-list">${unreadRows}</div>
+        <div class="msg-info-section-label">Delivered, not seen (${delivered.length})</div>
+        <div class="msg-info-list">${deliveredRows}</div>
+        <div class="msg-info-section-label">Not delivered (${notDelivered.length})</div>
+        <div class="msg-info-list">${notDeliveredRows}</div>
         <button class="btn-secondary msg-info-close" style="width:100%; margin-top:14px;">Close</button>
       </div>
     `;
@@ -3207,6 +3265,7 @@
   }
 
   async function selectChannel(channel) {
+    if (typeof exitMessageSelection === 'function') exitMessageSelection();
     state.currentChannel = channel;
     updateChatEmptyState();
     highlightActiveChatRow();
