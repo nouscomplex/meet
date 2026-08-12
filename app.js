@@ -111,6 +111,10 @@
     tabChannel: null,
     isRefreshing: false,
     isMerging: false,
+    // Map<messageId, Array<{username, seen_at}>> — per-member read
+    // receipts for the currently open channel. See message_reads.sql.
+    messageReads: new Map(),
+    readsSubscription: null,
   };
 
   // ============================================================
@@ -1094,9 +1098,85 @@
         console.log('✅ Messages marked as seen');
         await refreshUnreadBadges();
       }
+
+      // Record a proper per-member read receipt too — see
+      // message_reads.sql. The seen_at/seen_by columns above are a
+      // single field on the message row, so they can only ever record
+      // ONE person as having seen it; this is what actually lets a
+      // sender in a GROUP see "Seen by Alice, Bob +2" rather than just
+      // a single generic "seen" tick.
+      const { data: unreadMsgs, error: unreadError } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+        .select('id')
+        .eq('channel_id', channelId)
+        .neq('username', state.currentUser.username)
+        .is('deleted_at', null);
+
+      if (!unreadError && unreadMsgs && unreadMsgs.length) {
+        const rows = unreadMsgs.map((m) => ({
+          message_id: m.id,
+          channel_id: channelId,
+          username: state.currentUser.username,
+        }));
+        const { error: readsError } = await supabase
+          .from('message_reads')
+          .upsert(rows, { onConflict: 'message_id,username', ignoreDuplicates: true });
+        if (readsError) {
+          console.warn('Failed to record read receipts:', readsError);
+        }
+      }
     } catch (e) {
       console.warn('Mark seen error:', e);
     }
+  }
+
+  // ============================================================
+  // GROUP READ RECEIPTS (message_reads)
+  // ============================================================
+  async function loadMessageReads(channelId) {
+    const { data, error } = await supabase
+      .from('message_reads')
+      .select('message_id, username, seen_at')
+      .eq('channel_id', channelId);
+
+    state.messageReads = new Map();
+    if (error) {
+      console.warn('Failed to load read receipts:', error);
+      return;
+    }
+    (data || []).forEach((row) => {
+      const list = state.messageReads.get(row.message_id) || [];
+      list.push({ username: row.username, seen_at: row.seen_at });
+      state.messageReads.set(row.message_id, list);
+    });
+    renderMessages();
+  }
+
+  function teardownReadsSubscription() {
+    if (!state.readsSubscription) return;
+    supabase.removeChannel(state.readsSubscription);
+    state.readsSubscription = null;
+  }
+
+  function subscribeToMessageReads(channelId) {
+    teardownReadsSubscription();
+    state.readsSubscription = supabase
+      .channel(`message_reads:${channelId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'message_reads',
+        filter: `channel_id=eq.${channelId}`,
+      }, (payload) => {
+        const row = payload.new;
+        const list = state.messageReads.get(row.message_id) || [];
+        if (!list.some((r) => r.username === row.username)) {
+          list.push({ username: row.username, seen_at: row.seen_at });
+          state.messageReads.set(row.message_id, list);
+          renderMessages();
+        }
+      })
+      .subscribe();
   }
 
   // ============================================================
@@ -1513,6 +1593,34 @@
     return `<span class="msg-ticks" title="Sent"><i class="fas fa-check"></i></span>`;
   }
 
+  // Builds the "Seen by Alice, Bob +2" / "Seen by all" label under a
+  // sender's own message, from message_reads — the per-member read
+  // receipts table (see message_reads.sql). Falls back to nothing if
+  // no one else has read it yet.
+  function buildSeenByLabel(msg) {
+    const reads = state.messageReads.get(msg.id) || [];
+    if (!reads.length) return '';
+
+    const otherMemberCount = state.currentMembers.filter(
+      (m) => m.username !== state.currentUser?.username
+    ).length;
+
+    const names = reads
+      .slice().sort((a, b) => new Date(a.seen_at) - new Date(b.seen_at))
+      .map((r) => getDisplayName(r.username));
+
+    let text;
+    if (otherMemberCount > 0 && reads.length >= otherMemberCount) {
+      text = 'Seen by all';
+    } else if (names.length <= 2) {
+      text = `Seen by ${names.join(', ')}`;
+    } else {
+      text = `Seen by ${names[0]}, ${names[1]} +${names.length - 2}`;
+    }
+
+    return `<span class="msg-seen-time msg-seen-by" data-seen-msg-id="${msg.id}" title="${escapeHtml(names.join(', '))}">${escapeHtml(text)}</span>`;
+  }
+
   // ============================================================
   // RENDER MESSAGES (DIFFED — NO FULL REBUILD)
   // ============================================================
@@ -1529,10 +1637,12 @@
   // background refresh that changes nothing visible now does nothing
   // visible.
   function messageSignature(msg) {
+    const reads = state.messageReads.get(msg.id) || [];
+    const readsKey = reads.map((r) => r.username).sort().join(',');
     return JSON.stringify([
       msg.content, msg.file_url, msg.reply_to, msg.reply_username, msg.reply_content,
       msg.username, msg.created_at, msg.seen_at, msg.delivered_at, msg.isPending,
-      msg.deleted_at, msg.deleted_by
+      msg.deleted_at, msg.deleted_by, readsKey
     ]);
   }
 
@@ -1607,8 +1717,14 @@
     // own outgoing messages. Shown on incoming messages this doesn't
     // make sense: delivery status is info for the sender about their
     // own message, not something the receiver needs to see.
+    //
+    // The "Seen ..." text used to just show the single seen_at
+    // timestamp — meaningless in a group, since that column can only
+    // ever record ONE person. Now it's built from message_reads,
+    // which has a row per (message, viewer) — see buildSeenByLabel().
+    const seenByLabel = isMine ? buildSeenByLabel(msg) : '';
     const footerHtml = (isMine && !msg.deleted_at)
-      ? `<div class="msg-meta" style="margin-top:2px;">${ticksHtml(msg)}${msg.seen_at ? `<span class="msg-seen-time">Seen ${formatDate(msg.seen_at)}</span>` : ''}</div>`
+      ? `<div class="msg-meta" style="margin-top:2px;">${ticksHtml(msg)}${seenByLabel}</div>`
       : '';
 
     const displayName = getDisplayName(msg.username);
@@ -2998,6 +3114,8 @@
     await loadMessages(channel.id);
     await loadMembers(channel.id);
     subscribeToMessages(channel.id);
+    await loadMessageReads(channel.id);
+    subscribeToMessageReads(channel.id);
     await markDelivered(channel.id);
     await markSeen(channel.id);
     await loadSchedule(channel.id);
@@ -3131,6 +3249,7 @@
     }
 
     teardownMessagesSubscription();
+    teardownReadsSubscription();
     unsubscribeFromChannelListUpdates();
     if (scheduleSubscription) { 
       supabase.removeChannel(scheduleSubscription); 
