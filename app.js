@@ -1897,6 +1897,121 @@
     }
   }
 
+  // Long-press (touch) / press-and-hold (mouse) on your OWN message —
+  // WhatsApp-style: shows a small "Info" pill above the message; tap
+  // it for the exact per-member read breakdown with real timestamps,
+  // instead of the collapsed "Seen by all" summary having to speak
+  // for the whole group.
+  let longPressTimer = null;
+  let longPressTarget = null;
+
+  function clearLongPressTimer() {
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+  }
+
+  function startLongPress(e) {
+    const bubbleWrap = e.target.closest('.msg-mine');
+    if (!bubbleWrap || !bubbleWrap.dataset.id) return;
+    longPressTarget = bubbleWrap;
+    clearLongPressTimer();
+    longPressTimer = setTimeout(() => {
+      showMessageInfoToolbar(bubbleWrap);
+    }, 500);
+  }
+
+  DOM.chatMessages.addEventListener('contextmenu', (e) => {
+    if (e.target.closest('.msg-mine')) e.preventDefault();
+  });
+
+  DOM.chatMessages.addEventListener('touchstart', startLongPress, { passive: true });
+  DOM.chatMessages.addEventListener('mousedown', startLongPress);
+  ['touchend', 'touchmove', 'touchcancel', 'mouseup', 'mouseleave'].forEach((evt) => {
+    DOM.chatMessages.addEventListener(evt, clearLongPressTimer);
+  });
+
+  function showMessageInfoToolbar(bubbleWrap) {
+    document.querySelectorAll('.msg-info-toolbar').forEach((el) => el.remove());
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'msg-info-toolbar';
+    toolbar.innerHTML = `<button class="msg-info-btn"><i class="fas fa-circle-info"></i> Info</button>`;
+    document.body.appendChild(toolbar);
+
+    const rect = bubbleWrap.getBoundingClientRect();
+    toolbar.style.top = `${Math.max(8, rect.top - toolbar.offsetHeight - 44)}px`;
+    toolbar.style.left = `${Math.min(
+      window.innerWidth - toolbar.offsetWidth - 8,
+      Math.max(8, rect.left + rect.width / 2 - toolbar.offsetWidth / 2)
+    )}px`;
+
+    const messageId = bubbleWrap.dataset.id;
+    const dismiss = () => { toolbar.remove(); document.removeEventListener('click', outsideClick, true); };
+    const outsideClick = (ev) => { if (!toolbar.contains(ev.target)) dismiss(); };
+
+    toolbar.querySelector('.msg-info-btn').addEventListener('click', () => {
+      dismiss();
+      const msg = state.messages.find((m) => m.id === messageId);
+      if (msg) openMessageInfoModal(msg);
+    });
+
+    // Let the current tap's own click finish propagating before
+    // arming the outside-click dismiss listener, or this closes the
+    // toolbar the instant it opens.
+    setTimeout(() => document.addEventListener('click', outsideClick, true), 0);
+  }
+
+  // The exact, WhatsApp-style breakdown: who's actually read the
+  // message and exactly when (from message_reads — see
+  // message_reads.sql), versus everyone else in the channel who
+  // hasn't yet. No collapsing into a single ambiguous line.
+  function openMessageInfoModal(msg) {
+    const reads = (state.messageReads.get(msg.id) || [])
+      .slice()
+      .sort((a, b) => new Date(a.seen_at) - new Date(b.seen_at));
+    const readUsernames = new Set(reads.map((r) => r.username));
+
+    const notYetRead = state.currentMembers
+      .filter((m) => m.username !== state.currentUser?.username && !readUsernames.has(m.username))
+      .map((m) => m.username);
+
+    const readRows = reads.length
+      ? reads.map((r) => `
+          <div class="msg-info-row">
+            ${avatarHtml(r.username, 'sm')}
+            <span class="msg-info-name">${escapeHtml(getDisplayName(r.username))}</span>
+            <span class="msg-info-time">${escapeHtml(formatFullDate(r.seen_at))}</span>
+          </div>
+        `).join('')
+      : `<div class="empty-note">No one yet</div>`;
+
+    const unreadRows = notYetRead.length
+      ? notYetRead.map((u) => `
+          <div class="msg-info-row">
+            ${avatarHtml(u, 'sm')}
+            <span class="msg-info-name">${escapeHtml(getDisplayName(u))}</span>
+            <span class="msg-info-time msg-info-pending">Not yet read</span>
+          </div>
+        `).join('')
+      : `<div class="empty-note">Everyone has read this</div>`;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-card">
+        <div class="modal-title"><i class="fas fa-circle-info"></i> Message info</div>
+        <div class="msg-info-section-label">Read by (${reads.length})</div>
+        <div class="msg-info-list">${readRows}</div>
+        <div class="msg-info-section-label">Not yet read (${notYetRead.length})</div>
+        <div class="msg-info-list">${unreadRows}</div>
+        <button class="btn-secondary msg-info-close" style="width:100%; margin-top:14px;">Close</button>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('.msg-info-close').addEventListener('click', close);
+  }
+
   DOM.chatMessages.addEventListener('click', (e) => {
     const mediaPreview = e.target.closest('.msg-media-preview:not(.msg-media-video-wrap)');
     if (mediaPreview) {
