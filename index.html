@@ -221,12 +221,18 @@
         <!-- WhatsApp-style selection header: replaces the group-name
              header above (not a floating pill over the bubble) once a
              message is selected — click it on desktop, long-press it
-             on mobile. The Info button opens the read-receipt modal
-             for that message. -->
+             on mobile. Reply/Copy/Forward/Delete act on the message
+             immediately; Info opens the read-receipt modal. -->
         <div id="msgSelectHeader" class="msg-select-header hidden">
           <button id="msgSelectCloseBtn" class="icon-btn back-btn" aria-label="Close"><i class="fas fa-times"></i></button>
           <span class="msg-select-count" id="msgSelectCount">1 selected</span>
-          <button id="msgSelectInfoBtn" class="icon-btn" title="Message info" aria-label="Message info"><i class="fas fa-circle-info"></i></button>
+          <div class="msg-select-actions">
+            <button id="msgSelectReplyBtn" class="icon-btn" title="Reply" aria-label="Reply"><i class="fas fa-reply"></i></button>
+            <button id="msgSelectForwardBtn" class="icon-btn" title="Forward" aria-label="Forward"><i class="fas fa-share"></i></button>
+            <button id="msgSelectCopyBtn" class="icon-btn" title="Copy" aria-label="Copy"><i class="fas fa-copy"></i></button>
+            <button id="msgSelectDeleteBtn" class="icon-btn hidden" title="Delete" aria-label="Delete"><i class="fas fa-trash" style="color:var(--danger);"></i></button>
+            <button id="msgSelectInfoBtn" class="icon-btn" title="Message info" aria-label="Message info"><i class="fas fa-circle-info"></i></button>
+          </div>
         </div>
 
         <div id="scheduleBanner" class="hidden schedule-banner">
