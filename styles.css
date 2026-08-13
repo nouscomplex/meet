@@ -1419,7 +1419,15 @@ body.theme-dark .msg-time {
 .msg-reply-quote .reply-text { color: var(--chat-ink-soft); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msg-mine .msg-reply-quote .reply-text { color: rgba(255,255,255,0.85); }
 
-.msg-actions { opacity: 0; transition: opacity 0.12s ease; display: flex; align-items: center; }
+/* BUGFIX: actions now live in their own row next to the bubble (see
+   .msg-bubble-row) instead of being a full-height sibling of
+   .msg-body, which used to center them against the whole message
+   (author line + bubble + ticks) and made them look like they were
+   sitting on top of the message instead of beside it. */
+.msg-bubble-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.msg-mine .msg-bubble-row { flex-direction: row-reverse; }
+
+.msg-actions { opacity: 0; transition: opacity 0.12s ease; display: flex; align-items: center; flex-shrink: 0; }
 .msg:hover .msg-actions, .msg:active .msg-actions { opacity: 1; }
 .msg-reply-btn {
   width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--chat-grey);
