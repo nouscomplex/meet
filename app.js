@@ -947,6 +947,12 @@
   async function openChannel(channel) {
     await selectChannel(channel);
     goToScreen('chatDetail');
+    // On mobile the chat detail screen is hidden until goToScreen() runs,
+    // so scrollHeight inside selectChannel() was 0 and the pre-scroll had
+    // no effect. Defer scrollToBottom() by one animation frame so it runs
+    // after the browser has painted the now-visible panel and scrollHeight
+    // reflects the actual content height.
+    requestAnimationFrame(scrollToBottom);
   }
 
   async function renameChannel(channelId) {
@@ -1921,6 +1927,15 @@
     }
 
     reapplySelectionHighlight();
+  }
+
+  // Scroll chatContainer to its current bottom edge.
+  // Called when a channel is opened so the newest message is immediately
+  // visible without the user having to scroll manually.
+  function scrollToBottom() {
+    if (DOM.chatContainer) {
+      DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
+    }
   }
 
   async function deleteMessage(messageId) {
@@ -3472,6 +3487,17 @@
     // list). Resolving cache first and rendering once avoids the
     // empty-then-full flash; state.messages is still reset per-channel
     // so the previous channel's messages never leak in.
+
+    // Pre-scroll to the current bottom BEFORE renderMessages() runs so
+    // that renderMessages()'s wasNearBottom guard evaluates to true and
+    // triggers auto-scroll to the newest message. Without this, switching
+    // from a channel where the user had scrolled to the top left
+    // wasNearBottom=false and the incoming channel never auto-scrolled.
+    // (On desktop where the pane is always visible this is the decisive
+    // fix; on mobile the rAF call in openChannel() covers the hidden-
+    // panel case.)
+    scrollToBottom();
+
     const cachedMessages = getCachedMessages(channel.id);
     state.messages = cachedMessages || [];
     renderMessages();
