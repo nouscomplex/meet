@@ -1234,7 +1234,14 @@
       list.push({ username: row.username, seen_at: row.seen_at });
       state.messageReads.set(row.message_id, list);
     });
-    renderMessages();
+    // BUGFIX: this used to end with renderMessages(). On every channel
+    // open this ran once the FULL read-receipt set had loaded, flipping
+    // every one of your own messages from "no seen-by line" to "Seen by
+    // X" (or "Seen by all") all at once — a visible layout jump right
+    // after the chat had just settled. Now that per-member reads aren't
+    // rendered inline in the bubble at all (see messageSignature()/
+    // buildMessageEl()), this data is only read on demand by
+    // openMessageInfoModal(), so no render is needed here.
   }
 
   function teardownReadsSubscription() {
@@ -1258,7 +1265,18 @@
         if (!list.some((r) => r.username === row.username)) {
           list.push({ username: row.username, seen_at: row.seen_at });
           state.messageReads.set(row.message_id, list);
-          scheduleRenderMessages();
+          // BUGFIX: this used to call scheduleRenderMessages() here,
+          // which meant every single group member's read receipt
+          // triggered a full diff/rebuild pass on the sender's chat —
+          // in a group, those INSERT events land one-by-one over a few
+          // seconds (not in a single burst the scheduler could
+          // coalesce), so opening a group chat produced a rapid string
+          // of bubble rebuilds that looked like blinking. The map is
+          // still kept current here for openMessageInfoModal() (the
+          // Info button in the message-select header), which reads it
+          // fresh at click time — nothing on screen depends on
+          // per-member reads anymore (see messageSignature()/
+          // buildMessageEl() below), so no re-render is needed.
         }
       })
       .subscribe();
@@ -1678,34 +1696,6 @@
     return `<span class="msg-ticks" title="Sent"><i class="fas fa-check"></i></span>`;
   }
 
-  // Builds the "Seen by Alice, Bob +2" / "Seen by all" label under a
-  // sender's own message, from message_reads — the per-member read
-  // receipts table (see message_reads.sql). Falls back to nothing if
-  // no one else has read it yet.
-  function buildSeenByLabel(msg) {
-    const reads = state.messageReads.get(msg.id) || [];
-    if (!reads.length) return '';
-
-    const otherMemberCount = state.currentMembers.filter(
-      (m) => m.username !== state.currentUser?.username
-    ).length;
-
-    const names = reads
-      .slice().sort((a, b) => new Date(a.seen_at) - new Date(b.seen_at))
-      .map((r) => getDisplayName(r.username));
-
-    let text;
-    if (otherMemberCount > 0 && reads.length >= otherMemberCount) {
-      text = 'Seen by all';
-    } else if (names.length <= 2) {
-      text = `Seen by ${names.join(', ')}`;
-    } else {
-      text = `Seen by ${names[0]}, ${names[1]} +${names.length - 2}`;
-    }
-
-    return `<span class="msg-seen-time msg-seen-by" data-seen-msg-id="${msg.id}" title="${escapeHtml(names.join(', '))}">${escapeHtml(text)}</span>`;
-  }
-
   // ============================================================
   // RENDER MESSAGES (DIFFED — NO FULL REBUILD)
   // ============================================================
@@ -1722,12 +1712,22 @@
   // background refresh that changes nothing visible now does nothing
   // visible.
   function messageSignature(msg) {
-    const reads = state.messageReads.get(msg.id) || [];
-    const readsKey = reads.map((r) => r.username).sort().join(',');
+    // NOTE: per-member reads (state.messageReads) are deliberately NOT
+    // part of this signature. They used to be, via a readsKey — which
+    // meant every single read receipt from every group member counted
+    // as a "content change" and forced that bubble to be torn down and
+    // rebuilt. Now that nothing in buildMessageEl() below renders the
+    // per-member read list inline (see the removed "Seen by ..."
+    // footer — that detail lives in openMessageInfoModal() instead,
+    // opened via the Info button in the header), a read receipt
+    // arriving is no longer a visible change, so it shouldn't trigger
+    // a rebuild. This was the main cause of bubbles "blinking" right
+    // after opening a group chat, since group members' read receipts
+    // land as a burst of separate events.
     return JSON.stringify([
       msg.content, msg.file_url, msg.reply_to, msg.reply_username, msg.reply_content,
       msg.username, msg.created_at, msg.seen_at, msg.delivered_at, msg.isPending,
-      msg.deleted_at, msg.deleted_by, readsKey
+      msg.deleted_at, msg.deleted_by
     ]);
   }
 
@@ -1819,16 +1819,17 @@
       }
     }
 
-    // The "Seen by Alice, Bob +2" text stays on its own line below the
-    // bubble — it's denser info than fits well in a compact corner
-    // badge, and the exact per-person breakdown is still one tap away
-    // via the message-info modal either way. Only the tick ICON moved
-    // into the bubble/attachment above; this line now only renders when
-    // there's actually a seen-by label to show.
-    const seenByLabel = isMine ? buildSeenByLabel(msg) : '';
-    const footerHtml = (isMine && !msg.deleted_at && seenByLabel)
-      ? `<div class="msg-meta" style="margin-top:2px;">${seenByLabel}</div>`
-      : '';
+    // FIX: this used to render a "Seen by Alice, Bob +2" / "Seen by
+    // all" line under every one of your own messages, rebuilt straight
+    // from live message_reads events. It's removed here — the exact
+    // per-person seen/delivered breakdown is already one tap away via
+    // the Info button in the header (long-press/click a message to
+    // open the select header, then tap Info — see
+    // openMessageInfoModal()), so keeping a second, constantly-updating
+    // copy of the same info inline was both redundant and the direct
+    // cause of the bubble "blinking": each group member's read receipt
+    // used to force this line (and therefore the whole bubble) to
+    // rebuild the moment it arrived.
 
     // FIX: reply/delete no longer render as buttons beside the bubble
     // (they used to float awkwardly near the top of the message for
@@ -1846,7 +1847,6 @@
           <span class="msg-time">${formatDate(msg.created_at)}</span>
         </div>
         ${bubbleHtml}
-        ${footerHtml}
       </div>
     `;
     return wrap;
