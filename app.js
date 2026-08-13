@@ -144,6 +144,12 @@
 
     chatSearchInput: $('chatSearchInput'),
     channelList: $('channelList'),
+    brandHeader: $('brandHeader'),
+    channelSelectHeader: $('channelSelectHeader'),
+    channelSelectCloseBtn: $('channelSelectCloseBtn'),
+    channelSelectCount: $('channelSelectCount'),
+    channelSelectRenameBtn: $('channelSelectRenameBtn'),
+    channelSelectDeleteBtn: $('channelSelectDeleteBtn'),
 
     userBadge: $('userBadge'),
     statusTray: $('statusTray'),
@@ -863,6 +869,7 @@
   }
 
   function renderChatList(channels) {
+    exitChannelSelection();
     DOM.channelList.innerHTML = '';
 
     if (!channels || channels.length === 0) {
@@ -897,25 +904,29 @@
             ${unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : ''}
           </div>
         </div>
-        ${state.isAdmin ? `
-          <span class="chat-admin-actions">
-            <button class="icon-btn" style="width:26px;height:26px;" title="Rename" data-action="rename" data-id="${ch.id}"><i class="fas fa-pen" style="font-size:10px;"></i></button>
-            <button class="icon-btn" style="width:26px;height:26px;" title="Delete" data-action="delete-channel" data-id="${ch.id}"><i class="fas fa-trash" style="font-size:10px;color:var(--danger);"></i></button>
-          </span>
-        ` : ''}
       `;
+      // FIX: rename/delete used to be icon buttons that popped up beside
+      // the row (chat-admin-actions, hover-revealed on desktop). Like
+      // the old per-bubble message buttons, they've been replaced by a
+      // top select-header — long-press (mobile) or right-click
+      // (desktop) a row, admin only. A plain tap/click still just
+      // opens the channel, same as before.
+      if (state.isAdmin) {
+        row.addEventListener('touchstart', () => startChannelLongPress(row, ch), { passive: true });
+        ['touchend', 'touchmove', 'touchcancel'].forEach((evt) => {
+          row.addEventListener(evt, clearChannelLongPressTimer);
+        });
+        row.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          selectChannelForActions(row, ch);
+        });
+      }
       row.addEventListener('pointerup', (e) => {
-        if (e.target.closest('[data-action]')) return;
+        if (e.button === 2) return; // right-click handled by contextmenu above
+        if (channelLongPressFired) { channelLongPressFired = false; return; }
         openChannel(ch);
       });
       DOM.channelList.appendChild(row);
-    });
-
-    DOM.channelList.querySelectorAll('[data-action="rename"]').forEach((btn) => {
-      btn.addEventListener('click', (e) => { e.stopPropagation(); renameChannel(btn.dataset.id); });
-    });
-    DOM.channelList.querySelectorAll('[data-action="delete-channel"]').forEach((btn) => {
-      btn.addEventListener('click', (e) => { e.stopPropagation(); deleteChannel(btn.dataset.id); });
     });
   }
 
@@ -959,6 +970,64 @@
       teardownMessagesSubscription();
     }
     await renderChannels();
+  }
+
+  // Admin-only channel selection — long-press (mobile) or right-click
+  // (desktop) a channel row to swap the brand header for a small
+  // select bar with Rename/Delete, instead of icon buttons sitting
+  // beside every row. Mirrors selectMessageForInfo()/exitMessageSelection()
+  // for messages above.
+  let channelLongPressTimer = null;
+  let channelLongPressFired = false;
+  let selectedChannel = null;
+
+  function clearChannelLongPressTimer() {
+    if (channelLongPressTimer) { clearTimeout(channelLongPressTimer); channelLongPressTimer = null; }
+  }
+
+  function startChannelLongPress(row, ch) {
+    clearChannelLongPressTimer();
+    channelLongPressTimer = setTimeout(() => {
+      channelLongPressFired = true;
+      selectChannelForActions(row, ch);
+    }, 500);
+  }
+
+  function selectChannelForActions(row, ch) {
+    exitChannelSelection();
+    selectedChannel = ch;
+    row.classList.add('active');
+
+    if (DOM.brandHeader) DOM.brandHeader.classList.add('hidden');
+    if (DOM.channelSelectHeader) DOM.channelSelectHeader.classList.remove('hidden');
+    if (DOM.channelSelectCount) DOM.channelSelectCount.textContent = ch.name;
+  }
+
+  function exitChannelSelection() {
+    if (!selectedChannel) return;
+    selectedChannel = null;
+
+    if (DOM.channelSelectHeader) DOM.channelSelectHeader.classList.add('hidden');
+    if (DOM.brandHeader) DOM.brandHeader.classList.remove('hidden');
+    highlightActiveChatRow();
+  }
+
+  if (DOM.channelSelectCloseBtn) DOM.channelSelectCloseBtn.addEventListener('click', exitChannelSelection);
+
+  if (DOM.channelSelectRenameBtn) {
+    DOM.channelSelectRenameBtn.addEventListener('click', () => {
+      const ch = selectedChannel;
+      exitChannelSelection();
+      if (ch) renameChannel(ch.id);
+    });
+  }
+
+  if (DOM.channelSelectDeleteBtn) {
+    DOM.channelSelectDeleteBtn.addEventListener('click', () => {
+      const ch = selectedChannel;
+      exitChannelSelection();
+      if (ch) deleteChannel(ch.id);
+    });
   }
 
   async function refreshUnreadBadges() {
