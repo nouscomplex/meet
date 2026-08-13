@@ -1240,6 +1240,64 @@ body.theme-dark .msg-ticks.seen {
    (#C8CBDD) here via the base .msg-ticks rule, so no override needed for
    the delivered state. */
 
+/* Ticks now live inside the bubble/attachment corner instead of on
+   their own line below the message — see buildMessageEl(). Three
+   contexts:
+   - .msg-bubble-ticks: text bubbles. Floated so the last line of text
+     wraps around it, WhatsApp-style.
+   - .msg-corner-ticks: image/video attachments. A small pill overlaid
+     on the media itself. Anchored top-right (not bottom-right) so it
+     never collides with the image's expand button or a video's native
+     control bar, both of which sit at the bottom.
+   - .msg-inline-ticks: document cards, appended after the download icon.
+   All three override the tick color to translucent white (plus the
+   existing blue for "seen") since they now sit on the dark navy "mine"
+   bubble or a dark overlay pill, not the plain chat background the
+   base .msg-ticks color was tuned for. */
+.msg-bubble-ticks {
+  float: right;
+  margin-left: 6px;
+  margin-top: 4px;
+}
+
+.msg-corner-ticks {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.msg-inline-ticks {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+.msg-bubble-ticks .msg-ticks,
+.msg-bubble-ticks .msg-ticks.delivered,
+.msg-corner-ticks .msg-ticks,
+.msg-corner-ticks .msg-ticks.delivered,
+.msg-inline-ticks .msg-ticks,
+.msg-inline-ticks .msg-ticks.delivered {
+  color: rgba(255, 255, 255, 0.72);
+}
+.msg-bubble-ticks .msg-ticks.seen,
+.msg-corner-ticks .msg-ticks.seen,
+.msg-inline-ticks .msg-ticks.seen {
+  color: var(--chat-blue);
+}
+/* .msg-inline-ticks sits on the doc card, which for "theirs" messages
+   never renders ticks at all (isMine-gated in JS) — but the doc card
+   background for "mine" is a light overlay on navy (see .msg-mine
+   .msg-doc-card below), so the translucent-white rule above still
+   reads fine there too. */
+
 /* ============================================================ */
 .msg-bubble {
   padding: 10px 13px;
