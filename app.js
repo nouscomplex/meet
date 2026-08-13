@@ -1834,7 +1834,14 @@
     return wrap;
   }
 
-  function renderMessages() {
+  // forceScrollBottom: when true, skip the wasNearBottom check and always
+  // land at the bottom after this render — used only for the first render
+  // of a freshly-opened channel (see selectChannel()). Deliberately does
+  // NOT read/write scrollTop before the diff runs: doing that against the
+  // PREVIOUS channel's still-mounted bubbles (right before they're torn
+  // down and replaced) was itself causing a visible flicker on click —
+  // this way the old DOM's scroll state is never touched at all.
+  function renderMessages(forceScrollBottom) {
     if (!DOM.chatMessages) return;
 
     if (!state.messages.length) {
@@ -1866,7 +1873,9 @@
     // Was the view already scrolled to (or near) the bottom before this
     // update? Only auto-scroll in that case, so a background refresh
     // doesn't yank someone back down while they're reading old messages.
-    const wasNearBottom = !DOM.chatContainer || (
+    // forceScrollBottom bypasses this read entirely rather than priming
+    // it by scrolling the outgoing channel's content first.
+    const wasNearBottom = forceScrollBottom || !DOM.chatContainer || (
       DOM.chatContainer.scrollHeight - DOM.chatContainer.scrollTop - DOM.chatContainer.clientHeight < 80
     );
 
@@ -3487,20 +3496,18 @@
     // list). Resolving cache first and rendering once avoids the
     // empty-then-full flash; state.messages is still reset per-channel
     // so the previous channel's messages never leak in.
-
-    // Pre-scroll to the current bottom BEFORE renderMessages() runs so
-    // that renderMessages()'s wasNearBottom guard evaluates to true and
-    // triggers auto-scroll to the newest message. Without this, switching
-    // from a channel where the user had scrolled to the top left
-    // wasNearBottom=false and the incoming channel never auto-scrolled.
-    // (On desktop where the pane is always visible this is the decisive
-    // fix; on mobile the rAF call in openChannel() covers the hidden-
-    // panel case.)
-    scrollToBottom();
-
+    //
+    // Pass forceScrollBottom=true so this render always lands on the
+    // newest message regardless of where the PREVIOUS channel happened
+    // to be scrolled. Earlier this was done by scrolling the container
+    // to bottom before this call — but at that point the DOM still held
+    // the outgoing channel's bubbles, and scrolling them right before
+    // tearing them all down and rebuilding is what caused the click-to-
+    // open flicker. Passing the flag through instead means the old
+    // bubbles' scroll position is never touched at all.
     const cachedMessages = getCachedMessages(channel.id);
     state.messages = cachedMessages || [];
-    renderMessages();
+    renderMessages(true);
     if (cachedMessages) {
       console.log(`⚡ Instant load: ${cachedMessages.length} messages from cache`);
     }
