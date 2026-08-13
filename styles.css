@@ -1722,6 +1722,16 @@ body.theme-dark .btn-send { color: #FFFFFF; }
   font-size: 15px;
   transition: background 0.15s ease, color 0.15s ease;
 }
+/* Bottom-nav icons are inline SVGs (traced from the provided artwork)
+   rather than Font Awesome glyphs. fill="currentColor" on the <svg>
+   means they pick up color exactly like the old <i> icons did — no
+   change needed to the active-state rules below. */
+.nav-icon-svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  color: inherit;
+}
 .nav-btn.active { color: var(--ink); }
 .nav-btn.active .nav-icon-wrap { background: var(--navy); color: #fff; }
 .nav-badge {
