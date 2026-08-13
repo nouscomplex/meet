@@ -1206,7 +1206,6 @@
         console.warn('Failed to mark seen:', error);
       } else {
         console.log('✅ Messages marked as seen');
-        await refreshUnreadBadges();
       }
 
       // Record a proper per-member read receipt too — see
@@ -1235,6 +1234,19 @@
           console.warn('Failed to record read receipts:', readsError);
         }
       }
+
+      // BUGFIX: this used to run right after the seen_at UPDATE above,
+      // BEFORE the message_reads upsert a few lines up had actually
+      // committed. refreshUnreadBadges() (see above) counts a message
+      // as read for you by checking for YOUR row in message_reads — so
+      // calling it before that row existed meant it recomputed the
+      // badge against stale data and still counted this channel's
+      // messages as unread. Nothing ever called it again afterward, so
+      // the chat button kept showing the old number until some
+      // unrelated event (a new message elsewhere) happened to trigger
+      // another recompute. Moved here, after the upsert has completed,
+      // so the badge actually reflects what was just marked read.
+      await refreshUnreadBadges();
     } catch (e) {
       console.warn('Mark seen error:', e);
     }
