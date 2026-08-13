@@ -58,12 +58,26 @@
            SCREEN: CHATS
       ============================================================ -->
       <section id="screenChats" class="screen">
-        <header class="brand-header">
+        <header id="brandHeader" class="brand-header">
           <div class="brand-lockup">
            <span class="brand-mark text-logo" id="sidebarLogo">Nous Complex</span>
           </div>
           <span class="brand-word">Orbit</span>
         </header>
+
+        <!-- Admin-only selection header for a channel row: long-press
+             (mobile) or right-click (desktop) a channel to open this
+             in place of the brand header above, instead of the old
+             rename/delete icons that sat beside every row. Mirrors
+             #msgSelectHeader's pattern for messages. -->
+        <div id="channelSelectHeader" class="msg-select-header hidden">
+          <button id="channelSelectCloseBtn" class="icon-btn back-btn" aria-label="Close"><i class="fas fa-times"></i></button>
+          <span class="msg-select-count" id="channelSelectCount">1 selected</span>
+          <div class="msg-select-actions">
+            <button id="channelSelectRenameBtn" class="icon-btn" title="Rename" aria-label="Rename"><i class="fas fa-pen"></i></button>
+            <button id="channelSelectDeleteBtn" class="icon-btn" title="Delete" aria-label="Delete"><i class="fas fa-trash" style="color:var(--danger);"></i></button>
+          </div>
+        </div>
 
         <div class="search-bar">
           <i class="fas fa-magnifying-glass"></i>
