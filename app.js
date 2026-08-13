@@ -1737,21 +1737,13 @@
       ? `<div class="msg-meta" style="margin-top:2px;">${ticksHtml(msg)}${seenByLabel}</div>`
       : '';
 
-    // BUGFIX: msg-actions (reply/delete) used to be a direct sibling of
-    // msg-body, stretched by the flex row to the full height of the
-    // message (author line + bubble + delivery ticks). Centering the
-    // buttons inside that stretched box put them near the meta/author
-    // row instead of next to the bubble, so they visually "floated" at
-    // the top of the message for both admins and regular users. Now
-    // the actions sit in a dedicated row alongside just the bubble
-    // content, so they vertically center against the bubble itself.
-    const actionsHtml = !msg.deleted_at ? `
-      <div class="msg-actions">
-        <button class="msg-reply-btn" title="Reply" data-reply-id="${msg.id}"><i class="fas fa-reply"></i></button>
-        ${state.isAdmin ? `<button class="msg-reply-btn" title="Delete message" data-delete-id="${msg.id}" style="margin-left:4px;"><i class="fas fa-trash" style="color:var(--danger);"></i></button>` : ''}
-      </div>
-    ` : '';
-
+    // FIX: reply/delete no longer render as buttons beside the bubble
+    // (they used to float awkwardly near the top of the message for
+    // both admins and regular users). Both actions now live only in
+    // the top select-header bar — see startLongPress()/click handler
+    // below, which now opens that bar for ANY message (not just your
+    // own), so admin-delete and reply both work the same way for
+    // every message.
     const displayName = getDisplayName(msg.username);
     wrap.innerHTML = `
       ${avatarHtml(msg.username, 'sm')}
@@ -1760,10 +1752,7 @@
           <span class="msg-author">${escapeHtml(displayName)}</span>
           <span class="msg-time">${formatDate(msg.created_at)}</span>
         </div>
-        <div class="msg-bubble-row">
-          ${bubbleHtml}
-          ${actionsHtml}
-        </div>
+        ${bubbleHtml}
         ${footerHtml}
       </div>
     `;
@@ -1938,10 +1927,14 @@
   // a mouse does, so selection there is gated behind a 500ms hold,
   // matching WhatsApp's own long-press. Desktop instead reacts to a
   // plain click — see the DOM.chatMessages 'click' listener below.
+  // FIX: this used to only match '.msg-mine', so replying to someone
+  // else's message or (as admin) deleting it had no way to open the
+  // select bar — that's what the inline per-bubble buttons were for.
+  // Now any message (mine or theirs) can be long-pressed/clicked.
   function startLongPress(e) {
-    const bubbleWrap = e.target.closest('.msg-mine');
+    const bubbleWrap = e.target.closest('.msg');
     if (!bubbleWrap || !bubbleWrap.dataset.id || bubbleWrap.querySelector('.msg-deleted')) return;
-    if (e.target.closest('.msg-actions, .msg-media-preview, .msg-doc-card')) return;
+    if (e.target.closest('.msg-media-preview, .msg-doc-card')) return;
     clearLongPressTimer();
     longPressTimer = setTimeout(() => {
       selectMessageForInfo(bubbleWrap);
@@ -1949,7 +1942,7 @@
   }
 
   DOM.chatMessages.addEventListener('contextmenu', (e) => {
-    if (e.target.closest('.msg-mine')) e.preventDefault();
+    if (e.target.closest('.msg')) e.preventDefault();
   });
 
   DOM.chatMessages.addEventListener('touchstart', startLongPress, { passive: true });
@@ -1957,21 +1950,21 @@
     DOM.chatMessages.addEventListener(evt, clearLongPressTimer);
   });
 
-  // Desktop: a single click on your own message selects it immediately
-  // (no hold needed with a mouse). Reply/delete buttons and media taps
-  // keep their own existing behaviour instead of triggering selection.
+  // Desktop: a single click on a message selects it immediately (no
+  // hold needed with a mouse). Media taps keep their own behaviour.
   DOM.chatMessages.addEventListener('click', (e) => {
     if (!isDesktopLayout()) return;
-    const bubbleWrap = e.target.closest('.msg-mine');
+    const bubbleWrap = e.target.closest('.msg');
     if (!bubbleWrap || !bubbleWrap.dataset.id) return;
     if (bubbleWrap.querySelector('.msg-deleted')) return;
-    if (e.target.closest('.msg-actions, .msg-media-preview, .msg-doc-card')) return;
+    if (e.target.closest('.msg-media-preview, .msg-doc-card')) return;
     selectMessageForInfo(bubbleWrap);
   });
 
   function selectMessageForInfo(bubbleWrap) {
     const msg = state.messages.find((m) => m.id === bubbleWrap.dataset.id);
     if (!msg || msg.deleted_at) return;
+    const isMine = msg.username === state.currentUser?.username;
 
     exitMessageSelection();
     selectedMessageId = bubbleWrap.dataset.id;
@@ -1981,12 +1974,15 @@
     if (DOM.msgSelectHeader) DOM.msgSelectHeader.classList.remove('hidden');
     if (DOM.msgSelectCount) DOM.msgSelectCount.textContent = '1 selected';
 
-    // Copy only makes sense for a message with text; Delete only shows
-    // for admins (matches the existing per-bubble delete button's own
-    // admin gate).
+    // Copy only makes sense for a message with text. Delete only
+    // shows for admins (any message — matches what the old per-bubble
+    // delete button allowed). Info (delivery/seen ticks) only applies
+    // to your own outgoing messages, so it's hidden for others'.
     if (DOM.msgSelectCopyBtn) DOM.msgSelectCopyBtn.classList.toggle('hidden', !msg.content);
     if (DOM.msgSelectDeleteBtn) DOM.msgSelectDeleteBtn.classList.toggle('hidden', !state.isAdmin);
+    if (DOM.msgSelectInfoBtn) DOM.msgSelectInfoBtn.classList.toggle('hidden', !isMine);
   }
+
 
   function exitMessageSelection() {
     if (!selectedMessageId) return;
@@ -2220,15 +2216,6 @@
       openImageLightbox(mediaPreview.dataset.mediaUrl);
       return;
     }
-
-    const btn = e.target.closest('.msg-reply-btn');
-    if (!btn) return;
-
-    if (btn.dataset.deleteId) { deleteMessage(btn.dataset.deleteId); return; }
-
-    const id = btn.dataset.replyId;
-    const msg = state.messages.find((m) => m.id === id);
-    startReplyTo(msg);
   });
 
   // Full-resolution view for a tapped image thumbnail — the WhatsApp-
