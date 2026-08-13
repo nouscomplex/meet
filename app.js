@@ -1038,16 +1038,41 @@
 
   async function refreshUnreadBadges() {
     if (!state.currentUser) return;
-    const { data, error } = await supabase
+
+    // BUGFIX: this used to decide "unread" purely from the messages
+    // table's seen_at column — but seen_at is a single field on the
+    // message row, so it can only ever record ONE person as having
+    // seen it (same limitation noted in markSeen() above, which is
+    // exactly why message_reads — a proper per-user row — exists).
+    // In a group, the moment the FIRST member opened the chat and
+    // called markSeen(), seen_at got set on those messages — and this
+    // query then treated them as "read" for EVERY other member too,
+    // even ones who had never opened the chat. That's why messages
+    // kept showing up as already read on the chat list/badge for
+    // anyone who wasn't first. Unread is now computed per-user from
+    // message_reads instead: a message from someone else counts as
+    // unread for you unless YOUR username has a read row for it.
+    const { data: fromOthers, error: msgError } = await supabase
       .from(CONFIG.SUPABASE.TABLES.MESSAGES)
-      .select('channel_id')
-      .is('seen_at', null)
-      .neq('username', state.currentUser.username);
+      .select('id, channel_id')
+      .neq('username', state.currentUser.username)
+      .is('deleted_at', null);
 
-    if (error) return;
+    if (msgError) return;
 
+    const { data: myReads, error: readsError } = await supabase
+      .from('message_reads')
+      .select('message_id')
+      .eq('username', state.currentUser.username);
+
+    if (readsError) return;
+
+    const readIds = new Set((myReads || []).map((r) => r.message_id));
     const counts = {};
-    (data || []).forEach((row) => { counts[row.channel_id] = (counts[row.channel_id] || 0) + 1; });
+    (fromOthers || []).forEach((row) => {
+      if (readIds.has(row.id)) return;
+      counts[row.channel_id] = (counts[row.channel_id] || 0) + 1;
+    });
     state.unreadByChannel = counts;
 
     const total = Object.values(counts).reduce((a, b) => a + b, 0);
