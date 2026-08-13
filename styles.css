@@ -833,8 +833,10 @@ body.theme-dark .brand-word { color: #3A3E63; }
   flex-shrink: 0;
 }
 
-.chat-admin-actions { display: none; gap: 4px; margin-left: 4px; }
-.chat-row:hover .chat-admin-actions { display: flex; }
+/* FIX: rename/delete for a channel used to be icon buttons revealed
+   on row hover (chat-admin-actions). Replaced by the admin-only
+   #channelSelectHeader select bar (long-press / right-click a row) —
+   see renderChatList()/selectChannelForActions() in app.js. */
 
 /* Floating action button */
 .fab {
@@ -1419,27 +1421,13 @@ body.theme-dark .msg-time {
 .msg-reply-quote .reply-text { color: var(--chat-ink-soft); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msg-mine .msg-reply-quote .reply-text { color: rgba(255,255,255,0.85); }
 
-/* BUGFIX: actions now live in their own row next to the bubble (see
-   .msg-bubble-row) instead of being a full-height sibling of
-   .msg-body, which used to center them against the whole message
-   (author line + bubble + ticks) and made them look like they were
-   sitting on top of the message instead of beside it. */
-.msg-bubble-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.msg-mine .msg-bubble-row { flex-direction: row-reverse; }
+/* FIX: reply/delete no longer render as per-bubble buttons — they used
+   to float oddly near the top of the message (stretched to the full
+   message height) instead of sitting cleanly beside it, for both
+   admins and regular users. Both actions now live only in the
+   top select-header bar (see .msg-select-header below), opened by
+   long-press (mobile) or click (desktop) on any message. */
 
-.msg-actions { opacity: 0; transition: opacity 0.12s ease; display: flex; align-items: center; flex-shrink: 0; }
-.msg:hover .msg-actions, .msg:active .msg-actions { opacity: 1; }
-.msg-reply-btn {
-  width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--chat-grey);
-  background: var(--chat-white); color: var(--chat-grey);
-  cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 10.5px;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-.msg-reply-btn:hover { color: var(--chat-accent); border-color: var(--chat-accent); }
-body.theme-dark .msg-reply-btn { color: var(--chat-ink-soft); border-color: var(--chat-grey); }
 
 .reply-preview {
   display: flex; align-items: center; gap: 10px;
@@ -1860,7 +1848,6 @@ body.theme-dark .btn-send { color: #FFFFFF; }
 .btn-live-pill,
 .btn-navy-pill,
 .btn-admin-sm,
-.msg-reply-btn,
 .see-all-link,
 .status-viewer-media img,
 .status-viewer-media video,
