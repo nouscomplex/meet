@@ -1737,6 +1737,21 @@
       ? `<div class="msg-meta" style="margin-top:2px;">${ticksHtml(msg)}${seenByLabel}</div>`
       : '';
 
+    // BUGFIX: msg-actions (reply/delete) used to be a direct sibling of
+    // msg-body, stretched by the flex row to the full height of the
+    // message (author line + bubble + delivery ticks). Centering the
+    // buttons inside that stretched box put them near the meta/author
+    // row instead of next to the bubble, so they visually "floated" at
+    // the top of the message for both admins and regular users. Now
+    // the actions sit in a dedicated row alongside just the bubble
+    // content, so they vertically center against the bubble itself.
+    const actionsHtml = !msg.deleted_at ? `
+      <div class="msg-actions">
+        <button class="msg-reply-btn" title="Reply" data-reply-id="${msg.id}"><i class="fas fa-reply"></i></button>
+        ${state.isAdmin ? `<button class="msg-reply-btn" title="Delete message" data-delete-id="${msg.id}" style="margin-left:4px;"><i class="fas fa-trash" style="color:var(--danger);"></i></button>` : ''}
+      </div>
+    ` : '';
+
     const displayName = getDisplayName(msg.username);
     wrap.innerHTML = `
       ${avatarHtml(msg.username, 'sm')}
@@ -1745,14 +1760,11 @@
           <span class="msg-author">${escapeHtml(displayName)}</span>
           <span class="msg-time">${formatDate(msg.created_at)}</span>
         </div>
-        ${bubbleHtml}
+        <div class="msg-bubble-row">
+          ${bubbleHtml}
+          ${actionsHtml}
+        </div>
         ${footerHtml}
-      </div>
-      <div class="msg-actions">
-        ${!msg.deleted_at ? `
-          <button class="msg-reply-btn" title="Reply" data-reply-id="${msg.id}"><i class="fas fa-reply"></i></button>
-          ${state.isAdmin ? `<button class="msg-reply-btn" title="Delete message" data-delete-id="${msg.id}" style="margin-left:4px;"><i class="fas fa-trash" style="color:var(--danger);"></i></button>` : ''}
-        ` : ''}
       </div>
     `;
     return wrap;
