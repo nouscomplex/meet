@@ -263,20 +263,17 @@
   }
 
   function handleBackNavigation(event) {
-    // 1. Close Active Custom Modals (Lightbox / Overlays)
     if (state.activeOverlay) {
       state.activeOverlay.remove();
       state.activeOverlay = null;
       return;
     }
 
-    // 2. Close Status Viewer if open
     if (DOM.statusModal && !DOM.statusModal.classList.contains('hidden')) {
       closeStatusViewer(true);
       return;
     }
 
-    // 3. Close Video Containers
     if (DOM.videoContainer && !DOM.videoContainer.classList.contains('hidden')) {
       DOM.videoContainer.classList.add('hidden');
       DOM.videoIframe.src = '';
@@ -284,7 +281,6 @@
       return;
     }
 
-    // 4. Default Screen Back-navigation
     const targetScreen = event.state && event.state.orbitScreen;
     if (targetScreen && SCREEN_EL[targetScreen]) {
       isBackNavigation = true;
@@ -315,7 +311,6 @@
       DOM.statusModalMedia.classList.add('hidden');
     }
 
-    // Push state so mobile back button closes status screen instead of exiting app
     pushScreenState('statusModal', true);
   }
 
@@ -342,7 +337,6 @@
     document.body.appendChild(overlay);
     state.activeOverlay = overlay;
 
-    // Push history item so pressing back closes the lightbox preview
     pushScreenState('lightbox', true);
 
     const close = () => {
@@ -358,7 +352,7 @@
   }
 
   // ============================================================
-  // 6b. SCREEN NAVIGATION
+  // 7. SCREEN NAVIGATION
   // ============================================================
   const ROOT_TABS = ['chats', 'updates', 'settings'];
   const SCREEN_EL = {
@@ -431,6 +425,95 @@
     return state.displayNameCache[username.toLowerCase()] || username;
   }
 
-  // --- REST OF ORIGINAL SYSTEM INITIALIZATION HERE ---
+  // ============================================================
+  // 8. AUTHENTICATION HANDLERS
+  // ============================================================
+  async function handleLogin(e) {
+    if (e) e.preventDefault();
+    if (DOM.authError) DOM.authError.classList.add('hidden');
+
+    const username = DOM.usernameInput.value.trim().toLowerCase();
+    const password = DOM.passwordInput.value;
+
+    if (!username || !password) {
+      showAuthError("Please enter both username and password.");
+      return;
+    }
+
+    if (DOM.loginBtn) {
+      DOM.loginBtn.disabled = true;
+      DOM.loginBtn.textContent = 'Signing in...';
+    }
+
+    // Convert username to internal email format if user didn't enter full email
+    const email = username.includes('@') ? username : `${username}@nous.edu`;
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email,
+      password: password
+    });
+
+    if (DOM.loginBtn) {
+      DOM.loginBtn.disabled = false;
+      DOM.loginBtn.textContent = 'Sign In';
+    }
+
+    if (error) {
+      showAuthError(error.message);
+      return;
+    }
+
+    // Successful login triggered automatically via onAuthStateChange
+  }
+
+  function showAuthError(msg) {
+    if (DOM.authError && DOM.authErrorText) {
+      DOM.authErrorText.textContent = msg;
+      DOM.authError.classList.remove('hidden');
+    } else {
+      alert(msg);
+    }
+  }
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    state.currentUser = null;
+    DOM.dashboard.classList.add('hidden');
+    DOM.authCard.classList.remove('hidden');
+    if (DOM.passwordInput) DOM.passwordInput.value = '';
+  }
+
+  // Bind Login Listener
+  if (DOM.loginBtn) {
+    DOM.loginBtn.addEventListener('click', handleLogin);
+  }
+  if (DOM.passwordInput) {
+    DOM.passwordInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') handleLogin(e);
+    });
+  }
+  if (DOM.signOutBtn) {
+    DOM.signOutBtn.addEventListener('click', handleSignOut);
+  }
+
+  // ============================================================
+  // 9. SUPABASE AUTH STATE OBSERVER
+  // ============================================================
+  supabase.auth.onAuthStateChange(async (event, session) => {
+    if (session && session.user) {
+      state.currentUser = session.user;
+      
+      // Hide Auth UI, show App Dashboard
+      if (DOM.authCard) DOM.authCard.classList.add('hidden');
+      if (DOM.dashboard) DOM.dashboard.classList.remove('hidden');
+
+      // Initialize workspace
+      goToScreen('chats');
+    } else {
+      state.currentUser = null;
+      if (DOM.dashboard) DOM.dashboard.classList.add('hidden');
+      if (DOM.authCard) DOM.authCard.classList.remove('hidden');
+    }
+  });
 
 })();
