@@ -1258,7 +1258,7 @@
         if (!list.some((r) => r.username === row.username)) {
           list.push({ username: row.username, seen_at: row.seen_at });
           state.messageReads.set(row.message_id, list);
-          renderMessages();
+          scheduleRenderMessages();
         }
       })
       .subscribe();
@@ -1314,7 +1314,7 @@
         saveCachedMessages(state.currentChannel.id, mergedMessages);
       }
       
-      renderMessages();
+      scheduleRenderMessages();
       
       console.log(`✅ Merged ${messagesToAdd.length} messages, total: ${mergedMessages.length}`);
       
@@ -1514,7 +1514,7 @@
             console.log(`✅ Replacing optimistic message (clientId: ${newMessage.client_id})`);
             state.messages[optimisticIndex] = newMessage;
             delete state.messages[optimisticIndex].isPending;
-            renderMessages();
+            scheduleRenderMessages();
             saveCachedMessages(channelId, state.messages);
             
             // Mark delivered for messages from others
@@ -1558,7 +1558,7 @@
         const idx = state.messages.findIndex((m) => m.id === payload.new.id);
         if (idx !== -1) { 
           state.messages[idx] = payload.new; 
-          renderMessages();
+          scheduleRenderMessages();
           saveCachedMessages(channelId, state.messages);
         }
       })
@@ -1573,7 +1573,7 @@
         
         if (state.messages.length < initialCount) {
           console.log(`🗑️ Message deleted (ID: ${payload.old.id})`);
-          renderMessages();
+          scheduleRenderMessages();
           saveCachedMessages(channelId, state.messages);
         }
       })
@@ -1749,6 +1749,20 @@
       `;
     }
 
+    // Delivery ticks (sent/delivered/seen) belong only on the sender's
+    // own outgoing messages. Shown on incoming messages this doesn't
+    // make sense: delivery status is info for the sender about their
+    // own message, not something the receiver needs to see.
+    //
+    // WhatsApp-style: the ticks sit in the corner of whatever the
+    // message actually rendered as (the text bubble, or the attachment
+    // if there's no text) rather than on their own line underneath.
+    // Built once and attached to whichever block ends up LAST below, so
+    // a message with both text and an attachment only shows one set of
+    // ticks — on the attachment, since that's the final thing rendered.
+    const ticksMarkup = (isMine && !msg.deleted_at) ? ticksHtml(msg) : '';
+    const hasAttachment = !!msg.file_url && !msg.deleted_at;
+
     let bubbleHtml = '';
     if (msg.deleted_at) {
       // WhatsApp-style tombstone: the row still exists (soft-deleted —
@@ -1756,11 +1770,13 @@
       // content/attachment instead of the message just disappearing.
       bubbleHtml = `<div class="msg-bubble msg-deleted"><i class="fas fa-ban"></i> This message was deleted by Nous Complex admin</div>`;
     } else if (msg.content) {
-      bubbleHtml += `<div class="msg-bubble">${replyHtml}${escapeHtml(msg.content)}</div>`;
+      const inlineTicks = (!hasAttachment && ticksMarkup) ? `<span class="msg-bubble-ticks">${ticksMarkup}</span>` : '';
+      bubbleHtml += `<div class="msg-bubble">${replyHtml}${escapeHtml(msg.content)}${inlineTicks}</div>`;
     } else if (replyHtml) {
-      bubbleHtml += `<div class="msg-bubble">${replyHtml}</div>`;
+      const inlineTicks = (!hasAttachment && ticksMarkup) ? `<span class="msg-bubble-ticks">${ticksMarkup}</span>` : '';
+      bubbleHtml += `<div class="msg-bubble">${replyHtml}${inlineTicks}</div>`;
     }
-    if (msg.file_url && !msg.deleted_at) {
+    if (hasAttachment) {
       // BUGFIX / FEATURE: every attachment — image, video, or
       // otherwise — used to render as identical plain text ("📎
       // Attached file"), with no preview at all until you left the
@@ -1769,22 +1785,26 @@
       // in styles.css), cropped rather than shown at full size, with
       // a tap-to-expand affordance — the full-resolution view only
       // opens when you actually tap it.
+      const cornerTicks = ticksMarkup ? `<span class="msg-corner-ticks">${ticksMarkup}</span>` : '';
       if (isImageFile(msg.file_url)) {
         bubbleHtml += `
           <div class="msg-media-preview" data-media-url="${escapeHtml(msg.file_url)}">
             <img class="msg-media-img" src="${escapeHtml(msg.file_url)}" alt="Attached image" loading="lazy">
             <span class="msg-media-expand"><i class="fas fa-expand"></i></span>
+            ${cornerTicks}
           </div>
         `;
       } else if (isVideoFile(msg.file_url)) {
         bubbleHtml += `
           <div class="msg-media-preview msg-media-video-wrap">
             <video class="msg-media-img" src="${escapeHtml(msg.file_url)}" controls preload="metadata"></video>
+            ${cornerTicks}
           </div>
         `;
       } else {
         const fileName = getFileNameFromUrl(msg.file_url);
         const ext = getFileExt(fileName);
+        const inlineTicks = ticksMarkup ? `<span class="msg-inline-ticks">${ticksMarkup}</span>` : '';
         bubbleHtml += `
           <a href="${escapeHtml(msg.file_url)}" target="_blank" rel="noopener" class="msg-doc-card">
             <span class="msg-doc-icon"><i class="fas ${getFileIconClass(ext)}"></i></span>
@@ -1793,23 +1813,21 @@
               <span class="msg-doc-ext">${escapeHtml(ext || 'FILE')}</span>
             </span>
             <span class="msg-doc-download"><i class="fas fa-download"></i></span>
+            ${inlineTicks}
           </a>
         `;
       }
     }
 
-    // Delivery ticks (sent/delivered/seen) belong only on the sender's
-    // own outgoing messages. Shown on incoming messages this doesn't
-    // make sense: delivery status is info for the sender about their
-    // own message, not something the receiver needs to see.
-    //
-    // The "Seen ..." text used to just show the single seen_at
-    // timestamp — meaningless in a group, since that column can only
-    // ever record ONE person. Now it's built from message_reads,
-    // which has a row per (message, viewer) — see buildSeenByLabel().
+    // The "Seen by Alice, Bob +2" text stays on its own line below the
+    // bubble — it's denser info than fits well in a compact corner
+    // badge, and the exact per-person breakdown is still one tap away
+    // via the message-info modal either way. Only the tick ICON moved
+    // into the bubble/attachment above; this line now only renders when
+    // there's actually a seen-by label to show.
     const seenByLabel = isMine ? buildSeenByLabel(msg) : '';
-    const footerHtml = (isMine && !msg.deleted_at)
-      ? `<div class="msg-meta" style="margin-top:2px;">${ticksHtml(msg)}${seenByLabel}</div>`
+    const footerHtml = (isMine && !msg.deleted_at && seenByLabel)
+      ? `<div class="msg-meta" style="margin-top:2px;">${seenByLabel}</div>`
       : '';
 
     // FIX: reply/delete no longer render as buttons beside the bubble
@@ -1936,6 +1954,39 @@
     }
 
     reapplySelectionHighlight();
+  }
+
+  // Coalesces multiple render requests landing within the same
+  // animation frame into a single renderMessages() pass.
+  //
+  // ROOT CAUSE of the "opens fine, then blinks a few seconds later
+  // right as double ticks appear": markSeen() on the OTHER person's
+  // side marks every unseen message in the channel as seen with ONE
+  // bulk UPDATE — but Postgres logical replication (what Supabase
+  // Realtime is built on) emits one change event PER ROW affected by
+  // that bulk write, not one event for the whole batch. So if the
+  // other person had, say, 6 unread messages waiting and just opened
+  // the chat, this client receives 6 separate UPDATE events for the
+  // messages table back-to-back within the same second, each of which
+  // used to call renderMessages() (and saveCachedMessages()) on its
+  // own — 6 full diff/rebuild passes firing in a tight burst instead
+  // of 1. That rapid-fire DOM churn is what showed up as a visible
+  // blink right as the ticks flipped to double/blue. Routing those
+  // handlers through this scheduler instead means however many events
+  // land in one frame, the DOM only actually gets touched once.
+  let renderMessagesQueued = false;
+  let renderMessagesForceScroll = false;
+
+  function scheduleRenderMessages(forceScrollBottom) {
+    if (forceScrollBottom) renderMessagesForceScroll = true;
+    if (renderMessagesQueued) return;
+    renderMessagesQueued = true;
+    requestAnimationFrame(() => {
+      renderMessagesQueued = false;
+      const force = renderMessagesForceScroll;
+      renderMessagesForceScroll = false;
+      renderMessages(force);
+    });
   }
 
   // Scroll chatContainer to its current bottom edge.
