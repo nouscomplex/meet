@@ -573,6 +573,63 @@
   }
 
   // ============================================================
+  // 6a. REALTIME CONNECTION STATUS BANNER (NEW)
+  // ============================================================
+  // FIX: "chat doesn't update live" / "unread numbers don't clear" almost
+  // always trace back to Realtime silently failing to deliver events — most
+  // commonly because Realtime replication isn't switched on for a table in
+  // the Supabase dashboard (Database → Replication), or a Row Level
+  // Security policy is quietly blocking the SELECT/INSERT Realtime needs.
+  // Previously the ONLY sign of this was a console.warn — completely
+  // invisible to the person actually using the app, who just sees "it
+  // doesn't work" with nothing to go on. This adds a small, auto-clearing
+  // banner that appears once a realtime channel has failed to (re)connect
+  // repeatedly, and disappears the moment it recovers. It is purely
+  // additive: it builds its own DOM node with inline styles at runtime, so
+  // it cannot depend on (or break) anything in index.html/styles.css, and
+  // it does not alter any existing reconnect/badge/message logic — it only
+  // observes the outcomes those already report.
+  const connectionIssues = new Set();
+  let connectionBannerEl = null;
+
+  function setConnectionIssue(key, hasIssue) {
+    const had = connectionIssues.has(key);
+    if (hasIssue) connectionIssues.add(key);
+    else connectionIssues.delete(key);
+    if (had !== connectionIssues.has(key)) renderConnectionBanner();
+  }
+
+  function renderConnectionBanner() {
+    if (connectionIssues.size === 0) {
+      if (connectionBannerEl) {
+        connectionBannerEl.remove();
+        connectionBannerEl = null;
+      }
+      return;
+    }
+    if (!connectionBannerEl) {
+      connectionBannerEl = document.createElement('div');
+      connectionBannerEl.setAttribute('role', 'status');
+      connectionBannerEl.style.cssText = [
+        'position:fixed', 'left:50%', 'bottom:16px', 'transform:translateX(-50%)',
+        'z-index:99999', 'max-width:min(92vw,440px)',
+        'background:#E24C43', 'color:#fff', 'font:600 12.5px/1.4 -apple-system,system-ui,sans-serif',
+        'padding:10px 14px', 'border-radius:12px',
+        'box-shadow:0 8px 24px -6px rgba(0,0,0,0.35)',
+        'display:flex', 'align-items:center', 'gap:10px',
+      ].join(';');
+      document.body.appendChild(connectionBannerEl);
+    }
+    connectionBannerEl.innerHTML =
+      '<span style="flex:1;">⚠️ Live updates aren’t connecting — new messages and unread counts may be delayed. Try refreshing the page.</span>' +
+      '<button type="button" aria-label="Dismiss" style="flex-shrink:0;background:rgba(255,255,255,0.18);border:none;color:#fff;width:22px;height:22px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1;">✕</button>';
+    connectionBannerEl.querySelector('button').addEventListener('click', () => {
+      connectionBannerEl.remove();
+      connectionBannerEl = null;
+    });
+  }
+
+  // ============================================================
   // 6b. SCREEN NAVIGATION
   // ============================================================
   const ROOT_TABS = ['chats', 'updates', 'settings'];
@@ -1084,8 +1141,15 @@
 
       if (msgError) {
         console.warn('Failed to fetch messages for badge:', msgError);
+        // FIX: a failed query here (commonly an RLS SELECT policy blocking
+        // it) previously just bailed out silently, leaving the unread badge
+        // stuck wherever it last was — indistinguishable from "the badge
+        // never clears". Surface it instead of hiding it. See
+        // setConnectionIssue near the top of the file.
+        setConnectionIssue('badges', true);
         return;
       }
+      setConnectionIssue('badges', false);
 
       // Get user's read receipts
       const { data: myReads, error: readsError } = await supabase
@@ -1095,8 +1159,10 @@
 
       if (readsError) {
         console.warn('Failed to fetch read receipts for badge:', readsError);
+        setConnectionIssue('badges', true);
         return;
       }
+      setConnectionIssue('badges', false);
 
       const readIds = new Set((myReads || []).map((r) => r.message_id));
       const counts = {};
@@ -1334,6 +1400,7 @@
       .subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {
           channelListReconnectAttempts = 0;
+          setConnectionIssue('channel-list', false);
           console.log('✅ Subscribed to channel-list updates');
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           if (channelListIntentionalTeardown) return;
@@ -1341,6 +1408,13 @@
           if (channelListSubscription) {
             channelListSubscription = null;
             scheduleChannelListReconnect();
+            // FIX: surface repeated failures to the user (see setConnectionIssue
+            // above) instead of only logging — this channel is what delivers new
+            // chat previews/unread counts and "removed from group" notices, so a
+            // silent failure here looks exactly like "chat doesn't update live".
+            if (channelListReconnectAttempts >= 5) {
+              setConnectionIssue('channel-list', true);
+            }
           }
         }
       });
@@ -1425,8 +1499,17 @@
           .upsert(rows, { onConflict: 'message_id,username', ignoreDuplicates: true });
         if (readsError) {
           console.warn('Failed to record read receipts:', readsError);
+          // FIX: this write is what actually clears the unread badge — if
+          // it fails (typically an RLS INSERT policy on message_reads
+          // blocking it), refreshUnreadBadges() below will re-derive the
+          // count from the database and find these messages still unread,
+          // so the badge silently never clears no matter how many times the
+          // chat is opened. Make that visible instead of leaving it as a
+          // console-only warning.
+          setConnectionIssue('badges', true);
         } else {
           console.log(`✅ Recorded ${rows.length} read receipts`);
+          setConnectionIssue('badges', false);
         }
       }
 
@@ -1787,6 +1870,7 @@
         if (status === 'SUBSCRIBED') {
           reconnectAttempts = 0;
           state.isChannelActive = true;
+          setConnectionIssue('messages', false);
           console.log(`✅ Subscribed to channel ${channelId}`);
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           if (isIntentionalTeardown) {
@@ -1810,6 +1894,10 @@
                 '(Database → Replication), or a Row Level Security policy is blocking it — ' +
                 'not a transient network issue. Still retrying, but check that config.'
               );
+              // FIX: make this visible to the actual user, not just the
+              // console — this is the exact failure mode behind "chat
+              // doesn't update live". See setConnectionIssue above.
+              setConnectionIssue('messages', true);
             }
           }
         }
