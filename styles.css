@@ -1770,17 +1770,36 @@ body.theme-dark .btn-send { color: #FFFFFF; }
 
 /* ============================================================
    ADMIN — REGISTERED USERS LIST (Settings → Manage Users)
-   Shows every account plus which group/session it's assigned to,
-   or "Unassigned" if it isn't in any group yet.
+   Two separate lists — Unassigned (no group memberships at all)
+   and Assigned (shows which group/session each is in) — plus a
+   per-row button that opens the multi-group checklist modal.
    ============================================================ */
 .registered-users-wrap {
-  max-height: 260px;
+  max-height: 340px;
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   -webkit-overflow-scrolling: touch;
 }
 .registered-users-list { display: flex; flex-direction: column; }
+.registered-user-section + .registered-user-section { border-top: 1px solid var(--border); }
+.registered-user-section-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  background: var(--surface-sunken);
+  padding: 7px 10px;
+  position: sticky;
+  top: 0;
+}
+.registered-user-section-label.unassigned-label { color: var(--warning); }
+.registered-user-count { font-weight: 600; opacity: 0.75; text-transform: none; letter-spacing: 0; }
+.registered-user-rows { display: flex; flex-direction: column; }
 .registered-user-row {
   display: flex;
   align-items: center;
@@ -1810,6 +1829,45 @@ body.theme-dark .btn-send { color: #FFFFFF; }
   text-overflow: ellipsis;
 }
 .registered-user-groups.unassigned { color: var(--warning); font-weight: 600; }
+.registered-user-manage-btn { width: 28px; height: 28px; flex-shrink: 0; font-size: 12px; }
+
+/* Multi-group checklist modal (openGroupAssignmentModal in app.js) */
+.group-assign-modal { max-width: 380px; }
+.group-assign-list {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  -webkit-overflow-scrolling: touch;
+}
+.group-assign-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.group-assign-row:last-child { border-bottom: none; }
+.group-assign-row:hover { background: var(--surface-sunken); }
+.group-assign-row input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--role-admin);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.group-assign-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.group-assign-role { flex: 0 0 100px; }
 
 .alpha-index {
   width: 18px;
