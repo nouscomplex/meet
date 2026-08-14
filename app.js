@@ -1139,8 +1139,15 @@
   }
 
   async function markSeen(channelId) {
-    if (!state.currentUser || !document.hasFocus()) {
-      console.log('⏭️ Skipping markSeen - no user or tab not focused');
+    // FIX: document.hasFocus() checks OS-level window focus, which is
+    // frequently false even while the user is actively viewing the chat
+    // (PWAs/home-screen webviews, embedded browsers, clicking outside the
+    // window, etc). That caused read receipts to never be written, so the
+    // nav badge kept showing "unread" messages the user had already seen.
+    // document.hidden reflects tab/app *visibility*, which is what actually
+    // matters here.
+    if (!state.currentUser || document.hidden) {
+      console.log('⏭️ Skipping markSeen - no user or tab not visible');
       return;
     }
     
@@ -1466,8 +1473,13 @@
         console.log(`📥 Adding new message (ID: ${newMessage.id})`);
         mergeMessagesSafely(newMessage);
         
-        // Refresh unread badges for new messages
-        refreshUnreadBadges();
+        // Refresh unread badges for new messages.
+        // FIX: this must be awaited. It was previously fired without
+        // awaiting, which could race with the refreshUnreadBadges() call
+        // inside markSeen() below and, depending on network timing,
+        // resolve *after* it and stomp the just-cleared badge count back
+        // to a stale "unread" value.
+        await refreshUnreadBadges();
         
         if (newMessage.username !== state.currentUser?.username) {
           console.log('🔔 New message from someone else - marking delivered');
@@ -3132,6 +3144,14 @@
           try {
             await fetchFreshHistory(state.currentChannel.id);
             console.log("✅ Catch-up complete!");
+
+            // FIX: messages that arrived while the tab was hidden were
+            // never marked delivered/seen (markSeen bails out while
+            // document.hidden is true). Now that the tab is visible again
+            // and the channel is still open, catch those up so the nav
+            // badge actually clears instead of staying stuck on "unread".
+            await markDelivered(state.currentChannel.id);
+            await markSeen(state.currentChannel.id);
           } catch (e) {
             console.warn('Catch-up failed:', e);
           } finally {
