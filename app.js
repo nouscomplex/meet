@@ -1176,6 +1176,22 @@
     await refreshUnreadBadges();
   }
 
+  // FIX: Realtime account-deletion detection. admin_delete_user removes this
+  // user's row from user_roles (loadRoleCache() already reads this table for
+  // everyone, and the client already assumes the row is gone post-delete —
+  // see the `delete state.roleCache[username]` call in deleteUserAccount()).
+  // Subscribing to DELETE on it means we don't have to wait for a token
+  // refresh failure or the next watchdog poll — this fires the moment the
+  // row is removed, typically within a second.
+  function handleAccountDeleted(oldRow) {
+    if (!oldRow || !state.currentUser) return;
+    const deletedUsername = normalizeUsername(oldRow.username || '');
+    if (deletedUsername && deletedUsername === state.currentUser.username) {
+      console.warn('🚫 Realtime: this account was deleted, signing out.');
+      forceSignOut('Your account has been removed. You have been signed out.');
+    }
+  }
+
   function subscribeToChannelListUpdates() {
     if (channelListSubscription) {
       supabase.removeChannel(channelListSubscription);
@@ -1195,6 +1211,11 @@
         schema: 'public',
         table: CONFIG.SUPABASE.TABLES.MEMBERS,
       }, (payload) => handleMembershipRemoved(payload.old))
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'user_roles',
+      }, (payload) => handleAccountDeleted(payload.old))
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           console.log('✅ Subscribed to channel-list updates');
@@ -3445,12 +3466,12 @@
     }
   }
 
-  // FIX: Periodically re-verify the session against the auth server (not
-  // just the locally cached token) so a deleted/disabled account gets
-  // logged out promptly instead of only when its JWT happens to expire.
-  // supabase.auth.getUser() round-trips to Supabase Auth and fails once
-  // the underlying account no longer exists.
-  const SESSION_CHECK_INTERVAL = 30000;
+  // FIX: Backstop only — account deletion is now caught in realtime via the
+  // user_roles DELETE subscription above. This watchdog just re-verifies
+  // the session against the auth server periodically in case the realtime
+  // socket ever drops silently (network blips, tab throttling, etc.), so
+  // the account never stays "logged in" indefinitely on a dead session.
+  const SESSION_CHECK_INTERVAL = 60000;
 
   function startSessionWatchdog() {
     stopSessionWatchdog();
