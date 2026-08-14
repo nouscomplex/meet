@@ -1503,6 +1503,74 @@ body.theme-dark .msg-time {
 }
 .lightbox-close:hover { background: rgba(255,255,255,0.22); }
 
+/* Document viewer overlay (see openDocViewer() in app.js) — reuses
+   .lightbox-overlay for the dimmed backdrop/centering, adds a bordered
+   panel with its own header (filename + download/close) so it reads as
+   an in-app screen rather than a raw file being loaded. */
+.doc-viewer-overlay { padding: 0; }
+@media (min-width: 640px) { .doc-viewer-overlay { padding: 24px; } }
+
+.doc-viewer-panel {
+  width: 100%;
+  height: 100%;
+  max-width: 720px;
+  max-height: 860px;
+  background: var(--surface);
+  border-radius: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg);
+}
+@media (min-width: 640px) { .doc-viewer-panel { border-radius: var(--radius-lg); } }
+
+.doc-viewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.doc-viewer-name {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.doc-viewer-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+.doc-viewer-body {
+  flex: 1;
+  min-height: 0;
+  background: var(--surface-sunken);
+}
+.doc-viewer-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: #fff;
+}
+.doc-viewer-no-preview {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--ink-faint);
+  padding: 24px;
+  text-align: center;
+}
+.doc-viewer-no-preview i { font-size: 40px; }
+.doc-viewer-no-preview p { font-size: 13.5px; max-width: 260px; }
+
 .msg-ticks { display: inline-flex; align-items: center; gap: 1px; font-size: 12px; color: var(--chat-grey); line-height: 1; }
 .msg-ticks.seen { color: var(--chat-blue); }
 .msg-seen-time { font-size: 10px; color: var(--chat-ink-soft); margin-top: 2px; }
