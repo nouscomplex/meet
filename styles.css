@@ -1388,6 +1388,49 @@ body.theme-dark .msg-time {
 .msg-doc-download { margin-left: auto; flex-shrink: 0; color: var(--chat-ink-soft); font-size: 13px; }
 .msg-mine .msg-doc-download { color: rgba(255,255,255,0.75); }
 
+/* WhatsApp-style PDF preview card: a cropped page-1 thumbnail (filled in
+   by hydratePdfThumb() in app.js once pdf.js has rendered it — see
+   getPdfThumbnail()) sitting above the filename/download bar. .msg-doc-card
+   is a horizontal row by default; override it to stack the thumbnail on
+   top since a PDF card needs both a preview image and an info row. */
+.msg-pdf-card {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  max-width: 260px;
+  overflow: hidden;
+}
+.msg-pdf-thumb {
+  position: relative;
+  width: 100%;
+  height: 190px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--chat-grey);
+  color: var(--chat-ink-soft);
+  font-size: 34px;
+  overflow: hidden;
+}
+.msg-mine .msg-pdf-thumb { background: rgba(255,255,255,0.14); color: rgba(255,255,255,0.85); }
+/* Once loaded, the thumbnail is a real <img class="msg-media-img"> node —
+   object-fit:cover + object-position:top crops it to show just the top
+   portion of page 1, the same "shown half until tapped" look
+   .msg-media-preview already gives images/videos. */
+.msg-pdf-thumb img.msg-media-img {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: cover;
+  object-position: top center;
+}
+.msg-pdf-info-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+}
+
 /* WhatsApp-style attachment preview: capped height + object-fit:cover
    crops tall images so only part shows in the bubble ("shown half")
    until the user taps to open the full-resolution lightbox view. */
