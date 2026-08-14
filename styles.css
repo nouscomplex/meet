@@ -1831,6 +1831,32 @@ body.theme-dark .btn-send { color: #FFFFFF; }
 .registered-user-groups.unassigned { color: var(--warning); font-weight: 600; }
 .registered-user-manage-btn { width: 28px; height: 28px; flex-shrink: 0; font-size: 12px; }
 
+/* Collapsed state: while the edit form below is open, the roster list is
+   hidden (not removed, toggled via the app-wide .hidden utility class) so
+   the panel doesn't eat the whole screen — see showUserEditForm()/
+   closeUserEditForm() in app.js. */
+
+/* Edit-user form header — title + explicit close/back control so the
+   panel can be dismissed without submitting Update/Delete, restoring the
+   roster list above it. */
+.user-edit-form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.user-edit-form-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+#closeUserEditBtn { width: 26px; height: 26px; font-size: 12px; flex-shrink: 0; }
+
 /* Multi-group checklist modal (openGroupAssignmentModal in app.js) */
 .group-assign-modal { max-width: 380px; }
 .group-assign-list {
