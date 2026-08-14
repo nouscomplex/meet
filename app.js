@@ -127,6 +127,10 @@
     readsSubscription: null,
     // FIX: Track active lightbox overlay for back button handling
     activeLightbox: null,
+    // FIX: Track the ordered list of shared-media URLs currently rendered in
+    // the profile screen's grid, so the lightbox can swipe next/prev through
+    // them (see updateProfileScreen() / openImageLightbox() below).
+    sharedMediaUrls: [],
     // FIX: Track this user's own membership row ids (channel_id -> members.id)
     // so we can detect exactly when THEY are removed from a group via realtime,
     // and a periodic watchdog handle to detect the account itself being deleted.
@@ -769,6 +773,13 @@
   // FIX: Close lightbox when back button is pressed
   function closeLightboxIfOpen() {
     if (state.activeLightbox) {
+      // FIX: run the lightbox's own cleanup (removes its keydown listener
+      // for gallery navigation) before tearing down the overlay, so a
+      // swipeable gallery closed via the back button doesn't leak a
+      // document-level keydown handler.
+      if (typeof state.activeLightbox._lightboxCleanup === 'function') {
+        state.activeLightbox._lightboxCleanup();
+      }
       state.activeLightbox.remove();
       state.activeLightbox = null;
       // Update history to current screen
@@ -2740,27 +2751,98 @@
   }
 
   // FIX: Store reference to lightbox overlay for back button handling
-  function openImageLightbox(url) {
+  //
+  // FIX: "in shared media section when I open the media it doesn't allow me
+  // to move on next by swiping left or right" — the lightbox only ever
+  // rendered the single tapped image with no concept of "next"/"previous".
+  // Now accepts an optional ordered `mediaList` (+ `startIndex`) — when
+  // there's more than one image, it renders prev/next arrow buttons, wires
+  // up left/right arrow keys, and supports touch swipe (swipe left = next,
+  // swipe right = previous) to move through the gallery without closing it.
+  // Called with just a url (e.g. a single chat-bubble image) it behaves
+  // exactly as before.
+  function openImageLightbox(url, mediaList, startIndex) {
     if (!url) return;
+    const gallery = Array.isArray(mediaList) ? mediaList.filter(Boolean) : [];
+    const hasGallery = gallery.length > 1;
+    let index = hasGallery
+      ? (Number.isInteger(startIndex) && startIndex >= 0 && startIndex < gallery.length ? startIndex : Math.max(0, gallery.indexOf(url)))
+      : 0;
+
     const overlay = document.createElement('div');
     overlay.className = 'lightbox-overlay';
     overlay.innerHTML = `
       <button class="lightbox-close" aria-label="Close"><i class="fas fa-times"></i></button>
-      <img class="lightbox-img" src="${escapeHtml(url)}" alt="Attached image, full size">
+      ${hasGallery ? `
+        <button class="lightbox-nav lightbox-prev" aria-label="Previous image"><i class="fas fa-chevron-left"></i></button>
+        <button class="lightbox-nav lightbox-next" aria-label="Next image"><i class="fas fa-chevron-right"></i></button>
+      ` : ''}
+      <img class="lightbox-img" src="${escapeHtml(hasGallery ? gallery[index] : url)}" alt="Attached image, full size">
     `;
     document.body.appendChild(overlay);
-    
+
     // Store reference so back button can close it
     state.activeLightbox = overlay;
-    
+
+    const imgEl = overlay.querySelector('.lightbox-img');
+
+    const showAt = (newIndex) => {
+      if (!hasGallery) return;
+      index = ((newIndex % gallery.length) + gallery.length) % gallery.length;
+      imgEl.src = gallery[index];
+    };
+    const showNext = () => showAt(index + 1);
+    const showPrev = () => showAt(index - 1);
+
+    const onKeydown = (e) => {
+      if (e.key === 'Escape') { close(); return; }
+      if (!hasGallery) return;
+      if (e.key === 'ArrowRight') showNext();
+      else if (e.key === 'ArrowLeft') showPrev();
+    };
+    document.addEventListener('keydown', onKeydown);
+
     const close = () => {
       if (state.activeLightbox === overlay) {
         state.activeLightbox = null;
       }
+      document.removeEventListener('keydown', onKeydown);
       overlay.remove();
     };
+    // Let closeLightboxIfOpen() (mobile back-button handler) clean up the
+    // keydown listener too, since it removes the overlay directly rather
+    // than calling this close().
+    overlay._lightboxCleanup = () => document.removeEventListener('keydown', onKeydown);
+
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
     overlay.querySelector('.lightbox-close').addEventListener('click', close);
+
+    if (hasGallery) {
+      overlay.querySelector('.lightbox-prev').addEventListener('click', (e) => { e.stopPropagation(); showPrev(); });
+      overlay.querySelector('.lightbox-next').addEventListener('click', (e) => { e.stopPropagation(); showNext(); });
+
+      // Touch swipe: left = next, right = previous. Ignores mostly-vertical
+      // drags so it doesn't fight a pinch/scroll gesture.
+      let touchStartX = null;
+      let touchStartY = null;
+      const SWIPE_THRESHOLD = 40;
+      overlay.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+      }, { passive: true });
+      overlay.addEventListener('touchend', (e) => {
+        if (touchStartX === null) return;
+        const touch = e.changedTouches[0];
+        const dx = touch.clientX - touchStartX;
+        const dy = touch.clientY - touchStartY;
+        touchStartX = null;
+        touchStartY = null;
+        if (Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy)) {
+          if (dx < 0) showNext(); else showPrev();
+        }
+      }, { passive: true });
+    }
   }
 
   DOM.replyPreviewCancel.addEventListener('click', () => {
@@ -3182,11 +3264,17 @@
     // tags were rendered with no click handling at all (unlike chat bubbles,
     // which are wired up via the DOM.chatMessages delegated listener +
     // openImageLightbox() below). Clicking a thumbnail here did nothing.
-    // Give every thumbnail a data-media-url so the delegated click listener
-    // registered further down (see
+    // Give every thumbnail a data-media-url (+ data-media-index) so the
+    // delegated click listener registered further down (see
     // DOM.sharedMediaGrid.addEventListener('click', ...)) can open it in
     // the same in-app lightbox the chat already uses.
-    DOM.sharedMediaGrid.innerHTML = shown.map((m) => `<img src="${escapeHtml(m.file_url)}" data-media-url="${escapeHtml(m.file_url)}" alt="Shared media" loading="lazy" style="cursor:pointer;">`).join('');
+    //
+    // FIX: "in shared media section when I open the media it doesn't allow
+    // me to move on next by swiping left or right" — stash the ordered URL
+    // list so the lightbox opened from here knows the full gallery, not
+    // just the single tapped image, and can swipe/arrow through it.
+    state.sharedMediaUrls = shown.map((m) => m.file_url);
+    DOM.sharedMediaGrid.innerHTML = shown.map((m, i) => `<img src="${escapeHtml(m.file_url)}" data-media-url="${escapeHtml(m.file_url)}" data-media-index="${i}" alt="Shared media" loading="lazy" style="cursor:pointer;">`).join('');
     DOM.profileSeeAllMedia.classList.toggle('hidden', media.length <= 6);
   }
 
@@ -4711,7 +4799,10 @@
   // images inside the chat itself.
   DOM.sharedMediaGrid.addEventListener('click', (e) => {
     const img = e.target.closest('img[data-media-url]');
-    if (img) openImageLightbox(img.dataset.mediaUrl);
+    if (img) {
+      const idx = parseInt(img.dataset.mediaIndex, 10);
+      openImageLightbox(img.dataset.mediaUrl, state.sharedMediaUrls, Number.isNaN(idx) ? undefined : idx);
+    }
   });
 
   DOM.closeStatusModal.addEventListener('click', closeStatusViewer);
