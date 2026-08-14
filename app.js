@@ -3430,9 +3430,24 @@
       if (!state.currentChannel) return;
 
       const sub = state.messagesSubscription;
-      const healthy = sub && sub.state === 'joined';
+      // FIX: this used to require sub.state === 'joined' to count as healthy,
+      // which also treats 'joining' (still connecting) and 'leaving' as
+      // "unhealthy" and immediately tears the channel down and recreates it
+      // via subscribeToMessages(). On a slower connection a join can easily
+      // take longer than this 20s tick, so the channel got killed mid-join,
+      // over and over, and could go the whole session without ever reaching
+      // a stable subscribed state — messages sent by others would never
+      // render live in the open chat, even though nothing else looked
+      // "broken" (loadMessages()/markSeen() are plain REST calls, and the
+      // separate global channel-list-updates subscription, which has no
+      // watchdog fighting it, kept the chat list previews/unread badges
+      // updating fine). Only actually-dead states should trigger a rebuild;
+      // 'joining'/'leaving' are transient and will resolve to 'joined' or
+      // 'errored' on their own — the existing SUBSCRIBED/CHANNEL_ERROR/
+      // TIMED_OUT/CLOSED handling in subscribeToMessages() takes it from there.
+      const isDead = !sub || sub.state === 'closed' || sub.state === 'errored';
 
-      if (!healthy && !reconnectTimer) {
+      if (isDead && !reconnectTimer) {
         console.log('🩺 Watchdog: connection unhealthy, reconnecting...', sub ? sub.state : 'no subscription');
         subscribeToMessages(state.currentChannel.id);
       }
