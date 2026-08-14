@@ -1051,7 +1051,16 @@
   }
 
   async function openChannel(channel) {
-    await selectChannel(channel);
+    // FIX (chat takes time to open, #2): previously this awaited the
+    // *entire* selectChannel() chain — 8+ sequential network round trips
+    // (messages, members, read receipts, delivered/seen writes, schedule,
+    // badge refresh) — before switching the screen to chatDetail. The
+    // messages a user actually needs to see are rendered from cache
+    // synchronously inside selectChannel() before any of those awaits, so
+    // there's no reason the screen transition should wait on the network
+    // too. Fire selectChannel() and flip the screen immediately; fresh
+    // data fills in a moment later once it arrives.
+    selectChannel(channel);
     goToScreen('chatDetail');
     requestAnimationFrame(scrollToBottom);
   }
@@ -4094,23 +4103,34 @@
       console.log(`⚡ Instant load: ${cachedMessages.length} messages from cache`);
     }
 
-    await loadMessages(channel.id);
-    await loadMembers(channel.id);
-    subscribeToMessages(channel.id);
-    await loadMessageReads(channel.id);
-    subscribeToMessageReads(channel.id);
-    if (markSeenNow) {
-      await markDelivered(channel.id);
-      await markSeen(channel.id);
-    }
-    await loadSchedule(channel.id);
-    subscribeToSchedule(channel.id);
+    // FIX (chat takes time to open, #2 cont.): these four reads
+    // (messages/members/read-receipts/schedule) don't depend on each other,
+    // but were previously `await`ed one at a time — four separate network
+    // round trips stacked in series. Run them together; each still
+    // subscribes to its own realtime channel as soon as its initial load
+    // resolves, same as before.
+    const messagesReady = loadMessages(channel.id).then(() => subscribeToMessages(channel.id));
+    const membersReady = loadMembers(channel.id);
+    const readsReady = loadMessageReads(channel.id).then(() => subscribeToMessageReads(channel.id));
+    const scheduleReady = loadSchedule(channel.id).then(() => subscribeToSchedule(channel.id));
+
+    await Promise.all([messagesReady, membersReady, readsReady, scheduleReady]);
+
     updateChatDetailHeader();
     updateProfileScreen();
 
-    // FIX: Force refresh the badge after marking messages as seen
-    // This ensures the badge clears immediately when opening a channel
-    await refreshUnreadBadges();
+    // FIX: marking messages delivered/seen (and the badge refresh that
+    // follows) is bookkeeping nobody is looking at while it happens — it
+    // updates ticks and the unread badge, not the chat content itself. It
+    // used to be awaited here too, adding 2 more round trips (plus
+    // markSeen()'s own internal refreshUnreadBadges() call, which made the
+    // old code fetch the badge counts twice per open) before the chat was
+    // considered "open". Let it happen in the background instead.
+    if (markSeenNow) {
+      markDelivered(channel.id).then(() => markSeen(channel.id));
+    } else {
+      refreshUnreadBadges();
+    }
 
     setupInactivityManager();
     setupTabFocusManager();
@@ -4162,7 +4182,18 @@
 
     setupPresence();
     startSessionWatchdog();
-    await requestMediaPermissions();
+    // FIX (chat takes time to open, #1): this was `await`ed, which blocked
+    // the channel list — and everything after it — behind the browser's
+    // camera/mic permission prompt on every single login AND every session
+    // restore (i.e. basically every app open). If the prompt wasn't
+    // answered instantly, or getUserMedia() was slow to spin up the camera,
+    // the chat list simply could not appear until it resolved. Nothing
+    // below actually depends on this: it doesn't even keep the returned
+    // MediaStream anywhere, and live video calls run in an iframe that
+    // negotiates its own camera/mic access when a session is actually
+    // joined (see DOM.joinLiveBtn's handler). So it doesn't need to block —
+    // let it run in the background while the chat list loads.
+    requestMediaPermissions();
     await renderChannels();
     subscribeToChannelListUpdates();
     startChannelPreviewPolling();
