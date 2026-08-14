@@ -3178,7 +3178,15 @@
     }
     const showAll = DOM.sharedMediaGrid.dataset.showAll === 'true';
     const shown = showAll ? media : media.slice(-6);
-    DOM.sharedMediaGrid.innerHTML = shown.map((m) => `<img src="${escapeHtml(m.file_url)}" alt="Shared media" loading="lazy">`).join('');
+    // FIX: "media in the Shared Media section can't be opened" — these <img>
+    // tags were rendered with no click handling at all (unlike chat bubbles,
+    // which are wired up via the DOM.chatMessages delegated listener +
+    // openImageLightbox() below). Clicking a thumbnail here did nothing.
+    // Give every thumbnail a data-media-url so the delegated click listener
+    // registered further down (see
+    // DOM.sharedMediaGrid.addEventListener('click', ...)) can open it in
+    // the same in-app lightbox the chat already uses.
+    DOM.sharedMediaGrid.innerHTML = shown.map((m) => `<img src="${escapeHtml(m.file_url)}" data-media-url="${escapeHtml(m.file_url)}" alt="Shared media" loading="lazy" style="cursor:pointer;">`).join('');
     DOM.profileSeeAllMedia.classList.toggle('hidden', media.length <= 6);
   }
 
@@ -4695,6 +4703,15 @@
     e.preventDefault();
     DOM.sharedMediaGrid.dataset.showAll = 'true';
     updateProfileScreen();
+  });
+
+  // FIX: this is the missing piece — see the comment in updateProfileScreen()
+  // above. Without this listener, tapping a Shared Media thumbnail was a
+  // dead click; now it opens the same full-size in-app lightbox used by
+  // images inside the chat itself.
+  DOM.sharedMediaGrid.addEventListener('click', (e) => {
+    const img = e.target.closest('img[data-media-url]');
+    if (img) openImageLightbox(img.dataset.mediaUrl);
   });
 
   DOM.closeStatusModal.addEventListener('click', closeStatusViewer);
