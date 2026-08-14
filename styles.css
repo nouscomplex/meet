@@ -1503,6 +1503,34 @@ body.theme-dark .msg-time {
 }
 .lightbox-close:hover { background: rgba(255,255,255,0.22); }
 
+/* Gallery prev/next arrows — only rendered when openImageLightbox() is
+   given more than one image (e.g. from the Shared Media grid), so a single
+   attached-image lightbox looks exactly as before. */
+.lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+.lightbox-nav:hover { background: rgba(255,255,255,0.22); }
+.lightbox-prev { left: 12px; }
+.lightbox-next { right: 12px; }
+@media (min-width: 640px) {
+  .lightbox-prev { left: 24px; }
+  .lightbox-next { right: 24px; }
+}
+
 /* Document viewer overlay (see openDocViewer() in app.js) — reuses
    .lightbox-overlay for the dimmed backdrop/centering, adds a bordered
    panel with its own header (filename + download/close) so it reads as
