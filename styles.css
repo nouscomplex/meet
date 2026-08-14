@@ -1611,12 +1611,48 @@ body.theme-dark .msg-time {
   margin-bottom: 5px;
   font-size: 12.5px;
   max-width: 100%;
+  /* FIX: was inert — now jumps to the original message (see
+     jumpToMessage() in app.js), so it needs to read as tappable. */
+  cursor: pointer;
 }
+.msg-reply-quote:hover, .msg-reply-quote:focus-visible { background: rgba(107, 180, 250, 0.22); }
+.msg-reply-quote:focus-visible { outline: 2px solid var(--chat-blue); outline-offset: 1px; }
 .msg-mine .msg-reply-quote { background: rgba(255,255,255,0.2); border-left-color: var(--chat-white); }
+.msg-mine .msg-reply-quote:hover, .msg-mine .msg-reply-quote:focus-visible { background: rgba(255,255,255,0.3); }
 .msg-reply-quote .reply-author { font-weight: 700; display: block; color: var(--chat-accent); }
 .msg-mine .msg-reply-quote .reply-author { color: var(--chat-white); }
 .msg-reply-quote .reply-text { color: var(--chat-ink-soft); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msg-mine .msg-reply-quote .reply-text { color: rgba(255,255,255,0.85); }
+
+/* FIX: brief flash on the target bubble after jumpToMessage() scrolls to
+   it, so it's obvious which message the reply was pointing at. */
+.msg-highlight .msg-bubble {
+  animation: msgHighlightFlash 1.5s ease-out;
+}
+@keyframes msgHighlightFlash {
+  0% { box-shadow: 0 0 0 2px var(--chat-blue); background-color: rgba(107, 180, 250, 0.35); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+/* Lightweight non-blocking notice, e.g. "original message isn't loaded"
+   from jumpToMessage() — see showToast() in app.js. */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 90px;
+  transform: translateX(-50%);
+  background: rgba(20,20,20,0.92);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  z-index: 10000;
+  box-shadow: var(--shadow-lg);
+  animation: msgIn 0.15s ease-out;
+  pointer-events: none;
+  max-width: 80%;
+  text-align: center;
+}
 
 /* FIX: reply/delete no longer render as per-bubble buttons — they used
    to float oddly near the top of the message (stretched to the full
