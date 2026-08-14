@@ -227,6 +227,12 @@
               </div>
 
               <div id="userEditForm" style="display:none; flex-direction:column; gap:8px; padding-top:8px; border-top:1px solid var(--border);">
+                <div class="user-edit-form-header">
+                  <span class="user-edit-form-title"><i class="fas fa-user-pen"></i> Editing user</span>
+                  <button id="closeUserEditBtn" class="icon-btn" title="Close editor" aria-label="Close editor" type="button">
+                    <i class="fas fa-xmark"></i>
+                  </button>
+                </div>
                 <input id="editUsername" class="field-sm" placeholder="Username (ID)" style="width:100%;">
                 <input id="editDisplayName" class="field-sm" placeholder="Display name" style="width:100%;">
                 <input id="editNewUsername" class="field-sm" placeholder="New username (optional)" style="width:100%;">
