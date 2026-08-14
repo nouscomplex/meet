@@ -1130,25 +1130,14 @@
   // on next login/refresh — and if they currently have it open, they must
   // be kicked out of it right away rather than staying on a screen for a
   // group they no longer belong to.
-  async function handleMembershipRemoved(oldRow) {
-    if (!oldRow || !state.currentUser) return;
-
-    // Match by the membership row id we recorded for this user (works
-    // regardless of the table's REPLICA IDENTITY setting, since the primary
-    // key is always present on delete payloads). Fall back to matching by
-    // username if the row happens to include it (REPLICA IDENTITY FULL).
-    let removedChannelId = null;
-    for (const [channelId, membershipId] of state.myMemberships.entries()) {
-      if (String(membershipId) === String(oldRow.id)) {
-        removedChannelId = channelId;
-        break;
-      }
-    }
-    if (!removedChannelId && oldRow.username &&
-        normalizeUsername(oldRow.username) === state.currentUser.username) {
-      removedChannelId = String(oldRow.channel_id);
-    }
-    if (!removedChannelId) return; // not this user's membership — ignore
+  //
+  // Pulled out of handleMembershipRemoved() so the same cleanup can also be
+  // triggered from sendMessage()'s pre-send membership check below — that
+  // path already knows the channel id, it doesn't need to reverse-lookup it
+  // from a realtime payload.
+  async function expelFromChannel(removedChannelId, { showAlert = true } = {}) {
+    if (!removedChannelId) return;
+    removedChannelId = String(removedChannelId);
 
     console.log(`🚪 Removed from channel ${removedChannelId}, updating UI.`);
 
@@ -1169,11 +1158,77 @@
       state.messages = [];
       state.currentMembers = [];
       goToScreen('chats');
-      alert('You were removed from this group.');
+      if (showAlert) alert('You were removed from this group.');
     }
 
     renderChatList(allChannels);
     await refreshUnreadBadges();
+  }
+
+  async function handleMembershipRemoved(oldRow) {
+    if (!oldRow || !state.currentUser) return;
+
+    // Match by the membership row id we recorded for this user (works
+    // regardless of the table's REPLICA IDENTITY setting, since the primary
+    // key is always present on delete payloads). Fall back to matching by
+    // username if the row happens to include it (REPLICA IDENTITY FULL).
+    let removedChannelId = null;
+    for (const [channelId, membershipId] of state.myMemberships.entries()) {
+      if (String(membershipId) === String(oldRow.id)) {
+        removedChannelId = channelId;
+        break;
+      }
+    }
+    if (!removedChannelId && oldRow.username &&
+        normalizeUsername(oldRow.username) === state.currentUser.username) {
+      removedChannelId = String(oldRow.channel_id);
+    }
+    if (!removedChannelId) return; // not this user's membership — ignore
+
+    await expelFromChannel(removedChannelId);
+  }
+
+  // FIX: Root cause of "a removed user can still send messages" — sendMessage()
+  // previously trusted whatever state.currentChannel/state.currentUser already
+  // held, with zero re-check against the members table. The only thing that
+  // was supposed to stop a removed user from posting was the realtime DELETE
+  // listener above (handleMembershipRemoved), but that listener can miss the
+  // event entirely: the channel-list-updates subscription had no reconnect
+  // logic (see subscribeToChannelListUpdates below) and would just log a
+  // warning and stay dead after any CHANNEL_ERROR/TIMED_OUT/CLOSED, and even
+  // a healthy subscription drops events while the tab is backgrounded/offline.
+  // In both cases state.currentChannel silently stays set to a group the user
+  // is no longer in, and the composer keeps working. This does a fresh,
+  // authoritative membership check immediately before every send.
+  //
+  // Note: this is a UX safety net, not the real security boundary — that has
+  // to live in a Supabase Row Level Security policy on the messages table's
+  // INSERT rule (e.g. requiring EXISTS (SELECT 1 FROM members WHERE
+  // channel_id = messages.channel_id AND username = <auth user>)), since a
+  // client-side check can always be bypassed by calling the Supabase API
+  // directly. Verify that policy is in place server-side alongside this fix.
+  async function verifyChannelMembership(channelId) {
+    try {
+      const { data, error } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MEMBERS)
+        .select('id')
+        .eq('channel_id', channelId)
+        .eq('username', state.currentUser.username)
+        .maybeSingle();
+
+      if (error) {
+        // Fail open on a transient/network error so flaky connectivity
+        // doesn't block legitimate members from sending — the realtime
+        // listener and the next successful check will still catch an
+        // actual removal.
+        console.warn('Membership verification failed, allowing send:', error);
+        return true;
+      }
+      return !!data;
+    } catch (e) {
+      console.warn('Membership verification error, allowing send:', e);
+      return true;
+    }
   }
 
   // FIX: Realtime account-deletion detection. admin_delete_user removes this
@@ -1192,9 +1247,38 @@
     }
   }
 
+  // FIX: This subscription is the only realtime signal that tells a user
+  // "you were removed" or "your account was deleted" — but previously, once
+  // it hit CHANNEL_ERROR/TIMED_OUT/CLOSED (a dropped websocket, a network
+  // blip, a mobile tab coming back from the background), it just logged a
+  // warning and stayed dead for the rest of the session. From that point on
+  // an admin removing the user would go completely unnoticed client-side
+  // until the next full reload. Mirrors the reconnect-with-backoff pattern
+  // already used by subscribeToMessages()/scheduleReconnect() above.
+  let channelListReconnectTimer = null;
+  let channelListReconnectAttempts = 0;
+  let channelListIntentionalTeardown = false;
+
+  function scheduleChannelListReconnect() {
+    if (channelListReconnectTimer || !state.currentUser) return;
+    channelListReconnectAttempts += 1;
+    const delay = Math.min(30000, 2000 * Math.pow(2, channelListReconnectAttempts - 1));
+    console.log(`🔁 channel-list-updates reconnect attempt ${channelListReconnectAttempts} in ${delay / 1000}s...`);
+    channelListReconnectTimer = setTimeout(() => {
+      channelListReconnectTimer = null;
+      if (state.currentUser) subscribeToChannelListUpdates();
+    }, delay);
+  }
+
   function subscribeToChannelListUpdates() {
+    if (channelListReconnectTimer) {
+      clearTimeout(channelListReconnectTimer);
+      channelListReconnectTimer = null;
+    }
     if (channelListSubscription) {
+      channelListIntentionalTeardown = true;
       supabase.removeChannel(channelListSubscription);
+      channelListIntentionalTeardown = false;
       channelListSubscription = null;
     }
     if (!state.currentUser) return;
@@ -1216,18 +1300,30 @@
         schema: 'public',
         table: 'user_roles',
       }, (payload) => handleAccountDeleted(payload.old))
-      .subscribe((status) => {
+      .subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {
+          channelListReconnectAttempts = 0;
           console.log('✅ Subscribed to channel-list updates');
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          console.warn(`⚠️ channel-list-updates: ${status}`);
+          if (channelListIntentionalTeardown) return;
+          console.warn(`⚠️ channel-list-updates: ${status}`, err || '');
+          if (channelListSubscription) {
+            channelListSubscription = null;
+            scheduleChannelListReconnect();
+          }
         }
       });
   }
 
   function unsubscribeFromChannelListUpdates() {
+    if (channelListReconnectTimer) {
+      clearTimeout(channelListReconnectTimer);
+      channelListReconnectTimer = null;
+    }
     if (channelListSubscription) {
+      channelListIntentionalTeardown = true;
       supabase.removeChannel(channelListSubscription);
+      channelListIntentionalTeardown = false;
       channelListSubscription = null;
     }
   }
@@ -2237,9 +2333,21 @@
   // 9. SEND MESSAGE
   // ============================================================
   async function sendMessage(content, file) {
-    if (!state.currentChannel || !state.currentUser) { 
-      alert('Please select a channel first.'); 
-      return; 
+    if (!state.currentChannel || !state.currentUser) {
+      alert('Please select a channel first.');
+      return;
+    }
+
+    // FIX: see verifyChannelMembership() above — this is what actually stops
+    // a removed user from posting when the realtime "you were removed"
+    // signal was missed. Admins aren't rows in `members` (loadChannels()
+    // gives them every channel unconditionally), so they're exempt here too.
+    if (!state.isAdmin) {
+      const stillMember = await verifyChannelMembership(state.currentChannel.id);
+      if (!stillMember) {
+        await expelFromChannel(state.currentChannel.id);
+        return;
+      }
     }
 
     let fileUrl = null;
@@ -3264,6 +3372,22 @@
           state.isRefreshing = true;
           console.log("📥 Catching up on messages missed while tab was inactive...");
           try {
+            // FIX: while the tab was hidden, the channel-list realtime
+            // subscription could easily have missed a "you were removed"
+            // DELETE event (mobile browsers routinely suspend/drop the
+            // websocket in the background). Re-check membership as soon as
+            // the tab is visible again instead of leaving the removed user
+            // sitting in a group they can no longer see updates for but can
+            // still type into until their next send attempt gets rejected.
+            const reopenedChannel = state.currentChannel;
+            if (!state.isAdmin) {
+              const stillMember = await verifyChannelMembership(reopenedChannel.id);
+              if (!stillMember) {
+                await expelFromChannel(reopenedChannel.id);
+                return;
+              }
+            }
+
             await fetchFreshHistory(state.currentChannel.id);
             console.log("✅ Catch-up complete!");
 
