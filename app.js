@@ -4843,18 +4843,65 @@
   // the account never stays "logged in" indefinitely on a dead session.
   const SESSION_CHECK_INTERVAL = 60000;
 
+  // FIX: root cause of "it signs registered users out automatically after
+  // some time" — this watchdog used to force-sign-out on the very FIRST
+  // failed getUser() call, for ANY reason: a dropped wifi packet, a slow
+  // response, a rate-limited request, or (most commonly) the tab having
+  // been backgrounded for a while. supabase-js pauses autoRefreshToken
+  // while a tab is hidden, so a backgrounded/idle tab's access token
+  // routinely goes stale — that's normal and recoverable, not proof the
+  // account is gone. getUser() calling the auth server with that stale
+  // token then returns an error, and the old code treated that single
+  // error as "the account no longer exists" and immediately logged a
+  // perfectly valid, still-logged-in user out. This rewrite:
+  //   1. Skips the check entirely while the tab is hidden or the device is
+  //      offline — there's nothing to conclude from a check that can't
+  //      succeed regardless of session validity.
+  //   2. Requires several consecutive failures (not one) before treating
+  //      the session as suspect, so a single blip can't trigger anything.
+  //   3. Even then, tries an explicit refreshSession() first — if that
+  //      succeeds the session was just stale, not invalid, and the user
+  //      stays logged in. Only a failed refresh (refresh token itself
+  //      rejected — the actual signal that the account/session is really
+  //      gone) results in forceSignOut().
+  const SESSION_CHECK_FAILURE_THRESHOLD = 3;
+  let sessionCheckFailures = 0;
+
   function startSessionWatchdog() {
     stopSessionWatchdog();
+    sessionCheckFailures = 0;
     state.sessionWatchdog = setInterval(async () => {
       if (!state.currentUser) return;
+
+      if (document.hidden || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+        console.log('⏭️ Session watchdog: tab hidden or offline, skipping this check.');
+        return;
+      }
+
       try {
         const { data, error } = await supabase.auth.getUser();
         if (error || !data || !data.user) {
-          console.warn('🚫 Session watchdog: account no longer valid, signing out.', error);
-          await forceSignOut('Your account is no longer available. You have been signed out.');
+          sessionCheckFailures += 1;
+          console.warn(`🩺 Session watchdog: check failed (${sessionCheckFailures}/${SESSION_CHECK_FAILURE_THRESHOLD}).`, error);
+
+          if (sessionCheckFailures < SESSION_CHECK_FAILURE_THRESHOLD) return;
+
+          const { error: refreshError } = await supabase.auth.refreshSession();
+          if (refreshError) {
+            console.warn('🚫 Session watchdog: refresh also failed, account/session is really gone — signing out.', refreshError);
+            await forceSignOut('Your account is no longer available. You have been signed out.');
+          } else {
+            console.log('✅ Session watchdog: refresh succeeded — session was just stale, staying signed in.');
+            sessionCheckFailures = 0;
+          }
+        } else {
+          sessionCheckFailures = 0;
         }
       } catch (e) {
-        console.warn('Session watchdog check failed:', e);
+        // FIX: an exception here (fetch throwing on a dropped connection,
+        // for example) is a network problem, not evidence the account is
+        // gone — don't count it toward the failure threshold at all.
+        console.warn('Session watchdog check failed (network):', e);
       }
     }, SESSION_CHECK_INTERVAL);
   }
