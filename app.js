@@ -213,6 +213,7 @@
     editNewUsername: $('editNewUsername'),
     editPassword: $('editPassword'),
     editRole: $('editRole'),
+    manageUserGroupsBtn: $('manageUserGroupsBtn'),
     updateUserBtn: $('updateUserBtn'),
     deleteUserBtn: $('deleteUserBtn'),
 
@@ -977,11 +978,17 @@
 
   let allChannels = [];
 
-  // username (lowercase) -> array of group/session names that user
-  // belongs to. Rebuilt by loadRegisteredUsersList(); read by
-  // renderRegisteredUsersList() so the search box can re-filter the
-  // list instantly without refetching.
-  let registeredUserGroups = new Map();
+  // Every group/session that exists ([{id, name}, ...]), admin-only.
+  // Rebuilt by loadRegisteredUsersList(); read by openGroupAssignmentModal()
+  // so the "manage groups" checklist doesn't need its own round trip.
+  let allGroupsCache = [];
+
+  // username (lowercase) -> array of {channelId, channelName, role} for
+  // every group that user belongs to. Rebuilt by loadRegisteredUsersList();
+  // read by renderRegisteredUsersList() (search re-filters instantly
+  // without refetching) and by openGroupAssignmentModal() (to pre-check
+  // groups and pre-select each one's role).
+  let registeredUserMemberships = new Map();
 
   async function renderChannels() {
     const channels = await loadChannels();
@@ -3759,9 +3766,15 @@
   // just a blind search box (loadUserForEdit() below), and the members
   // list only ever showed ONE channel at a time (loadMembers()). Neither
   // gives a whole-school view. This renders every registered account
-  // (from user_roles, via state.roleCache) alongside every group/session
-  // they're a member of (from the members table), so admins can see who's
-  // unassigned at a glance and tap a row to jump straight into editing it.
+  // (from user_roles, via state.roleCache) split into two lists — anyone
+  // with zero group memberships under "Unassigned", everyone else under
+  // "Assigned" — so admins can see who needs attention at a glance and
+  // tap a row to jump straight into editing it.
+  //
+  // registeredUserMemberships holds the *rich* membership rows (channel
+  // id/name + the per-group role), not just names, so the "manage
+  // groups" checklist modal (openGroupAssignmentModal()) can pre-check
+  // and pre-select roles without a second round trip.
   async function loadRegisteredUsersList() {
     if (!DOM.registeredUsersListView || !state.isAdmin) return;
 
@@ -3774,8 +3787,8 @@
     await loadRoleCache();
 
     const [membersRes, channelsRes] = await Promise.all([
-      supabase.from(CONFIG.SUPABASE.TABLES.MEMBERS).select('username, channel_id'),
-      supabase.from(CONFIG.SUPABASE.TABLES.CHANNELS).select('id, name'),
+      supabase.from(CONFIG.SUPABASE.TABLES.MEMBERS).select('username, channel_id, role'),
+      supabase.from(CONFIG.SUPABASE.TABLES.CHANNELS).select('id, name').order('name'),
     ]);
 
     if (membersRes.error || channelsRes.error) {
@@ -3784,20 +3797,23 @@
       return;
     }
 
-    const channelNameById = new Map(
-      (channelsRes.data || []).map((c) => [String(c.id), c.name])
-    );
+    allGroupsCache = channelsRes.data || [];
+    const channelNameById = new Map(allGroupsCache.map((c) => [String(c.id), c.name]));
 
-    const groups = new Map();
+    const memberships = new Map();
     (membersRes.data || []).forEach((m) => {
       const key = (m.username || '').toLowerCase();
       if (!key) return;
-      const name = channelNameById.get(String(m.channel_id)) || 'Unknown session';
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(name);
+      const entry = {
+        channelId: String(m.channel_id),
+        channelName: channelNameById.get(String(m.channel_id)) || 'Unknown session',
+        role: m.role || 'student',
+      };
+      if (!memberships.has(key)) memberships.set(key, []);
+      memberships.get(key).push(entry);
     });
 
-    registeredUserGroups = groups;
+    registeredUserMemberships = memberships;
     renderRegisteredUsersList();
   }
 
@@ -3814,9 +3830,18 @@
       return;
     }
 
-    DOM.registeredUsersListView.innerHTML = usernames.map((username) => {
-      const userGroups = registeredUserGroups.get(username) || [];
-      const groupsLabel = userGroups.length ? escapeHtml(userGroups.join(', ')) : 'Unassigned';
+    const unassigned = [];
+    const assigned = [];
+    usernames.forEach((u) => {
+      const memberships = registeredUserMemberships.get(u) || [];
+      (memberships.length ? assigned : unassigned).push(u);
+    });
+
+    const renderRow = (username) => {
+      const memberships = registeredUserMemberships.get(username) || [];
+      const groupsLabel = memberships.length
+        ? escapeHtml(memberships.map((m) => m.channelName).join(', '))
+        : 'No groups yet';
       const role = state.roleCache[username];
       const displayName = getDisplayName(username);
       return `
@@ -3824,19 +3849,161 @@
           ${avatarHtml(username, 'sm')}
           <div class="registered-user-info">
             <div class="registered-user-name">${escapeHtml(displayName)} <span class="member-display-name">(${escapeHtml(username)})</span></div>
-            <div class="registered-user-groups${userGroups.length ? '' : ' unassigned'}">${groupsLabel}</div>
+            <div class="registered-user-groups${memberships.length ? '' : ' unassigned'}">${groupsLabel}</div>
           </div>
           <span class="role-chip role-${roleKey(username)}-chip member-role-chip">${escapeHtml(role || 'student')}</span>
+          <button class="icon-btn registered-user-manage-btn" data-manage-groups="${escapeHtml(username)}" title="Manage groups" aria-label="Manage groups">
+            <i class="fas fa-layer-group"></i>
+          </button>
         </div>
       `;
-    }).join('');
+    };
 
-    DOM.registeredUsersListView.querySelectorAll('[data-username]').forEach((row) => {
-      row.addEventListener('click', () => {
+    const section = (label, iconClass, users, labelClass) => {
+      if (!users.length) return '';
+      return `
+        <div class="registered-user-section">
+          <div class="registered-user-section-label${labelClass ? ' ' + labelClass : ''}">
+            <i class="fas ${iconClass}"></i> ${label} <span class="registered-user-count">(${users.length})</span>
+          </div>
+          <div class="registered-user-rows">${users.map(renderRow).join('')}</div>
+        </div>
+      `;
+    };
+
+    DOM.registeredUsersListView.innerHTML =
+      section('Unassigned', 'fa-triangle-exclamation', unassigned, 'unassigned-label') +
+      section('Assigned', 'fa-users', assigned, '');
+
+    DOM.registeredUsersListView.querySelectorAll('.registered-user-row').forEach((row) => {
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('[data-manage-groups]')) return;
         const username = row.dataset.username;
         DOM.manageUserSearch.value = username;
         loadUserForEdit(username);
       });
+    });
+
+    DOM.registeredUsersListView.querySelectorAll('[data-manage-groups]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openGroupAssignmentModal(btn.dataset.manageGroups);
+      });
+    });
+  }
+
+  // Checklist modal: tick every group/session a user should belong to
+  // and pick their role in each, then save all of it in one go. Replaces
+  // the old one-at-a-time flow (open a channel → Members → type a
+  // username → Add) for admins who need to put one person — e.g. a
+  // teacher covering three classes — into several groups at once.
+  async function openGroupAssignmentModal(username) {
+    username = normalizeUsername(username);
+    if (!username || !state.isAdmin) return;
+
+    if (!allGroupsCache.length) {
+      // Admin's channel list is normally warm already (loadRegisteredUsersList()
+      // at login populates it), but fetch fresh if this is somehow opened
+      // before that finished, or after channels changed elsewhere.
+      const { data, error } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.CHANNELS)
+        .select('id, name')
+        .order('name');
+      if (!error) allGroupsCache = data || [];
+    }
+
+    if (!allGroupsCache.length) {
+      alert('No groups/sessions exist yet — create one first from Settings → Create New Session.');
+      return;
+    }
+
+    const existingMemberships = registeredUserMemberships.get(username) || [];
+    const membershipByChannel = new Map(existingMemberships.map((m) => [m.channelId, m]));
+    const defaultRole = getRoleFromUsername(username) === CONFIG.AUTH.ROLES.TEACHER ? 'teacher' : 'student';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="modal-card group-assign-modal">
+        <h3 class="modal-title"><i class="fas fa-layer-group" style="color:var(--role-admin); font-size:14px;"></i> Groups for ${escapeHtml(getDisplayName(username))}</h3>
+        <p class="modal-body" style="margin:8px 0 12px;">Check every session this user belongs to, and set their role in each one.</p>
+        <div class="group-assign-list">
+          ${allGroupsCache.map((ch) => {
+            const existing = membershipByChannel.get(String(ch.id));
+            const checked = !!existing;
+            const role = existing ? existing.role : defaultRole;
+            return `
+              <label class="group-assign-row">
+                <input type="checkbox" class="group-assign-check" data-channel-id="${escapeHtml(String(ch.id))}" ${checked ? 'checked' : ''}>
+                <span class="group-assign-name">${escapeHtml(ch.name)}</span>
+                <select class="field-sm group-assign-role" data-channel-id="${escapeHtml(String(ch.id))}">
+                  <option value="student" ${role === 'student' ? 'selected' : ''}>Student</option>
+                  <option value="teacher" ${role === 'teacher' ? 'selected' : ''}>Teacher</option>
+                </select>
+              </label>
+            `;
+          }).join('')}
+        </div>
+        <div style="display:flex; gap:8px; margin-top:16px;">
+          <button id="groupAssignCancelBtn" class="btn-secondary" style="flex:1;">Cancel</button>
+          <button id="groupAssignSaveBtn" class="btn-primary" style="flex:1;">Save</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const close = () => modal.remove();
+    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+    modal.querySelector('#groupAssignCancelBtn').addEventListener('click', close);
+
+    modal.querySelector('#groupAssignSaveBtn').addEventListener('click', async () => {
+      const saveBtn = modal.querySelector('#groupAssignSaveBtn');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+
+      const toUpsert = [];
+      const toRemoveChannelIds = [];
+
+      modal.querySelectorAll('.group-assign-check').forEach((checkbox) => {
+        const channelId = checkbox.dataset.channelId;
+        const roleSelect = modal.querySelector(`.group-assign-role[data-channel-id="${CSS.escape(channelId)}"]`);
+        if (checkbox.checked) {
+          toUpsert.push({
+            channel_id: channelId,
+            username,
+            role: roleSelect ? roleSelect.value : defaultRole,
+            added_by: state.currentUser.username,
+          });
+        } else if (membershipByChannel.has(channelId)) {
+          toRemoveChannelIds.push(channelId);
+        }
+      });
+
+      try {
+        if (toUpsert.length) {
+          const { error: upsertError } = await supabase
+            .from(CONFIG.SUPABASE.TABLES.MEMBERS)
+            .upsert(toUpsert, { onConflict: 'channel_id,username' });
+          if (upsertError) throw upsertError;
+        }
+        if (toRemoveChannelIds.length) {
+          const { error: deleteError } = await supabase
+            .from(CONFIG.SUPABASE.TABLES.MEMBERS)
+            .delete()
+            .eq('username', username)
+            .in('channel_id', toRemoveChannelIds);
+          if (deleteError) throw deleteError;
+        }
+
+        close();
+        if (state.currentChannel) await loadMembers(state.currentChannel.id);
+        await loadRegisteredUsersList();
+      } catch (e) {
+        console.error('Group assignment error:', e);
+        alert('Could not save group assignments: ' + (e.message || e));
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save';
+      }
     });
   }
 
@@ -5025,6 +5192,10 @@
 
   DOM.deleteUserBtn.addEventListener('click', () => {
     deleteUserAccount(DOM.editUsername.value);
+  });
+
+  DOM.manageUserGroupsBtn.addEventListener('click', () => {
+    openGroupAssignmentModal(DOM.editUsername.value);
   });
 
   DOM.setScheduleBtn.addEventListener('click', async () => {
