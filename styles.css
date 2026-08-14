@@ -13,11 +13,11 @@
   --app-height: 100dvh;
 
   /* Surfaces */
-  --bg: #F5F6FB;
+  --bg: #fcfcfc;
   --surface: #FFFFFF;
-  --surface-sunken: #F1F2F8;
-  --border: #ECEDF4;
-  --border-strong: #DBDDE9;
+  --surface-sunken: #ededed;
+  --border: #ebebed;
+  --border-strong: #e8e9eb;
 
   /* Text */
   --ink: #14162B;
@@ -27,7 +27,7 @@
   /* Brand accent (primary interactive color) */
   --accent: #0E1B75;
   --accent-dark: #0A1450;
-  --accent-wash: #E9F2FE;
+  --accent-wash: #f0f0f0;
 
   /* Deep navy (headers, live pill, dark surfaces) — same family as accent */
   --navy: #0E1B75;
@@ -37,13 +37,13 @@
      (header, bubbles, composer, live pill, borders, ticks). */
   --chat-navy: #0E1B75;
   --chat-white: #FFFFFF;
-  --chat-blue: #6BB4FA;
+  --chat-blue: #99c9f7;
   --chat-grey: #C9C9C9;
   --chat-ink: #262626;
   --chat-ink-soft: #6A6A6A;
   --chat-accent: var(--chat-navy);
-  --role-admin: #5B4FE9;
-  --role-admin-wash: #EEECFF;
+  --role-admin: #77b3fc;
+  --role-admin-wash: #e4e3e8;
   --role-teacher: #1FA971;
   --role-teacher-wash: #E5F8EF;
   --role-student: #E1508B;
@@ -79,7 +79,7 @@ body.theme-dark {
   --border: #262A4C;
   --border-strong: #33375E;
   --ink: #F1F2FA;
-  --ink-soft: #ABAFC9;
+  --ink-soft: #b9b9bd;
   --ink-faint: #6E7395;
 
   /* --accent is used as TEXT/ICON color in many places (icon-btn hover,
