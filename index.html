@@ -101,11 +101,24 @@
            SCREEN: UPDATES
       ============================================================ -->
       <section id="screenUpdates" class="screen hidden">
-        <header class="screen-header">
+        <header id="updatesScreenHeader" class="screen-header">
           <button id="backFromUpdates" class="icon-btn back-btn hidden"><i class="fas fa-arrow-left"></i></button>
           <span class="screen-title">Updates</span>
           <span id="userBadge" class="role-chip"></span>
         </header>
+
+        <!-- Admin-only selection header for an update row: long-press
+             (mobile) or right-click (desktop) an update to open this
+             in place of the header above, instead of the delete icon
+             that used to sit beside every row. Mirrors
+             #channelSelectHeader's pattern. -->
+        <div id="statusSelectHeader" class="msg-select-header hidden">
+          <button id="statusSelectCloseBtn" class="icon-btn back-btn" aria-label="Close"><i class="fas fa-times"></i></button>
+          <span class="msg-select-count" id="statusSelectCount">1 selected</span>
+          <div class="msg-select-actions">
+            <button id="statusSelectDeleteBtn" class="icon-btn" title="Delete" aria-label="Delete"><i class="fas fa-trash" style="color:var(--danger);"></i></button>
+          </div>
+        </div>
 
         <div id="statusTray" class="updates-list">
           <div id="statusPlaceholder" class="empty-note">No updates yet</div>
