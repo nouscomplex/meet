@@ -206,8 +206,10 @@
     
     manageUserSearch: $('manageUserSearch'),
     loadUserBtn: $('loadUserBtn'),
+    registeredUsersListWrap: $('registeredUsersListWrap'),
     registeredUsersListView: $('registeredUsersListView'),
     userEditForm: $('userEditForm'),
+    closeUserEditBtn: $('closeUserEditBtn'),
     editUsername: $('editUsername'),
     editDisplayName: $('editDisplayName'),
     editNewUsername: $('editNewUsername'),
@@ -4007,6 +4009,32 @@
     });
   }
 
+  // FIX: admin couldn't hide the edit panel once it was opened — there was
+  // no close/cancel control on #userEditForm, and it was only ever hidden
+  // as a side effect of a successful Update/Delete. These two helpers give
+  // it an explicit open/close lifecycle:
+  //  - showUserEditForm() also hides the registered-users roster list
+  //    (#registeredUsersListWrap) while editing, since both stacked on
+  //    screen together (the list alone can run to 340px) pushed the
+  //    Update/Delete buttons out of view on smaller screens.
+  //  - closeUserEditForm() reverses that: hides the form, clears its
+  //    fields, and brings the roster list back — wired to the new
+  //    #closeUserEditBtn (✕) and reused by every path that used to just
+  //    set `DOM.userEditForm.style.display = 'none'` directly.
+  function showUserEditForm() {
+    if (DOM.registeredUsersListWrap) DOM.registeredUsersListWrap.classList.add('hidden');
+    DOM.userEditForm.style.display = 'flex';
+  }
+
+  function closeUserEditForm() {
+    DOM.userEditForm.style.display = 'none';
+    DOM.editUsername.value = '';
+    DOM.editDisplayName.value = '';
+    DOM.editNewUsername.value = '';
+    DOM.editPassword.value = '';
+    if (DOM.registeredUsersListWrap) DOM.registeredUsersListWrap.classList.remove('hidden');
+  }
+
   async function loadUserForEdit(username) {
     username = normalizeUsername(username);
     if (!username) { alert('Enter a username to search for.'); return; }
@@ -4019,7 +4047,7 @@
 
     if (roleError || !roleData) {
       alert(`User "${username}" not found.`);
-      DOM.userEditForm.style.display = 'none';
+      closeUserEditForm();
       return;
     }
 
@@ -4028,7 +4056,7 @@
     DOM.editNewUsername.value = roleData.username;
     DOM.editRole.value = roleData.role;
     DOM.editPassword.value = '';
-    DOM.userEditForm.style.display = 'flex';
+    showUserEditForm();
   }
 
   async function callAdminUpdateUserFunction(targetUsername, { newEmail, newPassword } = {}) {
@@ -4121,7 +4149,7 @@
       }
       
       alert('User updated successfully!');
-      DOM.userEditForm.style.display = 'none';
+      closeUserEditForm();
       DOM.manageUserSearch.value = '';
       populateRegisteredUsersDatalist();
       await loadRoleCache();
@@ -4189,7 +4217,7 @@
       delete state.roleCache[username];
       delete state.displayNameCache[username];
       alert(removeData ? 'User and their data deleted successfully!' : 'User deleted — their messages were kept.');
-      DOM.userEditForm.style.display = 'none';
+      closeUserEditForm();
       DOM.manageUserSearch.value = '';
       populateRegisteredUsersDatalist();
       await loadRoleCache();
@@ -5167,6 +5195,16 @@
   DOM.loadUserBtn.addEventListener('click', () => {
     loadUserForEdit(DOM.manageUserSearch.value);
   });
+
+  // FIX: explicit close for the edit panel — see showUserEditForm()/
+  // closeUserEditForm() above. Without this, once an admin tapped a user
+  // to edit, the only way back to the roster list was to submit
+  // Update/Delete; there was no way to just back out.
+  if (DOM.closeUserEditBtn) {
+    DOM.closeUserEditBtn.addEventListener('click', () => {
+      closeUserEditForm();
+    });
+  }
 
   // Live-filter the registered users list as the admin types — no
   // refetch needed, renderRegisteredUsersList() just re-reads the
