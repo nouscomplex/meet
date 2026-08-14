@@ -1179,9 +1179,22 @@
       DOM.navChatsBadge.textContent = total > 99 ? '99+' : String(total);
       DOM.navChatsBadge.classList.toggle('hidden', total === 0);
 
+      // FIX: whenever the unread count changes there is, by definition, a
+      // channel whose "last message" may have changed too — but this
+      // function had no idea what that message actually was, so it just
+      // re-rendered the list with whatever state.channelPreviews already
+      // held. That silently decoupled the two: the badge (computed fresh
+      // from the DB right here, every time) always ended up correct, while
+      // the preview text stayed however-stale-it-was until some other,
+      // separate code path happened to refresh it. Since this function is
+      // the one thing proven to run reliably whenever a message arrives
+      // (it's what was updating the badge live), pull fresh previews here
+      // too so the two can never show inconsistent results again.
+      state.channelPreviews = await loadChannelPreviews(channelIds);
+
       // Update the chat list to show/hide unread badges
       renderChatList(allChannels);
-      
+
       console.log(`🔔 Badge updated: ${total} unread messages`);
     } catch (e) {
       console.warn('Error refreshing unread badges:', e);
@@ -1853,7 +1866,23 @@
             delete state.messages[optimisticIndex].isPending;
             scheduleRenderMessages();
             saveCachedMessages(channelId, state.messages);
-            
+
+            // FIX: root cause of "badge/unread count updates live, but the
+            // chat-list preview text doesn't" — this per-channel subscription
+            // only ever touched state.messages (the open conversation), never
+            // state.channelPreviews (what the chat LIST renders). Whether the
+            // list's preview text updated at all depended entirely on the
+            // separate global channel-list-updates subscription's handler
+            // (handleGlobalMessageInsert) also firing and winning whatever
+            // race exists between the two. This channel already has the full
+            // new message in hand — update the list's preview directly and
+            // unconditionally, so it's correct immediately regardless of
+            // whether that other subscription fires, races, or is delayed.
+            if (isKnownChannelId(channelId)) {
+              state.channelPreviews[channelId] = newMessage;
+              renderChatList(allChannels);
+            }
+
             if (newMessage.username !== state.currentUser?.username) {
               console.log('🔔 New message from someone else - marking delivered');
               playNotifySound();
@@ -1875,7 +1904,18 @@
         
         console.log(`📥 Adding new message (ID: ${newMessage.id})`);
         mergeMessagesSafely(newMessage);
-        
+
+        // FIX: same root cause as the optimistic branch above — update the
+        // chat list's preview for this channel directly from the payload we
+        // already have, instead of leaving it entirely up to the separate
+        // global channel-list-updates subscription (which may race with, or
+        // simply never deliver as reliably as, this filtered per-channel
+        // subscription). See the longer comment above.
+        if (isKnownChannelId(channelId)) {
+          state.channelPreviews[channelId] = newMessage;
+          renderChatList(allChannels);
+        }
+
         // Refresh unread badges for new messages.
         // FIX: this must be awaited. It was previously fired without
         // awaiting, which could race with the refreshUnreadBadges() call
