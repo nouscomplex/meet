@@ -60,20 +60,6 @@
         persistSession: false,
         autoRefreshToken: false,
         detectSessionInUrl: false,
-        // BUGFIX: without an explicit storageKey, supabase-js defaults
-        // BOTH clients (this one and the main `supabase` client above)
-        // to the same localStorage key, since they point at the same
-        // project URL. persistSession:false meant this client never
-        // WROTE its own session there — but createUserAccount() calls
-        // adminAuthClient.auth.signOut() after creating a user, and
-        // signOut() unconditionally clears whatever session sits at
-        // that storage key regardless of persistSession. That silently
-        // wiped the ADMIN'S OWN logged-in session out of localStorage.
-        // Nothing looked wrong immediately (the in-memory `supabase`
-        // client was still authenticated), but the next page refresh —
-        // restoreSession() reading from storage — found nothing and
-        // dropped back to the login screen instead of resuming. Giving
-        // this client its own storage key isolates it completely.
         storageKey: 'orbit-admin-auth-noop',
       }
     }
@@ -111,10 +97,10 @@
     tabChannel: null,
     isRefreshing: false,
     isMerging: false,
-    // Map<messageId, Array<{username, seen_at}>> — per-member read
-    // receipts for the currently open channel. See message_reads.sql.
     messageReads: new Map(),
     readsSubscription: null,
+    // FIX: Track active lightbox overlay for back button handling
+    activeLightbox: null,
   };
 
   // ============================================================
@@ -289,13 +275,6 @@
   // ============================================================
   let audioCtx = null;
 
-  // Proactively create (and resume) the AudioContext on the very first
-  // user interaction with the page, rather than waiting until the first
-  // notification needs to play — that's still a user-gesture requirement
-  // met, but if a message arrives at the exact moment the context is being
-  // lazily created and is still 'suspended', resume() can race and the
-  // very first beep is silently dropped. Unlocking it early removes that
-  // window entirely.
   function unlockAudioContext() {
     try {
       audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
@@ -340,17 +319,6 @@
           badge: '/favicon.ico',
           tag: 'new-message-' + Date.now(),
           requireInteraction: true,
-          // BUGFIX: this was `silent: true`, which explicitly tells the OS
-          // to suppress its own notification sound. That left the custom
-          // Web Audio beep above as the only "ring" — and that beep
-          // depends on the browser's autoplay policy having been unlocked
-          // by a prior user gesture on the page, is quiet by design (a
-          // short, soft sine tone), and some browsers throttle or mute
-          // audio in background tabs outright. The OS-level sound is the
-          // reliable path: it respects system volume, isn't subject to
-          // page-level autoplay restrictions, and is what people actually
-          // expect a notification to sound like. Letting both play is
-          // deliberate — better a little redundant than silent.
         });
         
         setTimeout(() => {
@@ -478,9 +446,6 @@
     return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
-  // Local-calendar-day bucket key (not UTC, so a message sent at
-  // 11:50pm doesn't get bucketed into "tomorrow" for someone west of
-  // UTC, or "yesterday" for someone east of it).
   function dayKey(ts) {
     const d = new Date(ts);
     return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
@@ -542,19 +507,12 @@
     return !!url && /\.(mp4|webm|mov|m4v|ogv)$/i.test(url.split('?')[0]);
   }
 
-  // generateStoragePath() embeds the original filename into the
-  // storage path (see CONFIG.UPLOAD.STORAGE_PATH's {filename} slot),
-  // so the real name survives in the public URL — it just wasn't
-  // being pulled back out anywhere. This recovers it for display.
   function getFileNameFromUrl(url) {
     if (!url) return 'File';
     try {
       const path = url.split('?')[0];
       const last = path.substring(path.lastIndexOf('/') + 1);
       const decoded = decodeURIComponent(last);
-      // Storage paths are prefixed with a timestamp (see
-      // generateStoragePath) — e.g. "1733920481123-report.pdf" —
-      // strip that back off so only the human filename shows.
       return decoded.replace(/^\d{10,}-/, '') || 'File';
     } catch {
       return 'File';
@@ -666,9 +624,6 @@
     state.currentScreen = name;
 
     if (name === 'settings' && typeof syncNotificationToggleState === 'function') {
-      // Reflect the real subscription state whenever the user opens
-      // Settings, so the toggle never *looks* like it silently turned
-      // itself off (or on) behind the user's back.
       syncNotificationToggleState();
     }
 
@@ -701,7 +656,42 @@
     }
   }
 
+  // FIX: Close lightbox when back button is pressed
+  function closeLightboxIfOpen() {
+    if (state.activeLightbox) {
+      state.activeLightbox.remove();
+      state.activeLightbox = null;
+      // Update history to current screen
+      if (state.currentScreen && history.replaceState) {
+        history.replaceState({ orbitScreen: state.currentScreen }, '', '#' + state.currentScreen);
+      }
+      return true;
+    }
+    return false;
+  }
+
   function handleBackNavigation(event) {
+    // FIX: Check lightbox first
+    if (closeLightboxIfOpen()) {
+      return;
+    }
+    
+    // Existing status modal check
+    if (DOM.statusModal && !DOM.statusModal.classList.contains('hidden')) {
+      closeStatusViewer();
+      if (state.currentScreen) pushScreenState(state.currentScreen);
+      return;
+    }
+    
+    // Existing video container check
+    if (DOM.videoContainer && !DOM.videoContainer.classList.contains('hidden')) {
+      DOM.videoContainer.classList.add('hidden');
+      DOM.videoIframe.src = '';
+      state.videoActive = false;
+      if (state.currentScreen) pushScreenState(state.currentScreen);
+      return;
+    }
+
     const targetScreen = event.state && event.state.orbitScreen;
 
     if (targetScreen && SCREEN_EL[targetScreen]) {
@@ -713,16 +703,11 @@
       return;
     }
 
-    if (DOM.statusModal && !DOM.statusModal.classList.contains('hidden')) {
-      closeStatusViewer();
-      if (state.currentScreen) pushScreenState(state.currentScreen);
-      return;
-    }
-    if (DOM.videoContainer && !DOM.videoContainer.classList.contains('hidden')) {
-      DOM.videoContainer.classList.add('hidden');
-      DOM.videoIframe.src = '';
-      state.videoActive = false;
-      if (state.currentScreen) pushScreenState(state.currentScreen);
+    // FIX: If no overlay and no screen state, go to chats (home)
+    if (state.currentScreen && state.currentScreen !== 'chats') {
+      isBackNavigation = true;
+      goToScreen('chats');
+      isBackNavigation = false;
     }
   }
 
@@ -762,13 +747,6 @@
       .insert(basePayload)
       .select();
 
-    // BUGFIX: some environments' `channels` table doesn't have a
-    // `created_by` column, which PostgREST reports as "Could not find
-    // the 'created_by' column of 'channels' in the schema cache".
-    // Rather than failing the whole action, retry once without that
-    // field so channel creation still succeeds. The real fix is to add
-    // the column in Supabase (see project notes / SQL migration), but
-    // this keeps the app usable either way.
     if (error && /created_by.*schema cache/i.test(error.message || '')) {
       console.warn('channels.created_by column missing — retrying insert without it.');
       const { created_by, ...fallbackPayload } = basePayload;
@@ -905,12 +883,6 @@
           </div>
         </div>
       `;
-      // FIX: rename/delete used to be icon buttons that popped up beside
-      // the row (chat-admin-actions, hover-revealed on desktop). Like
-      // the old per-bubble message buttons, they've been replaced by a
-      // top select-header — long-press (mobile) or right-click
-      // (desktop) a row, admin only. A plain tap/click still just
-      // opens the channel, same as before.
       if (state.isAdmin) {
         row.addEventListener('touchstart', () => startChannelLongPress(row, ch), { passive: true });
         ['touchend', 'touchmove', 'touchcancel'].forEach((evt) => {
@@ -922,7 +894,7 @@
         });
       }
       row.addEventListener('pointerup', (e) => {
-        if (e.button === 2) return; // right-click handled by contextmenu above
+        if (e.button === 2) return;
         if (channelLongPressFired) { channelLongPressFired = false; return; }
         openChannel(ch);
       });
@@ -947,11 +919,6 @@
   async function openChannel(channel) {
     await selectChannel(channel);
     goToScreen('chatDetail');
-    // On mobile the chat detail screen is hidden until goToScreen() runs,
-    // so scrollHeight inside selectChannel() was 0 and the pre-scroll had
-    // no effect. Defer scrollToBottom() by one animation frame so it runs
-    // after the browser has painted the now-visible panel and scrollHeight
-    // reflects the actual content height.
     requestAnimationFrame(scrollToBottom);
   }
 
@@ -978,11 +945,6 @@
     await renderChannels();
   }
 
-  // Admin-only channel selection — long-press (mobile) or right-click
-  // (desktop) a channel row to swap the brand header for a small
-  // select bar with Rename/Delete, instead of icon buttons sitting
-  // beside every row. Mirrors selectMessageForInfo()/exitMessageSelection()
-  // for messages above.
   let channelLongPressTimer = null;
   let channelLongPressFired = false;
   let selectedChannel = null;
@@ -1039,19 +1001,6 @@
   async function refreshUnreadBadges() {
     if (!state.currentUser) return;
 
-    // BUGFIX: this used to decide "unread" purely from the messages
-    // table's seen_at column — but seen_at is a single field on the
-    // message row, so it can only ever record ONE person as having
-    // seen it (same limitation noted in markSeen() above, which is
-    // exactly why message_reads — a proper per-user row — exists).
-    // In a group, the moment the FIRST member opened the chat and
-    // called markSeen(), seen_at got set on those messages — and this
-    // query then treated them as "read" for EVERY other member too,
-    // even ones who had never opened the chat. That's why messages
-    // kept showing up as already read on the chat list/badge for
-    // anyone who wasn't first. Unread is now computed per-user from
-    // message_reads instead: a message from someone else counts as
-    // unread for you unless YOUR username has a read row for it.
     const { data: fromOthers, error: msgError } = await supabase
       .from(CONFIG.SUPABASE.TABLES.MESSAGES)
       .select('id, channel_id')
@@ -1083,15 +1032,8 @@
   }
 
   // ============================================================
-  // GLOBAL CHANNEL-LIST REALTIME (previews + unread badges)
+  // GLOBAL CHANNEL-LIST REALTIME
   // ============================================================
-  // The per-channel subscription (subscribeToMessages) only listens to the
-  // ONE channel currently open in the chat detail screen — messages
-  // arriving in any other channel never reach the client live, so the
-  // channel list's last-message preview, timestamp, and unread badge only
-  // ever updated on login, your own actions, or a manual refresh. This
-  // separate, unfiltered subscription listens for new messages across every
-  // channel and updates the list in place as they arrive.
   let channelListSubscription = null;
 
   function isKnownChannelId(channelId) {
@@ -1106,10 +1048,6 @@
       state.channelPreviews[msg.channel_id] = msg;
     }
 
-    // Only bump the unread badge for channels other than the one currently
-    // open (the open channel's own unread count is handled by
-    // markSeen()/refreshUnreadBadges() instead) and only for messages from
-    // someone else.
     const isOpenChannel = state.currentChannel && String(state.currentChannel.id) === String(msg.channel_id);
     if (!isOpenChannel && msg.username !== state.currentUser?.username) {
       state.unreadByChannel[msg.channel_id] = (state.unreadByChannel[msg.channel_id] || 0) + 1;
@@ -1128,10 +1066,6 @@
     }
     if (!state.currentUser) return;
 
-    // Deliberately no channel_id filter — Row Level Security still limits
-    // what actually reaches this client to channels the user can read;
-    // isKnownChannelId() above is just a client-side safety net on top of
-    // that (and covers admins, whose RLS may allow every channel).
     channelListSubscription = supabase
       .channel('channel-list-updates')
       .on('postgres_changes', {
@@ -1156,7 +1090,7 @@
   }
 
   // ============================================================
-  // DELIVERED / SEEN TRACKING (FIXED)
+  // DELIVERED / SEEN TRACKING
   // ============================================================
   async function markDelivered(channelId) {
     if (!state.currentUser) return;
@@ -1208,12 +1142,6 @@
         console.log('✅ Messages marked as seen');
       }
 
-      // Record a proper per-member read receipt too — see
-      // message_reads.sql. The seen_at/seen_by columns above are a
-      // single field on the message row, so they can only ever record
-      // ONE person as having seen it; this is what actually lets a
-      // sender in a GROUP see "Seen by Alice, Bob +2" rather than just
-      // a single generic "seen" tick.
       const { data: unreadMsgs, error: unreadError } = await supabase
         .from(CONFIG.SUPABASE.TABLES.MESSAGES)
         .select('id')
@@ -1235,17 +1163,6 @@
         }
       }
 
-      // BUGFIX: this used to run right after the seen_at UPDATE above,
-      // BEFORE the message_reads upsert a few lines up had actually
-      // committed. refreshUnreadBadges() (see above) counts a message
-      // as read for you by checking for YOUR row in message_reads — so
-      // calling it before that row existed meant it recomputed the
-      // badge against stale data and still counted this channel's
-      // messages as unread. Nothing ever called it again afterward, so
-      // the chat button kept showing the old number until some
-      // unrelated event (a new message elsewhere) happened to trigger
-      // another recompute. Moved here, after the upsert has completed,
-      // so the badge actually reflects what was just marked read.
       await refreshUnreadBadges();
     } catch (e) {
       console.warn('Mark seen error:', e);
@@ -1253,7 +1170,7 @@
   }
 
   // ============================================================
-  // GROUP READ RECEIPTS (message_reads)
+  // GROUP READ RECEIPTS
   // ============================================================
   async function loadMessageReads(channelId) {
     const { data, error } = await supabase
@@ -1271,14 +1188,6 @@
       list.push({ username: row.username, seen_at: row.seen_at });
       state.messageReads.set(row.message_id, list);
     });
-    // BUGFIX: this used to end with renderMessages(). On every channel
-    // open this ran once the FULL read-receipt set had loaded, flipping
-    // every one of your own messages from "no seen-by line" to "Seen by
-    // X" (or "Seen by all") all at once — a visible layout jump right
-    // after the chat had just settled. Now that per-member reads aren't
-    // rendered inline in the bubble at all (see messageSignature()/
-    // buildMessageEl()), this data is only read on demand by
-    // openMessageInfoModal(), so no render is needed here.
   }
 
   function teardownReadsSubscription() {
@@ -1302,18 +1211,6 @@
         if (!list.some((r) => r.username === row.username)) {
           list.push({ username: row.username, seen_at: row.seen_at });
           state.messageReads.set(row.message_id, list);
-          // BUGFIX: this used to call scheduleRenderMessages() here,
-          // which meant every single group member's read receipt
-          // triggered a full diff/rebuild pass on the sender's chat —
-          // in a group, those INSERT events land one-by-one over a few
-          // seconds (not in a single burst the scheduler could
-          // coalesce), so opening a group chat produced a rapid string
-          // of bubble rebuilds that looked like blinking. The map is
-          // still kept current here for openMessageInfoModal() (the
-          // Info button in the message-select header), which reads it
-          // fresh at click time — nothing on screen depends on
-          // per-member reads anymore (see messageSignature()/
-          // buildMessageEl() below), so no re-render is needed.
         }
       })
       .subscribe();
@@ -1431,15 +1328,6 @@
         .from(CONFIG.SUPABASE.TABLES.MESSAGES)
         .select('*')
         .eq('channel_id', channelId)
-        // BUGFIX: this was `ascending: true` with `limit(50)`, which fetches
-        // the OLDEST 50 messages in the channel and stops there. Once a
-        // channel passes 50 total messages, any message sent after that
-        // point can never be returned by this query — it's permanently
-        // excluded, on both initial load and refresh, even though the
-        // channel-list preview (a separate query, ordered descending)
-        // correctly shows it. Order by newest-first so the 50 most recent
-        // messages come back; mergeMessagesSafely() re-sorts them into
-        // ascending order for display, so no other change is needed.
         .order('created_at', { ascending: false })
         .limit(50);
 
@@ -1461,34 +1349,10 @@
   }
 
   // ============================================================
-  // 8b. REALTIME MESSAGE SYNC (FIXED WITH DELIVERY)
+  // 8b. REALTIME MESSAGE SYNC
   // ============================================================
-  // Guards against the reconnect storm bug: tracks a single pending
-  // reconnect timer so the CLOSED handler and the watchdog can never both
-  // schedule overlapping retries, and counts consecutive failures so we
-  // back off instead of hammering the socket forever.
   let reconnectTimer = null;
   let reconnectAttempts = 0;
-
-  // THE ACTUAL ROOT CAUSE of the reconnect loop coming back: supabase-js
-  // fires a channel's status callback with 'CLOSED' *synchronously*, as
-  // part of the very call to removeChannel() that tears it down — and it
-  // fires with the OLD channel still sitting in state.messagesSubscription
-  // (the line that nulls it out hasn't run yet). So every single
-  // *intentional* teardown — switching channels, the tab being hidden,
-  // deleting a channel, signing out — looked exactly like an unexpected
-  // drop to that channel's own callback, which then dutifully scheduled a
-  // reconnect for a channel we were deliberately replacing or tearing down.
-  // That reconnect fires later, calls subscribeToMessages() again, which
-  // tears down the (perfectly healthy) new channel the same way, which
-  // schedules ANOTHER reconnect — forever, without ever crashing, just
-  // continuously thrashing the connection so it's rarely actually joined
-  // when a message arrives.
-  //
-  // Every removeChannel(state.messagesSubscription) call in this file must
-  // go through this helper so the flag is set for the duration of the
-  // (synchronous) teardown, letting the status callback tell the two cases
-  // apart.
   let isIntentionalTeardown = false;
 
   function teardownMessagesSubscription() {
@@ -1500,19 +1364,10 @@
   }
 
   function scheduleReconnect(channelId) {
-    if (reconnectTimer) return; // already scheduled, don't stack another
-    // BUGFIX: this used to also require state.isTabFocused, which made
-    // sense back when a hidden tab intentionally had no connection to
-    // reconnect. Now the connection is meant to stay alive (and self-heal)
-    // while backgrounded too, so this only needs to check that there's
-    // still a current channel to reconnect to.
+    if (reconnectTimer) return;
     if (!state.currentChannel || state.currentChannel.id !== channelId) return;
 
     reconnectAttempts += 1;
-    // Capped exponential backoff: 2s, 4s, 8s, ... up to 30s, so a channel
-    // that keeps failing (e.g. Realtime not enabled on the table, an RLS
-    // policy blocking it, or a genuinely offline connection) doesn't spin
-    // the socket in a tight loop.
     const delay = Math.min(30000, 2000 * Math.pow(2, reconnectAttempts - 1));
     console.log(`🔁 Reconnect attempt ${reconnectAttempts} in ${delay / 1000}s...`);
 
@@ -1532,14 +1387,6 @@
 
     teardownMessagesSubscription();
 
-    // Local reference to THIS channel instance. The status callback below
-    // only acts when it's still the one referenced in state — this is what
-    // stops the recursive-close bug: calling removeChannel() on a channel
-    // from inside its own status callback (while it's already
-    // closing/closed) re-fires that same callback synchronously, and
-    // without this guard that becomes infinite recursion / a stack
-    // overflow. We simply never call removeChannel() again on a channel
-    // that is reporting its own closure — closed means it's already gone.
     let thisChannel;
 
     thisChannel = supabase
@@ -1552,13 +1399,11 @@
       }, async (payload) => {
         const newMessage = payload.new;
         
-        // Check for duplicates
         if (state.messages.some(msg => msg.id === newMessage.id)) {
           console.log(`✋ Message ${newMessage.id} already exists, skipping`);
           return;
         }
         
-        // Handle optimistic replacement
         if (newMessage.client_id) {
           const optimisticIndex = state.messages.findIndex(m => 
             m.client_id === newMessage.client_id || 
@@ -1572,7 +1417,6 @@
             scheduleRenderMessages();
             saveCachedMessages(channelId, state.messages);
             
-            // Mark delivered for messages from others
             if (newMessage.username !== state.currentUser?.username) {
               console.log('🔔 New message from someone else - marking delivered');
               playNotifySound();
@@ -1583,14 +1427,11 @@
           }
         }
         
-        // Add new message
         console.log(`📥 Adding new message (ID: ${newMessage.id})`);
         mergeMessagesSafely(newMessage);
         
-        // Refresh unread badges
         refreshUnreadBadges();
         
-        // Mark delivered for messages from others
         if (newMessage.username !== state.currentUser?.username) {
           console.log('🔔 New message from someone else - marking delivered');
           playNotifySound();
@@ -1598,7 +1439,6 @@
           await markSeen(channelId);
         }
         
-        // Reset inactivity timer
         if (state.inactivityTimer) {
           clearTimeout(state.inactivityTimer);
           state.inactivityTimer = null;
@@ -1638,18 +1478,6 @@
           state.isChannelActive = true;
           console.log(`✅ Subscribed to channel ${channelId}`);
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          // Skip entirely if this closure is us tearing this channel down
-          // on purpose (teardownMessagesSubscription() sets this flag for
-          // the duration of the synchronous removeChannel() call). This is
-          // the actual fix for the reconnect-storm bug: previously every
-          // intentional teardown — switching channels, tab hidden, sign
-          // out, deleting a channel — looked identical to an unexpected
-          // drop to this callback (it fires synchronously, with the old
-          // channel still sitting in state.messagesSubscription), so it
-          // kept scheduling reconnects for channels we were deliberately
-          // replacing, which tore down the replacement the same way, on
-          // and on — a permanent thrash loop that never crashed but rarely
-          // left the channel actually joined when a message came in.
           if (isIntentionalTeardown) {
             console.log(`↩️ Channel ${status} for ${channelId} — intentional teardown, not reconnecting`);
             return;
@@ -1659,10 +1487,6 @@
           else console.error(`❌ Channel ${status} for ${channelId}`);
           state.isChannelActive = false;
 
-          // Only react if this callback belongs to the channel currently
-          // tracked in state. If it's stale (we've already moved on to a
-          // newer channel instance) do nothing — critically, do NOT call
-          // removeChannel() again here.
           if (state.messagesSubscription === thisChannel) {
             state.messagesSubscription = null;
             scheduleReconnect(channelId);
@@ -1694,9 +1518,6 @@
         .from(CONFIG.SUPABASE.TABLES.MESSAGES)
         .select('*')
         .eq('channel_id', channelId)
-        // Same bug as fetchFreshHistory() above: fetch the 50 most recent
-        // messages (descending), not the 50 oldest. mergeMessagesSafely()
-        // sorts them back into ascending order for display.
         .order('created_at', { ascending: false })
         .limit(50);
 
@@ -1734,33 +1555,9 @@
   }
 
   // ============================================================
-  // RENDER MESSAGES (DIFFED — NO FULL REBUILD)
+  // RENDER MESSAGES
   // ============================================================
-  // BUGFIX: this used to do `DOM.chatMessages.innerHTML = ''` and
-  // rebuild every single message bubble from scratch on every call —
-  // and renderMessages() is called repeatedly in the background as
-  // part of normal operation (cache paint, fresh fetch merging in,
-  // realtime INSERT/UPDATE/DELETE events, delivery/seen ticks
-  // updating). Even when the resulting content was identical, the
-  // whole message list flashed empty and repainted, which is what
-  // showed up as "blinking". Now each message gets a signature; a
-  // bubble is only rebuilt if its signature actually changed, and
-  // unaffected bubbles are left untouched in the DOM — so a
-  // background refresh that changes nothing visible now does nothing
-  // visible.
   function messageSignature(msg) {
-    // NOTE: per-member reads (state.messageReads) are deliberately NOT
-    // part of this signature. They used to be, via a readsKey — which
-    // meant every single read receipt from every group member counted
-    // as a "content change" and forced that bubble to be torn down and
-    // rebuilt. Now that nothing in buildMessageEl() below renders the
-    // per-member read list inline (see the removed "Seen by ..."
-    // footer — that detail lives in openMessageInfoModal() instead,
-    // opened via the Info button in the header), a read receipt
-    // arriving is no longer a visible change, so it shouldn't trigger
-    // a rebuild. This was the main cause of bubbles "blinking" right
-    // after opening a group chat, since group members' read receipts
-    // land as a burst of separate events.
     return JSON.stringify([
       msg.content, msg.file_url, msg.reply_to, msg.reply_username, msg.reply_content,
       msg.username, msg.created_at, msg.seen_at, msg.delivered_at, msg.isPending,
@@ -1786,25 +1583,11 @@
       `;
     }
 
-    // Delivery ticks (sent/delivered/seen) belong only on the sender's
-    // own outgoing messages. Shown on incoming messages this doesn't
-    // make sense: delivery status is info for the sender about their
-    // own message, not something the receiver needs to see.
-    //
-    // WhatsApp-style: the ticks sit in the corner of whatever the
-    // message actually rendered as (the text bubble, or the attachment
-    // if there's no text) rather than on their own line underneath.
-    // Built once and attached to whichever block ends up LAST below, so
-    // a message with both text and an attachment only shows one set of
-    // ticks — on the attachment, since that's the final thing rendered.
     const ticksMarkup = (isMine && !msg.deleted_at) ? ticksHtml(msg) : '';
     const hasAttachment = !!msg.file_url && !msg.deleted_at;
 
     let bubbleHtml = '';
     if (msg.deleted_at) {
-      // WhatsApp-style tombstone: the row still exists (soft-deleted —
-      // see deleteMessage()), so this renders in place of the original
-      // content/attachment instead of the message just disappearing.
       bubbleHtml = `<div class="msg-bubble msg-deleted"><i class="fas fa-ban"></i> This message was deleted by Nous Complex admin</div>`;
     } else if (msg.content) {
       const inlineTicks = (!hasAttachment && ticksMarkup) ? `<span class="msg-bubble-ticks">${ticksMarkup}</span>` : '';
@@ -1814,14 +1597,6 @@
       bubbleHtml += `<div class="msg-bubble">${replyHtml}${inlineTicks}</div>`;
     }
     if (hasAttachment) {
-      // BUGFIX / FEATURE: every attachment — image, video, or
-      // otherwise — used to render as identical plain text ("📎
-      // Attached file"), with no preview at all until you left the
-      // app entirely (opened it in a new tab). Now images/videos get
-      // a WhatsApp-style thumbnail: capped height (see .msg-media-img
-      // in styles.css), cropped rather than shown at full size, with
-      // a tap-to-expand affordance — the full-resolution view only
-      // opens when you actually tap it.
       const cornerTicks = ticksMarkup ? `<span class="msg-corner-ticks">${ticksMarkup}</span>` : '';
       if (isImageFile(msg.file_url)) {
         bubbleHtml += `
@@ -1856,25 +1631,6 @@
       }
     }
 
-    // FIX: this used to render a "Seen by Alice, Bob +2" / "Seen by
-    // all" line under every one of your own messages, rebuilt straight
-    // from live message_reads events. It's removed here — the exact
-    // per-person seen/delivered breakdown is already one tap away via
-    // the Info button in the header (long-press/click a message to
-    // open the select header, then tap Info — see
-    // openMessageInfoModal()), so keeping a second, constantly-updating
-    // copy of the same info inline was both redundant and the direct
-    // cause of the bubble "blinking": each group member's read receipt
-    // used to force this line (and therefore the whole bubble) to
-    // rebuild the moment it arrived.
-
-    // FIX: reply/delete no longer render as buttons beside the bubble
-    // (they used to float awkwardly near the top of the message for
-    // both admins and regular users). Both actions now live only in
-    // the top select-header bar — see startLongPress()/click handler
-    // below, which now opens that bar for ANY message (not just your
-    // own), so admin-delete and reply both work the same way for
-    // every message.
     const displayName = getDisplayName(msg.username);
     wrap.innerHTML = `
       ${avatarHtml(msg.username, 'sm')}
@@ -1889,13 +1645,6 @@
     return wrap;
   }
 
-  // forceScrollBottom: when true, skip the wasNearBottom check and always
-  // land at the bottom after this render — used only for the first render
-  // of a freshly-opened channel (see selectChannel()). Deliberately does
-  // NOT read/write scrollTop before the diff runs: doing that against the
-  // PREVIOUS channel's still-mounted bubbles (right before they're torn
-  // down and replaced) was itself causing a visible flicker on click —
-  // this way the old DOM's scroll state is never touched at all.
   function renderMessages(forceScrollBottom) {
     if (!DOM.chatMessages) return;
 
@@ -1904,32 +1653,16 @@
       return;
     }
 
-    // Clear any placeholder content (the empty-state note, or the
-    // hardcoded "Select a chat..." welcome block that ships inside
-    // #chatMessages in the HTML for the desktop no-chat-selected view)
-    // before diffing — neither has a dataset.id, so the diff below
-    // would otherwise leave it sitting there forever once real
-    // messages start rendering, since it never matches a message
-    // signature to get replaced.
     if (!DOM.chatMessages.querySelector('.msg')) {
       DOM.chatMessages.innerHTML = '';
     }
 
-    // Day dividers ("Today" / "Yesterday" / "Wednesday" / "Aug 12")
-    // are diffed the same way as messages — keyed separately so a
-    // divider and a message never collide — so re-render never
-    // rebuilds the whole day header stack from scratch.
     const existingNodes = new Map();
     DOM.chatMessages.querySelectorAll('.msg, .day-divider').forEach((el) => {
       const key = el.classList.contains('day-divider') ? `day:${el.dataset.day}` : `msg:${el.dataset.id}`;
       existingNodes.set(key, el);
     });
 
-    // Was the view already scrolled to (or near) the bottom before this
-    // update? Only auto-scroll in that case, so a background refresh
-    // doesn't yank someone back down while they're reading old messages.
-    // forceScrollBottom bypasses this read entirely rather than priming
-    // it by scrolling the outgoing channel's content first.
     const wasNearBottom = forceScrollBottom || !DOM.chatContainer || (
       DOM.chatContainer.scrollHeight - DOM.chatContainer.scrollTop - DOM.chatContainer.clientHeight < 80
     );
@@ -1982,8 +1715,6 @@
       prevNode = node;
     });
 
-    // Anything left in existingNodes is a message or day divider that's
-    // no longer current (deleted message, or a day that emptied out).
     existingNodes.forEach((el) => { el.remove(); changed = true; });
 
     if (changed && wasNearBottom && DOM.chatContainer) {
@@ -1993,24 +1724,6 @@
     reapplySelectionHighlight();
   }
 
-  // Coalesces multiple render requests landing within the same
-  // animation frame into a single renderMessages() pass.
-  //
-  // ROOT CAUSE of the "opens fine, then blinks a few seconds later
-  // right as double ticks appear": markSeen() on the OTHER person's
-  // side marks every unseen message in the channel as seen with ONE
-  // bulk UPDATE — but Postgres logical replication (what Supabase
-  // Realtime is built on) emits one change event PER ROW affected by
-  // that bulk write, not one event for the whole batch. So if the
-  // other person had, say, 6 unread messages waiting and just opened
-  // the chat, this client receives 6 separate UPDATE events for the
-  // messages table back-to-back within the same second, each of which
-  // used to call renderMessages() (and saveCachedMessages()) on its
-  // own — 6 full diff/rebuild passes firing in a tight burst instead
-  // of 1. That rapid-fire DOM churn is what showed up as a visible
-  // blink right as the ticks flipped to double/blue. Routing those
-  // handlers through this scheduler instead means however many events
-  // land in one frame, the DOM only actually gets touched once.
   let renderMessagesQueued = false;
   let renderMessagesForceScroll = false;
 
@@ -2026,9 +1739,6 @@
     });
   }
 
-  // Scroll chatContainer to its current bottom edge.
-  // Called when a channel is opened so the newest message is immediately
-  // visible without the user having to scroll manually.
   function scrollToBottom() {
     if (DOM.chatContainer) {
       DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
@@ -2038,26 +1748,9 @@
   async function deleteMessage(messageId) {
     if (!confirm('Delete this message for everyone?')) return;
 
-    // BUGFIX/FEATURE: this used to be a hard DELETE, which removes the
-    // row entirely — nothing is left to render a placeholder for, so
-    // the message just silently vanished for everyone instead of
-    // showing WhatsApp's "This message was deleted by X" tombstone.
-    // Soft-delete instead: blank the content/attachment, keep the row,
-    // and record who deleted it. Requires deleted_at/deleted_by
-    // columns — see soft_delete_messages.sql.
     const deletedAt = new Date().toISOString();
     const deletedBy = state.currentUser?.username || 'admin';
 
-    // BUGFIX: a Postgres RLS policy blocking this UPDATE does NOT
-    // throw an error — Supabase just silently updates 0 rows, and
-    // `error` comes back null either way. The code used to trust that
-    // and update state.messages locally regardless, so the deleting
-    // admin saw the tombstone on their OWN screen even when the write
-    // never actually reached the database — explaining messages that
-    // looked deleted for the admin who deleted them, but still showed
-    // normally for everyone else (and reverted on refresh). Requesting
-    // the row back with .select() lets us tell "0 rows matched/allowed"
-    // apart from a real success.
     const { data, error } = await supabase
       .from(CONFIG.SUPABASE.TABLES.MESSAGES)
       .update({
@@ -2091,12 +1784,6 @@
     }
   }
 
-  // Select a message to see its info — WhatsApp-style: click your own
-  // message (desktop) or long-press it (mobile touch) and the chat
-  // header swaps out for a small selection bar in the SAME spot the
-  // group name normally sits (#msgSelectHeader), with an Info button.
-  // Tapping Info opens the exact per-member read breakdown, instead of
-  // a floating pill guessing where there's room above the bubble.
   let longPressTimer = null;
   let selectedMessageId = null;
 
@@ -2104,14 +1791,6 @@
     if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
   }
 
-  // Touch only: mobile has no hover/click-to-select affordance the way
-  // a mouse does, so selection there is gated behind a 500ms hold,
-  // matching WhatsApp's own long-press. Desktop instead reacts to a
-  // plain click — see the DOM.chatMessages 'click' listener below.
-  // FIX: this used to only match '.msg-mine', so replying to someone
-  // else's message or (as admin) deleting it had no way to open the
-  // select bar — that's what the inline per-bubble buttons were for.
-  // Now any message (mine or theirs) can be long-pressed/clicked.
   function startLongPress(e) {
     const bubbleWrap = e.target.closest('.msg');
     if (!bubbleWrap || !bubbleWrap.dataset.id || bubbleWrap.querySelector('.msg-deleted')) return;
@@ -2131,8 +1810,6 @@
     DOM.chatMessages.addEventListener(evt, clearLongPressTimer);
   });
 
-  // Desktop: a single click on a message selects it immediately (no
-  // hold needed with a mouse). Media taps keep their own behaviour.
   DOM.chatMessages.addEventListener('click', (e) => {
     if (!isDesktopLayout()) return;
     const bubbleWrap = e.target.closest('.msg');
@@ -2155,15 +1832,10 @@
     if (DOM.msgSelectHeader) DOM.msgSelectHeader.classList.remove('hidden');
     if (DOM.msgSelectCount) DOM.msgSelectCount.textContent = '1 selected';
 
-    // Copy only makes sense for a message with text. Delete only
-    // shows for admins (any message — matches what the old per-bubble
-    // delete button allowed). Info (delivery/seen ticks) only applies
-    // to your own outgoing messages, so it's hidden for others'.
     if (DOM.msgSelectCopyBtn) DOM.msgSelectCopyBtn.classList.toggle('hidden', !msg.content);
     if (DOM.msgSelectDeleteBtn) DOM.msgSelectDeleteBtn.classList.toggle('hidden', !state.isAdmin);
     if (DOM.msgSelectInfoBtn) DOM.msgSelectInfoBtn.classList.toggle('hidden', !isMine);
   }
-
 
   function exitMessageSelection() {
     if (!selectedMessageId) return;
@@ -2175,12 +1847,6 @@
     if (DOM.chatDetailHeader) DOM.chatDetailHeader.classList.remove('hidden');
   }
 
-  // renderMessages() diffs and rebuilds only the bubbles whose content
-  // actually changed (see messageSignature()) — a rebuilt bubble is a
-  // fresh DOM node, so a selection highlight applied to the old node
-  // would silently vanish if a read receipt happened to land on the
-  // selected message while its info bar was open. Re-apply it here,
-  // called at the end of every renderMessages() pass.
   function reapplySelectionHighlight() {
     if (!selectedMessageId) return;
     const el = DOM.chatMessages.querySelector(`.msg[data-id="${CSS.escape(selectedMessageId)}"]`);
@@ -2217,9 +1883,6 @@
       try {
         await navigator.clipboard.writeText(msg.content);
       } catch (e) {
-        // Clipboard API needs a secure context (https/localhost) and
-        // user-permission; fall back to something the user can act on
-        // rather than failing silently.
         console.warn('Clipboard write failed:', e);
         alert('Could not copy automatically — your browser blocked clipboard access.');
       }
@@ -2242,15 +1905,6 @@
     });
   }
 
-  // Forward: pick a target channel from the channels this client
-  // already has (allChannels — the same list the chat list renders
-  // from), then insert a copy of the content/attachment straight into
-  // that channel. Uses a direct insert rather than routing through
-  // sendMessage(), since sendMessage() always targets
-  // state.currentChannel and this may target a channel that isn't
-  // open. No "Forwarded" tag is added — the messages table has no
-  // column for that; add one (e.g. forwarded_from) if you want the
-  // label WhatsApp shows.
   function openForwardPicker(msg) {
     const targets = allChannels.filter((c) => !state.currentChannel || c.id !== state.currentChannel.id);
 
@@ -2304,26 +1958,6 @@
     alert(`Forwarded to ${targetName}.`);
   }
 
-
-  // The exact, WhatsApp-style breakdown: who's actually read the
-  // message and exactly when (from message_reads — see
-  // message_reads.sql), split from everyone else into two further
-  // buckets — delivered-but-unseen vs. not delivered.
-  //
-  // IMPORTANT CAVEAT: the schema only persists a per-member READ
-  // record (message_reads). There is no per-member DELIVERED record —
-  // delivered_at is a single column on the message itself, not one row
-  // per recipient — so a true "not delivered" state per member isn't
-  // actually tracked anywhere. The best available signal is live
-  // presence (state.onlineUsers, from the presence:orbit channel): a
-  // member who is online now almost certainly has the message via the
-  // realtime subscription (bucketed "Delivered"); a member who hasn't
-  // been seen online this session is bucketed "Not delivered". This is
-  // a reasonable approximation, not a stored fact — if you need it to
-  // be exactly accurate, add a message_deliveries table that mirrors
-  // message_reads and write to it wherever the realtime INSERT is
-  // received client-side, the same way markSeen() writes to
-  // message_reads.
   function openMessageInfoModal(msg) {
     const reads = (state.messageReads.get(msg.id) || [])
       .slice()
@@ -2399,9 +2033,7 @@
     }
   });
 
-  // Full-resolution view for a tapped image thumbnail — the WhatsApp-
-  // style capped-height preview in the bubble only ever shows a crop
-  // of the image; this is what "opening" it actually means.
+  // FIX: Store reference to lightbox overlay for back button handling
   function openImageLightbox(url) {
     if (!url) return;
     const overlay = document.createElement('div');
@@ -2411,7 +2043,16 @@
       <img class="lightbox-img" src="${escapeHtml(url)}" alt="Attached image, full size">
     `;
     document.body.appendChild(overlay);
-    const close = () => overlay.remove();
+    
+    // Store reference so back button can close it
+    state.activeLightbox = overlay;
+    
+    const close = () => {
+      if (state.activeLightbox === overlay) {
+        state.activeLightbox = null;
+      }
+      overlay.remove();
+    };
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
     overlay.querySelector('.lightbox-close').addEventListener('click', close);
   }
@@ -2422,7 +2063,7 @@
   });
 
   // ============================================================
-  // 9. SEND MESSAGE (FIXED)
+  // 9. SEND MESSAGE
   // ============================================================
   async function sendMessage(content, file) {
     if (!state.currentChannel || !state.currentUser) { 
@@ -2517,16 +2158,6 @@
       if (state.currentChannel) {
         saveCachedMessages(state.currentChannel.id, state.messages);
       }
-
-      // NOTE: push notifications are handled by a Database Webhook on the
-      // messages table (server-side, fires on every INSERT regardless of
-      // the sending browser). A client-side call to
-      // sendVapidNotificationsToOfflineStudents() used to live here too —
-      // remove it: with the webhook already covering this, calling it from
-      // both places sends every push notification twice. Keeping the
-      // server-side trigger as the single source of truth is also more
-      // reliable, since it fires even if the sender's tab closes
-      // immediately after sending.
     }
 
     state.replyingTo = null;
@@ -2767,7 +2398,7 @@
   }
 
   // ============================================================
-  // 8a. CHANNEL DESCRIPTION (admin editable)
+  // 8a. CHANNEL DESCRIPTION
   // ============================================================
   async function loadChannelDescription(channelId) {
     if (!channelId) return;
@@ -3065,11 +2696,16 @@
     DOM.statusPauseBtn.title = statusPaused ? 'Resume' : 'Pause';
   }
 
+  // FIX: Update history state after closing status
   function closeStatusViewer() {
     DOM.statusModal.classList.add('hidden');
     if (state.progressInterval) { clearInterval(state.progressInterval); state.progressInterval = null; }
     statusPaused = false;
     DOM.statusModalMedia.innerHTML = '';
+    // Clear the URL fragment after closing status so back button works correctly
+    if (state.currentScreen && history.replaceState) {
+      history.replaceState({ orbitScreen: state.currentScreen }, '', '#' + state.currentScreen);
+    }
   }
 
   // ============================================================
@@ -3146,7 +2782,7 @@
   }
 
   // ============================================================
-  // 7c. ADMIN: USER MANAGEMENT (edit/delete users)
+  // 7c. ADMIN: USER MANAGEMENT
   // ============================================================
   async function loadUserForEdit(username) {
     username = normalizeUsername(username);
@@ -3194,18 +2830,6 @@
     
     try {
       if (newUsername && newUsername !== username) {
-        // BUGFIX: this used to be delete-then-insert as two separate
-        // round trips. That has two problems: (1) it's not atomic — a
-        // failure between the two steps could leave the user with NO
-        // role row at all — and (2) if the Update button is clicked
-        // twice in quick succession (nothing disabled it while the
-        // request was in flight), the second call's insert collides
-        // with the row the first call just created, throwing this
-        // exact "duplicate key value violates unique constraint
-        // idx_user_roles_unique" error even for a single legitimate
-        // rename. A single UPDATE renaming the existing row in place
-        // is atomic, and a duplicate second click just matches zero
-        // rows (already renamed) instead of erroring.
         const { error: roleError, count } = await supabase
           .from('user_roles')
           .update({
@@ -3286,13 +2910,6 @@
   }
 
   async function callAdminDeleteUserFunction(targetUsername, removeData) {
-    // Was: supabase.functions.invoke('admin-delete-user', ...), which
-    // required a separate Edge Function deployment that never
-    // happened (that's what caused "Failed to send a request to the
-    // Edge Function"). Switched to a Postgres function instead —
-    // create it once via the admin_delete_user.sql script in the
-    // Supabase SQL Editor, no separate deploy step or CORS config
-    // needed.
     const { data, error } = await supabase.rpc('admin_delete_user', {
       target_username: targetUsername,
       remove_data: removeData,
@@ -3301,9 +2918,6 @@
     return { error: null, data };
   }
 
-  // Small modal offering the admin an explicit choice, instead of a
-  // single confirm() that always wiped chat data. Resolves to true /
-  // false / null (cancelled).
   function openDeleteUserChoiceModal(username) {
     return new Promise((resolve) => {
       const modal = document.createElement('div');
@@ -3342,15 +2956,9 @@
     if (!username) { alert('No user selected.'); return; }
 
     const removeData = await openDeleteUserChoiceModal(username);
-    if (removeData === null) return; // cancelled
+    if (removeData === null) return;
 
     try {
-      // All the actual deletion — role, auth account, and (if
-      // removeData) their messages/statuses/memberships/schedule —
-      // happens atomically inside the admin_delete_user() Postgres
-      // function now, instead of being duplicated here client-side.
-      // That keeps this single choice authoritative: nothing gets
-      // wiped client-side that the admin chose to keep.
       const { error: authError } = await callAdminDeleteUserFunction(username, removeData);
       if (authError) throw authError;
       
@@ -3372,18 +2980,6 @@
   // 5g. INACTIVITY DISCONNECTION MANAGEMENT
   // ============================================================
   function setupInactivityManager() {
-    // BUGFIX: this function is called from selectChannel() every single time
-    // a channel is opened or switched, but it was never paired with its own
-    // cleanup — only clearTimeout(state.inactivityTimer) ran here, while the
-    // watchdog setInterval() and the window activity-event listeners from
-    // every PREVIOUS call were left running forever. Browsing between
-    // channels a few times during a session left several duplicate
-    // watchdogs and listeners all firing at once, each independently calling
-    // subscribeToMessages() — which is exactly the kind of overlapping,
-    // rapid-fire resubscribe activity that causes channels to thrash and
-    // messages to go missing intermittently. Tearing down any previous
-    // instance before creating a new one makes this idempotent no matter
-    // how many times (or how quickly) it's called.
     cleanupInactivityManager();
 
     function resetInactivityTimer() {
@@ -3392,13 +2988,6 @@
         state.inactivityTimer = null;
       }
       
-      // BUGFIX: after the idle timeout fires below, state.messagesSubscription is set
-      // to null (not left in a 'closed' state), so the old check here
-      // (`state.messagesSubscription && state.messagesSubscription.state === 'closed'`)
-      // could never be true and the channel was never resubscribed on the next
-      // activity. That silently left receivers permanently disconnected from
-      // realtime updates until a full page reload. Reconnect whenever there is
-      // no live subscription OR the existing one has closed/errored.
       const needsReconnect = state.isTabFocused && state.currentChannel && (
         !state.messagesSubscription ||
         state.messagesSubscription.state === 'closed' ||
@@ -3426,30 +3015,12 @@
       window.addEventListener(event, resetInactivityTimer);
     });
 
-    // WATCHDOG: a receiver who is just reading messages (not moving the
-    // mouse/typing) never fires the activity events above, so a silently
-    // dropped realtime channel (network blip, Supabase closing the socket)
-    // could go unnoticed indefinitely and messages would stop arriving.
-    // Poll the channel's actual state periodically and resubscribe if it's
-    // not in a healthy 'joined' state.
-    //
-    // BUGFIX: this used to skip entirely while `!state.isTabFocused` (i.e.
-    // whenever the tab was backgrounded) — back when a hidden tab
-    // deliberately dropped the connection, that made sense. Now that the
-    // connection is intentionally kept alive while hidden (so background
-    // notifications can ring), the watchdog needs to keep monitoring it
-    // then too, or a dropped connection while backgrounded would just stay
-    // dropped silently until the tab was refocused.
     state.connectionWatchdog = setInterval(() => {
       if (!state.currentChannel) return;
 
       const sub = state.messagesSubscription;
       const healthy = sub && sub.state === 'joined';
 
-      // If a reconnect is already scheduled/in-flight (via the channel's
-      // own CLOSED/ERROR handler), let that run its course instead of also
-      // firing an immediate resubscribe here — that's what caused the
-      // reconnect storm in the first place.
       if (!healthy && !reconnectTimer) {
         console.log('🩺 Watchdog: connection unhealthy, reconnecting...', sub ? sub.state : 'no subscription');
         subscribeToMessages(state.currentChannel.id);
@@ -3489,10 +3060,6 @@
   // 5h. TAB FOCUS MANAGER
   // ============================================================
   function setupTabFocusManager() {
-    // Same bug as setupInactivityManager() above: called on every channel
-    // switch without ever tearing down the previous visibilitychange
-    // listener, so they piled up and all fired together on every tab
-    // switch. Clean up any previous instance first.
     cleanupTabFocusManager();
 
     if (state.currentChannel) {
@@ -3502,14 +3069,6 @@
 
     const handleVisibilityChange = async () => {
       if (document.hidden) {
-        // BUGFIX: this used to tear down state.messagesSubscription here —
-        // "save free tier slots" — which is fundamentally incompatible with
-        // wanting a live sound/notification while the tab is backgrounded:
-        // there is no way to ring from a connection that's deliberately
-        // closed the moment the tab isn't visible. A hidden tab is not a
-        // closed one — the browser keeps it running (throttled, but the
-        // WebSocket stays open fine) — so there's no need to disconnect at
-        // all here. Only stop tracking active-tab presence.
         console.log("🔴 Tab hidden. Keeping message connection alive for background notifications.");
         state.isTabFocused = false;
 
@@ -3576,23 +3135,6 @@
     updateChatEmptyState();
     highlightActiveChatRow();
 
-    // BUGFIX: this used to render an empty chat pane first and then
-    // immediately re-render again with the cached messages — two full
-    // innerHTML rebuilds back-to-back on every single channel click,
-    // which is what showed up as a visible "blink" (especially on
-    // desktop, where the chat pane is already on screen next to the
-    // list). Resolving cache first and rendering once avoids the
-    // empty-then-full flash; state.messages is still reset per-channel
-    // so the previous channel's messages never leak in.
-    //
-    // Pass forceScrollBottom=true so this render always lands on the
-    // newest message regardless of where the PREVIOUS channel happened
-    // to be scrolled. Earlier this was done by scrolling the container
-    // to bottom before this call — but at that point the DOM still held
-    // the outgoing channel's bubbles, and scrolling them right before
-    // tearing them all down and rebuilding is what caused the click-to-
-    // open flicker. Passing the flag through instead means the old
-    // bubbles' scroll position is never touched at all.
     const cachedMessages = getCachedMessages(channel.id);
     state.messages = cachedMessages || [];
     renderMessages(true);
@@ -3679,6 +3221,7 @@
 
     syncNotificationToggleState();
 
+    // FIX: Reset history and go to chats (home screen)
     screenHistory = [];
     goToScreen('chats');
     
@@ -3848,17 +3391,6 @@
   }
 
   async function syncVapidSubscriptionOnLogin(username) {
-    // BUGFIX: every distinct failure mode here — no service worker, the
-    // push subscribe() call throwing, or the Supabase upsert failing —
-    // used to collapse into a single `return false`, which the caller then
-    // turned into the same generic "sync_failed" alert no matter which one
-    // actually happened. That made it impossible to tell, from the alert
-    // alone, whether the problem was the service worker never activating,
-    // the browser's push service rejecting the subscription, or a database
-    // /RLS error on the upsert — three completely different things to fix.
-    // Now each step reports its own reason (and the real error message for
-    // the database case, which is usually an RLS policy or a missing
-    // unique constraint on user_id).
     try {
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
         console.warn('Push notifications not supported on this browser/device.');
@@ -3896,9 +3428,6 @@
             applicationServerKey: urlBase64ToUint8Array(CONFIG.PUSH.VAPID_PUBLIC_KEY)
           });
         } catch (subErr) {
-          // Common causes: a malformed/mismatched VAPID public key, or the
-          // browser's push service being unreachable (blocked by a
-          // firewall/extension).
           console.error('pushManager.subscribe() failed:', subErr);
           return { ok: false, reason: 'push_subscribe_failed', detail: subErr?.message };
         }
@@ -3924,9 +3453,6 @@
         }, { onConflict: 'user_id' });
 
       if (error) {
-        // Almost always either: (a) no Row Level Security policy lets this
-        // user INSERT/UPDATE their own row in user_device_tokens, or (b)
-        // there's no UNIQUE constraint on user_id for onConflict to target.
         console.error('Failed to save push subscription to Supabase:', error);
         return { ok: false, reason: 'db_error', detail: error.message };
       }
@@ -3940,9 +3466,6 @@
     }
   }
 
-  // Returns { ok, reason } instead of a bare boolean so the caller can tell
-  // the user *why* the toggle didn't stay on, instead of it just silently
-  // flipping back off.
   async function subscribeToPush() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
       console.warn('Push notifications not supported on this browser/device.');
@@ -3998,8 +3521,6 @@
     error: 'Something went wrong turning on notifications. Please try again.',
   };
 
-  // Reflects the browser's real push subscription + permission state onto
-  // the toggle, instead of trusting whatever it happened to be left at.
   async function syncNotificationToggleState() {
     try {
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
@@ -4023,23 +3544,12 @@
   }
 
   async function setNotificationsEnabled(enabled) {
-    // Disable the toggle briefly while we work, so a slow network request
-    // can't be mistaken for the toggle "not responding".
     DOM.notifToggle.disabled = true;
 
     try {
       if (enabled) {
         const { ok, reason, detail } = await subscribeToPush();
 
-        // BUGFIX: previously this always overwrote DOM.notifToggle.checked
-        // with the raw result, so any transient failure (permission dialog
-        // dismissed, momentary network error while syncing the subscription
-        // to Supabase, etc.) made the toggle silently snap back off with no
-        // explanation. Now we only turn it back off when it genuinely
-        // failed, and we tell the user why — including the actual database
-        // error text when it's a db_error, since that's almost always an
-        // RLS policy or a missing unique constraint and the exact message
-        // says which.
         DOM.notifToggle.checked = ok;
         if (!ok) {
           const base = PUSH_FAILURE_MESSAGES[reason] || PUSH_FAILURE_MESSAGES.error;
@@ -4254,10 +3764,6 @@
     const role = DOM.editRole.value;
     const password = DOM.editPassword.value;
 
-    // Guard against double-clicks firing two overlapping update
-    // requests (was the root cause of a rename occasionally throwing
-    // "duplicate key value violates unique constraint" on a single
-    // legitimate rename).
     DOM.updateUserBtn.disabled = true;
     try {
       await updateUserAccount(currentUser, newUser, displayName, role, password);
