@@ -2102,6 +2102,51 @@ body.theme-dark .btn-send { color: #FFFFFF; }
   touch-action: manipulation;
 }
 
+/* FIX: "display media in full screen not in small screen" — when an update
+   has a photo/video, .has-media (toggled in showStatusModal() in app.js)
+   switches the body from the padded/centered text layout to an edge-to-edge
+   layout that fills the entire viewer, WhatsApp/Instagram-story style.
+   Text-only updates are untouched and keep using the rules above. */
+.status-viewer-body.has-media {
+  padding: 0;
+  gap: 0;
+  align-items: stretch;
+  justify-content: flex-start;
+  position: relative;
+  overflow: hidden;
+}
+.status-viewer-body.has-media .status-viewer-media {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+.status-viewer-body.has-media .status-viewer-media img,
+.status-viewer-body.has-media .status-viewer-media video {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 0;
+  object-fit: contain;
+}
+.status-viewer-body.has-media p:not(:empty) {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  z-index: 2;
+  padding: 46px 20px 22px;
+  background: linear-gradient(to top, rgba(0,0,0,0.78), rgba(0,0,0,0.4) 60%, transparent);
+  text-align: left;
+  font-size: 14.5px;
+  pointer-events: none;
+}
+
 /* ============================================================
    MODALS
    ============================================================ */
