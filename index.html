@@ -374,12 +374,26 @@
             <i class="fas fa-people-group"></i> Members
           </button>
 
+          <!-- Shared Media Section with Carousel -->
           <div class="profile-section-row">
             <span class="section-label">Shared Media</span>
             <a href="#" id="profileSeeAllMedia" class="see-all-link hidden">See All</a>
           </div>
-          <div id="sharedMediaGrid" class="shared-media-grid">
-            <div class="empty-note">No Shared Media Yet</div>
+
+          <!-- Media Carousel -->
+          <div id="sharedMediaCarousel" class="shared-media-carousel hidden">
+            <div class="carousel-container">
+              <button id="mediaPrevBtn" class="carousel-nav-btn carousel-prev hidden" aria-label="Previous">
+                <i class="fas fa-chevron-left"></i>
+              </button>
+              <div id="sharedMediaGrid" class="carousel-track">
+                <div class="empty-note">No Shared Media Yet</div>
+              </div>
+              <button id="mediaNextBtn" class="carousel-nav-btn carousel-next hidden" aria-label="Next">
+                <i class="fas fa-chevron-right"></i>
+              </button>
+            </div>
+            <div id="carouselDots" class="carousel-dots"></div>
           </div>
 
           <div id="adminProfileSchedule" class="hidden schedule-card">
