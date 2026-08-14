@@ -214,6 +214,18 @@
                 <input id="manageUserSearch" class="field-sm" placeholder="Search username..." list="registeredUsersList" autocomplete="off" style="flex:1;">
                 <button id="loadUserBtn" class="btn-admin-sm"><i class="fas fa-search"></i> Load</button>
               </div>
+
+              <!-- Registered users: every account that exists, with the
+                   group/session each is assigned to (or "Unassigned" if
+                   in none). Tap a row to load it into the edit form
+                   below. Populated by loadRegisteredUsersList() /
+                   renderRegisteredUsersList() in app.js. -->
+              <div id="registeredUsersListWrap" class="registered-users-wrap">
+                <div id="registeredUsersListView" class="registered-users-list">
+                  <div class="empty-note">Loading users…</div>
+                </div>
+              </div>
+
               <div id="userEditForm" style="display:none; flex-direction:column; gap:8px; padding-top:8px; border-top:1px solid var(--border);">
                 <input id="editUsername" class="field-sm" placeholder="Username (ID)" style="width:100%;">
                 <input id="editDisplayName" class="field-sm" placeholder="Display name" style="width:100%;">
