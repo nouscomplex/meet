@@ -44,6 +44,18 @@
   console.log(`🏫 ${CONFIG.BRANDING.NAME} v${CONFIG.BRANDING.VERSION}`);
   console.log(`🔧 Environment: ${CONFIG.ENV}`);
 
+  // FIX: PDF.js needs its worker script pointed at explicitly (it doesn't
+  // infer it from the main <script> tag). Without this, getDocument() on
+  // every shared PDF was failing silently (console-only warning), which is
+  // why PDFs never got a page preview and fell straight back to a bare
+  // file-icon card — see getPdfThumbnail() below.
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  } else {
+    console.warn('pdf.js failed to load — shared PDFs will fall back to a plain file icon (no page preview).');
+  }
+
   // ============================================================
   // 2. SUPABASE CLIENT
   // ============================================================
@@ -524,6 +536,10 @@
 
   function isVideoFile(url) {
     return !!url && /\.(mp4|webm|mov|m4v|ogv)$/i.test(url.split('?')[0]);
+  }
+
+  function isPdfFile(url) {
+    return !!url && /\.pdf$/i.test(url.split('?')[0]);
   }
 
   function getFileNameFromUrl(url) {
@@ -2066,6 +2082,84 @@
     ]);
   }
 
+  // ============================================================
+  // PDF THUMBNAIL PREVIEW (NEW)
+  // ============================================================
+  // FIX: "why can't I see the shared PDF half-opened like in WhatsApp" —
+  // previously every non-image/video attachment (including PDFs) rendered
+  // as a bare icon + filename card (see the generic .msg-doc-card branch
+  // below), with no visual preview at all. WhatsApp renders a cropped
+  // thumbnail of the document's first page in the bubble, the same "shown
+  // half until you tap" treatment .msg-media-preview already gives images
+  // (see that CSS comment in styles.css). This renders page 1 of the PDF
+  // to a canvas with pdf.js and reuses that exact same cropped-preview
+  // look for PDFs. Thumbnails are cached by URL so re-renders (e.g. from
+  // realtime updates re-running buildMessageEl) and repeated shares of the
+  // same file don't re-download/re-render the PDF every time.
+  const pdfThumbCache = new Map();   // file_url -> dataURL string | null (null = failed, don't retry)
+  const pdfThumbInFlight = new Map(); // file_url -> in-progress Promise<string|null>
+
+  function getPdfThumbnail(url) {
+    if (pdfThumbCache.has(url)) return Promise.resolve(pdfThumbCache.get(url));
+    if (pdfThumbInFlight.has(url)) return pdfThumbInFlight.get(url);
+    if (!window.pdfjsLib) return Promise.resolve(null);
+
+    const promise = pdfjsLib.getDocument(url).promise
+      .then((pdf) => pdf.getPage(1))
+      .then((page) => {
+        const baseViewport = page.getViewport({ scale: 1 });
+        // Render at a fixed target width — plenty sharp for a chat-bubble
+        // thumbnail while staying cheap for long/large PDFs.
+        const targetWidth = 360;
+        const scale = targetWidth / baseViewport.width;
+        const viewport = page.getViewport({ scale });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d');
+
+        return page.render({ canvasContext: ctx, viewport }).promise
+          .then(() => canvas.toDataURL('image/jpeg', 0.82));
+      })
+      .then((dataUrl) => {
+        pdfThumbCache.set(url, dataUrl);
+        pdfThumbInFlight.delete(url);
+        return dataUrl;
+      })
+      .catch((err) => {
+        // Most common cause: the storage bucket doesn't send CORS headers
+        // for cross-origin fetch (pdf.js needs to read the bytes, unlike a
+        // plain <img>/<a> tag which doesn't). Fails soft to the file-icon
+        // placeholder already in the markup rather than breaking the chat.
+        console.warn(`PDF thumbnail failed for ${url}:`, err);
+        pdfThumbCache.set(url, null);
+        pdfThumbInFlight.delete(url);
+        return null;
+      });
+
+    pdfThumbInFlight.set(url, promise);
+    return promise;
+  }
+
+  function hydratePdfThumb(wrapEl, url) {
+    const thumbEl = wrapEl.querySelector('.msg-pdf-thumb');
+    if (!thumbEl) return;
+    getPdfThumbnail(url).then((dataUrl) => {
+      // Bail if the message node was replaced/removed while we were
+      // rendering (e.g. renderMessages() swapped it for a fresh node).
+      if (!dataUrl || !thumbEl.isConnected) return;
+      const img = document.createElement('img');
+      img.className = 'msg-media-img';
+      img.alt = 'PDF preview';
+      img.loading = 'lazy';
+      img.src = dataUrl;
+      thumbEl.innerHTML = '';
+      thumbEl.appendChild(img);
+      thumbEl.classList.add('loaded');
+    });
+  }
+
   function buildMessageEl(msg, signature) {
     const isMine = msg.username === state.currentUser?.username;
     const wrap = document.createElement('div');
@@ -2114,6 +2208,26 @@
             ${cornerTicks}
           </div>
         `;
+      } else if (isPdfFile(msg.file_url)) {
+        // WhatsApp-style PDF card: cropped page-1 thumbnail on top (filled
+        // in asynchronously by hydratePdfThumb() below, once wrap.innerHTML
+        // is actually set) with the filename/download bar underneath.
+        const fileName = getFileNameFromUrl(msg.file_url);
+        const inlineTicks = ticksMarkup ? `<span class="msg-inline-ticks">${ticksMarkup}</span>` : '';
+        bubbleHtml += `
+          <a href="${escapeHtml(msg.file_url)}" target="_blank" rel="noopener" class="msg-doc-card msg-pdf-card">
+            <div class="msg-pdf-thumb"><i class="fas fa-file-pdf"></i></div>
+            <div class="msg-pdf-info-bar">
+              <span class="msg-doc-icon"><i class="fas fa-file-pdf"></i></span>
+              <span class="msg-doc-info">
+                <span class="msg-doc-name">${escapeHtml(fileName)}</span>
+                <span class="msg-doc-ext">PDF</span>
+              </span>
+              <span class="msg-doc-download"><i class="fas fa-download"></i></span>
+              ${inlineTicks}
+            </div>
+          </a>
+        `;
       } else {
         const fileName = getFileNameFromUrl(msg.file_url);
         const ext = getFileExt(fileName);
@@ -2143,6 +2257,11 @@
         ${bubbleHtml}
       </div>
     `;
+
+    if (hasAttachment && isPdfFile(msg.file_url)) {
+      hydratePdfThumb(wrap, msg.file_url);
+    }
+
     return wrap;
   }
 
