@@ -163,12 +163,12 @@
           <div id="adminSettingsCard" class="hidden settings-list" style="margin-top:14px;">
             <div class="settings-list-label"><i class="fas fa-user-shield"></i> Admin tools</div>
             <button id="createChannelBtn" class="settings-action-row">
-              <i class="fas fa-plus"></i> New channel
+              <i class="fas fa-plus"></i> Create New Session
             </button>
           </div>
 
           <div id="adminCreateUserCard" class="hidden settings-list" style="margin-top:14px;">
-            <div class="settings-list-label"><i class="fas fa-user-plus"></i> Add teacher or student</div>
+            <div class="settings-list-label"><i class="fas fa-user-plus"></i> Add Teacher or Student</div>
             <div style="padding:4px 16px 16px; display:flex; flex-direction:column; gap:8px;">
               <input id="newUserUsername" class="field-sm" placeholder="Username" style="width:100%;">
               <input id="newUserDisplayName" class="field-sm" placeholder="Display name (optional)" style="width:100%;">
@@ -183,7 +183,7 @@
                 </button>
               </div>
               <button id="createUserBtn" class="btn-admin-sm" style="width:100%;">
-                <i class="fas fa-user-plus"></i> Create account
+                <i class="fas fa-user-plus"></i> Create Account
               </button>
             </div>
           </div>
@@ -227,7 +227,7 @@
         <header class="chat-detail-header">
           <button id="backFromChat" class="icon-btn back-btn"><i class="fas fa-arrow-left"></i></button>
           <button id="chatDetailTitleBtn" class="chat-detail-title">
-            <span class="title-name" id="chatDetailName">Select a channel</span>
+            <span class="title-name" id="chatDetailName">Select a Session</span>
             <span class="title-sub" id="chatDetailSub"></span>
           </button>
           <button id="joinLiveBtn" class="btn-live-pill">
@@ -262,7 +262,7 @@
             <div class="chat-welcome">
               <div class="chat-welcome-icon"><i class="fas fa-comments"></i></div>
               <div class="chat-welcome-title">Nous Complex Orbit</div>
-              <div class="chat-welcome-sub">Select a chat from the list to start messaging.</div>
+              <div class="chat-welcome-sub">Select a session from the list to start messaging.</div>
             </div>
           </div>
         </div>
@@ -335,7 +335,7 @@
 
         <div class="members-wrap">
           <div id="channelMembersList" class="member-list">
-            <div class="empty-note">Select a channel</div>
+            <div class="empty-note">Select a Session</div>
           </div>
           <div id="alphaIndex" class="alpha-index"></div>
         </div>
@@ -370,11 +370,11 @@
           </button>
 
           <div class="profile-section-row">
-            <span class="section-label">Shared media</span>
-            <a href="#" id="profileSeeAllMedia" class="see-all-link hidden">See all</a>
+            <span class="section-label">Shared Media</span>
+            <a href="#" id="profileSeeAllMedia" class="see-all-link hidden">See All</a>
           </div>
           <div id="sharedMediaGrid" class="shared-media-grid">
-            <div class="empty-note">No shared media yet</div>
+            <div class="empty-note">No Shared Media Yet</div>
           </div>
 
           <div id="adminProfileSchedule" class="hidden schedule-card">
@@ -396,16 +396,16 @@
       ============================================================ -->
       <nav class="bottom-nav" id="bottomNav">
         <button class="nav-btn active" data-tab="chats">
-          <span class="nav-icon-wrap"><svg class="nav-icon-svg" viewBox="0 0 512 512" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M45,60 L27,92 L21,122 L22,313 L29,339 L47,368 L77,392 L107,403 L107,474 L115,486 L126,490 L140,486 L262,404 L396,404 L428,395 L448,383 L471,359 L482,339 L490,303 L490,122 L485,95 L475,73 L466,60 L447,42 L419,27 L389,21 L122,21 L95,26 L73,36 Z M148,253 L152,243 L165,234 L346,234 L359,243 L363,258 L359,268 L346,277 L165,277 L152,268 Z M106,165 L115,152 L125,148 L386,148 L396,152 L402,158 L405,165 L405,176 L395,189 L388,192 L123,192 L109,182 L106,176 Z"/></svg><span id="navChatsBadge" class="nav-badge hidden">0</span></span>
-          <span>Chats</span>
+          <span class="nav-icon-wrap"><svg class="nav-icon-svg" viewBox="0 0 600 600" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M45,60 L27,92 L21,122 L22,313 L29,339 L47,368 L77,392 L107,403 L107,474 L115,486 L126,490 L140,486 L262,404 L396,404 L428,395 L448,383 L471,359 L482,339 L490,303 L490,122 L485,95 L475,73 L466,60 L447,42 L419,27 L389,21 L122,21 L95,26 L73,36 Z M148,253 L152,243 L165,234 L346,234 L359,243 L363,258 L359,268 L346,277 L165,277 L152,268 Z M106,165 L115,152 L125,148 L386,148 L396,152 L402,158 L405,165 L405,176 L395,189 L388,192 L123,192 L109,182 L106,176 Z"/></svg><span id="navChatsBadge" class="nav-badge hidden">0</span></span>
+          <span style="font-weight: 600;">Sessions</span> 
         </button>
         <button class="nav-btn" data-tab="updates">
-          <span class="nav-icon-wrap"><svg class="nav-icon-svg" viewBox="0 0 512 512" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M63,354 L64,362 L81,390 L108,419 L126,433 L175,459 L223,472 L278,474 L320,466 L349,455 L369,444 L395,425 L400,417 L400,406 L397,401 L389,395 L379,394 L342,419 L304,434 L273,439 L225,436 L184,424 L149,405 L117,376 L91,340 L74,339 L66,346 Z M245,128 L218,133 L200,140 L176,155 L159,171 L143,194 L133,218 L128,245 L128,266 L133,293 L140,311 L149,327 L170,351 L194,368 L212,376 L236,382 L266,383 L293,378 L311,371 L335,356 L352,340 L368,317 L378,293 L383,266 L383,245 L378,218 L371,200 L356,176 L340,159 L317,143 L293,133 L266,128 Z M243,164 L268,164 L282,167 L313,183 L336,210 L347,243 L347,268 L344,282 L328,313 L301,336 L268,347 L243,347 L229,344 L198,328 L175,301 L164,268 L164,243 L167,229 L183,198 L208,176 Z M322,51 L315,55 L310,63 L310,72 L314,80 L352,100 L377,119 L401,146 L425,191 L436,235 L437,277 L431,308 L411,351 L411,360 L419,371 L426,374 L436,373 L443,367 L459,335 L472,283 L472,234 L467,205 L459,179 L438,136 L420,111 L402,92 L362,63 L331,50 Z M261,37 L227,38 L198,44 L170,54 L121,83 L85,118 L69,140 L53,170 L40,209 L35,263 L38,290 L46,302 L62,304 L73,294 L71,254 L78,207 L91,174 L113,140 L141,112 L184,86 L214,76 L264,70 L273,59 L272,47 Z"/></svg></span>
-          <span>Updates</span>
+          <span class="nav-icon-wrap"><svg class="nav-icon-svg" viewBox="0 0 600 600" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M63,354 L64,362 L81,390 L108,419 L126,433 L175,459 L223,472 L278,474 L320,466 L349,455 L369,444 L395,425 L400,417 L400,406 L397,401 L389,395 L379,394 L342,419 L304,434 L273,439 L225,436 L184,424 L149,405 L117,376 L91,340 L74,339 L66,346 Z M245,128 L218,133 L200,140 L176,155 L159,171 L143,194 L133,218 L128,245 L128,266 L133,293 L140,311 L149,327 L170,351 L194,368 L212,376 L236,382 L266,383 L293,378 L311,371 L335,356 L352,340 L368,317 L378,293 L383,266 L383,245 L378,218 L371,200 L356,176 L340,159 L317,143 L293,133 L266,128 Z M243,164 L268,164 L282,167 L313,183 L336,210 L347,243 L347,268 L344,282 L328,313 L301,336 L268,347 L243,347 L229,344 L198,328 L175,301 L164,268 L164,243 L167,229 L183,198 L208,176 Z M322,51 L315,55 L310,63 L310,72 L314,80 L352,100 L377,119 L401,146 L425,191 L436,235 L437,277 L431,308 L411,351 L411,360 L419,371 L426,374 L436,373 L443,367 L459,335 L472,283 L472,234 L467,205 L459,179 L438,136 L420,111 L402,92 L362,63 L331,50 Z M261,37 L227,38 L198,44 L170,54 L121,83 L85,118 L69,140 L53,170 L40,209 L35,263 L38,290 L46,302 L62,304 L73,294 L71,254 L78,207 L91,174 L113,140 L141,112 L184,86 L214,76 L264,70 L273,59 L272,47 Z"/></svg></span>
+          <span style="font-weight: 600;">Updates</span>
         </button>
         <button class="nav-btn" data-tab="settings">
-          <span class="nav-icon-wrap"><svg class="nav-icon-svg" viewBox="0 0 512 512" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M171,31 L127,53 L101,74 L96,92 L103,117 L103,132 L99,148 L87,167 L67,182 L34,191 L24,201 L20,211 L16,242 L16,270 L21,301 L33,314 L68,324 L90,343 L98,358 L102,376 L101,392 L93,416 L95,429 L104,441 L137,464 L171,480 L190,482 L202,476 L220,456 L231,449 L251,443 L266,443 L290,451 L301,459 L314,474 L323,479 L342,479 L380,460 L413,434 L418,414 L411,392 L411,373 L417,354 L425,342 L437,331 L449,324 L474,318 L487,307 L491,297 L495,267 L494,230 L490,208 L478,193 L448,184 L437,177 L423,162 L413,137 L413,117 L419,97 L417,83 L406,69 L374,47 L340,31 L322,29 L311,34 L294,51 L281,59 L263,64 L248,64 L221,54 L195,31 L189,29 Z M247,175 L275,177 L304,191 L326,216 L336,247 L334,275 L320,304 L295,326 L264,336 L236,334 L207,320 L185,295 L175,264 L177,236 L191,207 L216,185 Z"/></svg></span>
-          <span>Settings</span>
+          <span class="nav-icon-wrap"><svg class="nav-icon-svg" viewBox="0 0 600 600" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M171,31 L127,53 L101,74 L96,92 L103,117 L103,132 L99,148 L87,167 L67,182 L34,191 L24,201 L20,211 L16,242 L16,270 L21,301 L33,314 L68,324 L90,343 L98,358 L102,376 L101,392 L93,416 L95,429 L104,441 L137,464 L171,480 L190,482 L202,476 L220,456 L231,449 L251,443 L266,443 L290,451 L301,459 L314,474 L323,479 L342,479 L380,460 L413,434 L418,414 L411,392 L411,373 L417,354 L425,342 L437,331 L449,324 L474,318 L487,307 L491,297 L495,267 L494,230 L490,208 L478,193 L448,184 L437,177 L423,162 L413,137 L413,117 L419,97 L417,83 L406,69 L374,47 L340,31 L322,29 L311,34 L294,51 L281,59 L263,64 L248,64 L221,54 L195,31 L189,29 Z M247,175 L275,177 L304,191 L326,216 L336,247 L334,275 L320,304 L295,326 L264,336 L236,334 L207,320 L185,295 L175,264 L177,236 L191,207 L216,185 Z"/></svg></span>
+          <span style="font-weight: 600;">Settings</span>
         </button>
       </nav>
 
