@@ -297,6 +297,7 @@
     statusModalTime: $('statusModalTime'),
     statusModalMedia: $('statusModalMedia'),
     statusModalContent: $('statusModalContent'),
+    statusViewerBody: $('statusViewerBody'),
     statusPauseBtn: $('statusPauseBtn'),
   };
 
@@ -3496,21 +3497,41 @@
 
   // Admin-only "Seen by" list for a single update — mirrors
   // openMessageInfoModal()'s read-receipt list further up in the file.
+  //
+  // FIX: "admin can't see who have seen from all users" — the first version
+  // of this modal only listed the users who HAD viewed the update, so an
+  // admin had no way to tell who among everyone still hadn't seen it. This
+  // now shows the full roster: every registered user (state.roleCache,
+  // populated by loadRoleCache() at login — see completeLogin()) split into
+  // "Seen" and "Not seen yet", not just the viewers.
   function openStatusInfoModal(status) {
     if (!status) return;
     const views = (state.statusViews.get(status.id) || [])
       .slice()
       .sort((a, b) => new Date(a.viewed_at) - new Date(b.viewed_at));
+    const seenUsernames = new Set(views.map((v) => v.username));
 
-    const rows = views.length
-      ? views.map((v) => `
-          <div class="msg-info-row">
-            ${avatarHtml(v.username, 'sm')}
-            <span class="msg-info-name">${escapeHtml(getDisplayName(v.username))}</span>
-            <span class="msg-info-time">${escapeHtml(formatFullDate(v.viewed_at))}</span>
-          </div>
-        `).join('')
+    const posterKey = normalizeUsername(status.username);
+    const allOtherUsers = Object.keys(state.roleCache)
+      .filter((u) => u !== posterKey)
+      .sort((a, b) => getDisplayName(a).localeCompare(getDisplayName(b)));
+    const notSeen = allOtherUsers.filter((u) => !seenUsernames.has(u));
+
+    const rowHtml = (username, timeHtml) => `
+      <div class="msg-info-row">
+        ${avatarHtml(username, 'sm')}
+        <span class="msg-info-name">${escapeHtml(getDisplayName(username))}</span>
+        ${timeHtml}
+      </div>
+    `;
+
+    const seenRows = views.length
+      ? views.map((v) => rowHtml(v.username, `<span class="msg-info-time">${escapeHtml(formatFullDate(v.viewed_at))}</span>`)).join('')
       : `<div class="empty-note">No one yet</div>`;
+
+    const notSeenRows = notSeen.length
+      ? notSeen.map((u) => rowHtml(u, `<span class="msg-info-time msg-info-notdelivered">Not seen</span>`)).join('')
+      : `<div class="empty-note">Everyone has seen this</div>`;
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -3518,7 +3539,9 @@
       <div class="modal-card">
         <div class="modal-title"><i class="fas fa-eye"></i> Seen by</div>
         <div class="msg-info-section-label">Seen (${views.length})</div>
-        <div class="msg-info-list">${rows}</div>
+        <div class="msg-info-list">${seenRows}</div>
+        <div class="msg-info-section-label">Not seen yet (${notSeen.length})</div>
+        <div class="msg-info-list">${notSeenRows}</div>
         <button class="btn-secondary msg-info-close" style="width:100%; margin-top:14px;">Close</button>
       </div>
     `;
@@ -3789,6 +3812,18 @@
       DOM.statusModalMedia.innerHTML = `<img src="${escapeHtml(status.media_url)}" alt="Status media">`;
     } else {
       DOM.statusModalMedia.innerHTML = '';
+    }
+
+    // FIX: "display media in full screen not in small screen" — previously
+    // the media (img/video) was always rendered inside the padded,
+    // max-height:60vh box meant for text-only updates, so photos/videos
+    // showed up as a small, letterboxed card instead of filling the
+    // viewer. Toggle a class that lets styles.css switch the media element
+    // to fill the whole viewer body edge-to-edge (see .status-viewer-body
+    // .has-media rules) whenever this update actually has media; text-only
+    // updates keep the original centered layout.
+    if (DOM.statusViewerBody) {
+      DOM.statusViewerBody.classList.toggle('has-media', !!status.media_url);
     }
 
     DOM.statusProgress.style.width = '0%';
