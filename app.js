@@ -125,6 +125,13 @@
     isMerging: false,
     messageReads: new Map(),
     readsSubscription: null,
+    // FIX: "who has seen this update" tracking for the Updates/Status tray.
+    // Mirrors messageReads/readsSubscription above but keyed by status id —
+    // see loadStatusViews()/recordStatusView()/subscribeToStatusViews() and
+    // openStatusInfoModal() further down. This never existed before, which
+    // is why admins had no way to see who had viewed a posted update.
+    statusViews: new Map(),
+    statusViewsSubscription: null,
     // FIX: Track active lightbox overlay for back button handling
     activeLightbox: null,
     // FIX: Track the ordered list of shared-media URLs currently rendered in
@@ -177,6 +184,7 @@
     statusSelectHeader: $('statusSelectHeader'),
     statusSelectCloseBtn: $('statusSelectCloseBtn'),
     statusSelectCount: $('statusSelectCount'),
+    statusSelectInfoBtn: $('statusSelectInfoBtn'),
     statusSelectDeleteBtn: $('statusSelectDeleteBtn'),
     statusTray: $('statusTray'),
     statusPlaceholder: $('statusPlaceholder'),
@@ -3397,7 +3405,127 @@
     } else {
       state.statuses = data || [];
     }
+    // FIX: "admin can't see who has seen the updates" — this feature never
+    // existed: showStatusModal() rendered a status but never recorded that
+    // anyone had opened it, and there was no table/query backing a viewer
+    // list. loadStatusViews() below fetches the status_views rows for the
+    // statuses just loaded so renderStatuses() can show a seen count, and
+    // subscribeToStatusViews() keeps that live as new views come in.
+    await loadStatusViews(state.statuses.map((s) => s.id));
+    subscribeToStatusViews();
     renderStatuses();
+  }
+
+  // ============================================================
+  // 10b. UPDATE (STATUS) READ RECEIPTS — "seen by"
+  // ============================================================
+  async function loadStatusViews(statusIds) {
+    state.statusViews = new Map();
+    if (!statusIds || !statusIds.length) return;
+
+    const { data, error } = await supabase
+      .from('status_views')
+      .select('status_id, username, viewed_at')
+      .in('status_id', statusIds);
+
+    if (error) {
+      // FIX: same "make it visible, don't fail silently" approach as
+      // refreshUnreadBadges()/loadMessageReads() — a missing status_views
+      // table or a blocking RLS policy is the most likely reason an admin
+      // sees zero viewers on every update.
+      console.warn('Failed to load status views (create a `status_views` table with SELECT/INSERT policies if missing):', error);
+      return;
+    }
+    (data || []).forEach((row) => {
+      const list = state.statusViews.get(row.status_id) || [];
+      list.push({ username: row.username, viewed_at: row.viewed_at });
+      state.statusViews.set(row.status_id, list);
+    });
+  }
+
+  function teardownStatusViewsSubscription() {
+    if (!state.statusViewsSubscription) return;
+    supabase.removeChannel(state.statusViewsSubscription);
+    state.statusViewsSubscription = null;
+  }
+
+  function subscribeToStatusViews() {
+    teardownStatusViewsSubscription();
+    state.statusViewsSubscription = supabase
+      .channel('status_views:all')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'status_views',
+      }, (payload) => {
+        const row = payload.new;
+        const list = state.statusViews.get(row.status_id) || [];
+        if (!list.some((r) => r.username === row.username)) {
+          list.push({ username: row.username, viewed_at: row.viewed_at });
+          state.statusViews.set(row.status_id, list);
+          renderStatuses();
+        }
+      })
+      .subscribe();
+  }
+
+  // Records that the current user opened this update, so an admin can later
+  // see who has viewed it. Skips the poster's own view (an author doesn't
+  // need to show up in their own "seen by" list) and non-logged-in states.
+  async function recordStatusView(status) {
+    if (!status || !state.currentUser) return;
+    if (normalizeUsername(status.username) === state.currentUser.username) return;
+
+    const row = { status_id: status.id, username: state.currentUser.username, viewed_at: new Date().toISOString() };
+    const { error } = await supabase
+      .from('status_views')
+      .upsert(row, { onConflict: 'status_id,username', ignoreDuplicates: true });
+
+    if (error) {
+      console.warn('Failed to record status view (create a `status_views` table with an INSERT policy if missing):', error);
+      return;
+    }
+
+    const list = state.statusViews.get(status.id) || [];
+    if (!list.some((r) => r.username === row.username)) {
+      list.push({ username: row.username, viewed_at: row.viewed_at });
+      state.statusViews.set(status.id, list);
+      if (state.isAdmin) renderStatuses();
+    }
+  }
+
+  // Admin-only "Seen by" list for a single update — mirrors
+  // openMessageInfoModal()'s read-receipt list further up in the file.
+  function openStatusInfoModal(status) {
+    if (!status) return;
+    const views = (state.statusViews.get(status.id) || [])
+      .slice()
+      .sort((a, b) => new Date(a.viewed_at) - new Date(b.viewed_at));
+
+    const rows = views.length
+      ? views.map((v) => `
+          <div class="msg-info-row">
+            ${avatarHtml(v.username, 'sm')}
+            <span class="msg-info-name">${escapeHtml(getDisplayName(v.username))}</span>
+            <span class="msg-info-time">${escapeHtml(formatFullDate(v.viewed_at))}</span>
+          </div>
+        `).join('')
+      : `<div class="empty-note">No one yet</div>`;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-card">
+        <div class="modal-title"><i class="fas fa-eye"></i> Seen by</div>
+        <div class="msg-info-section-label">Seen (${views.length})</div>
+        <div class="msg-info-list">${rows}</div>
+        <button class="btn-secondary msg-info-close" style="width:100%; margin-top:14px;">Close</button>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('.msg-info-close').addEventListener('click', close);
   }
 
   function renderStatuses() {
@@ -3415,13 +3543,24 @@
         const preview = st.content
           ? escapeHtml(truncate(st.content, 46))
           : (st.media_url ? '<i class="fas fa-camera"></i> Photo/video' : '');
+        // FIX: admin-visible "seen by N" count so it's clear at a glance who
+        // has viewed an update, without needing to open each one — tapping
+        // it (via long-press/right-click → the eye icon) opens the full
+        // list in openStatusInfoModal().
+        const seenCount = (state.statusViews.get(st.id) || []).length;
+        const seenBadge = state.isAdmin
+          ? `<span class="update-row-seen"><i class="fas fa-eye"></i> ${seenCount}</span>`
+          : '';
         item.innerHTML = `
           ${avatarHtml(st.username)}
           <div class="update-row-body">
             <div class="update-row-name">${escapeHtml(displayName)}</div>
             <div class="update-row-preview">${preview}</div>
           </div>
-          <div class="update-row-time">${formatTimeAgo(st.created_at)}</div>
+          <div class="update-row-time">
+            ${formatTimeAgo(st.created_at)}
+            ${seenBadge}
+          </div>
         `;
         // FIX: the trash icon that used to sit beside every row (visible
         // to admins at all times) is replaced by the same long-press
@@ -3499,6 +3638,17 @@
   }
 
   if (DOM.statusSelectCloseBtn) DOM.statusSelectCloseBtn.addEventListener('click', exitStatusSelection);
+
+  // FIX: wires up the new "Seen by" (eye) button in the update
+  // selection header — long-press/right-click an update, then tap the eye
+  // icon to see who has viewed it. See openStatusInfoModal() above.
+  if (DOM.statusSelectInfoBtn) {
+    DOM.statusSelectInfoBtn.addEventListener('click', () => {
+      const st = selectedStatus;
+      exitStatusSelection();
+      if (st) openStatusInfoModal(st);
+    });
+  }
 
   if (DOM.statusSelectDeleteBtn) {
     DOM.statusSelectDeleteBtn.addEventListener('click', () => {
@@ -3622,6 +3772,12 @@
   let statusPaused = false;
 
   function showStatusModal(status) {
+    // FIX: this is the actual "seen" moment — record it so admins can see
+    // who viewed this update (see recordStatusView()/openStatusInfoModal()).
+    // Fire-and-forget: the viewer shouldn't wait on a network round trip to
+    // watch their update.
+    recordStatusView(status);
+
     setAvatarEl(DOM.statusViewerAvatar, status.username, 'sm status-viewer-avatar');
     DOM.statusModalTitle.textContent = getDisplayName(status.username);
     DOM.statusModalTime.textContent = formatFullDate(status.created_at);
@@ -4687,6 +4843,7 @@
     stopSessionWatchdog();
     teardownMessagesSubscription();
     teardownReadsSubscription();
+    teardownStatusViewsSubscription();
     unsubscribeFromChannelListUpdates();
     stopChannelPreviewPolling();
     if (scheduleSubscription) { 
@@ -4721,6 +4878,7 @@
     state.unreadByChannel = {};
     state.channelPreviews = {};
     state.messageReads = new Map();
+    state.statusViews = new Map();
     state.myMemberships = new Map();
     DOM.navChatsBadge.textContent = '0';
     DOM.navChatsBadge.classList.add('hidden');
