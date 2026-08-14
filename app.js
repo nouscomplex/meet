@@ -2181,8 +2181,11 @@
 
     let replyHtml = '';
     if (msg.reply_to) {
+      // FIX: "clicking the reply message doesn't do anything" — tag the
+      // quote with the original message's id so the delegated click
+      // handler below (see jumpToMessage()) knows what to scroll to.
       replyHtml = `
-        <div class="msg-reply-quote">
+        <div class="msg-reply-quote" data-reply-to-id="${escapeHtml(String(msg.reply_to))}" role="button" tabindex="0">
           <span class="reply-author">${escapeHtml(getDisplayName(msg.reply_username || 'Message'))}</span>
           <span class="reply-text">${escapeHtml(truncate(msg.reply_content || '', 60))}</span>
         </div>
@@ -2656,7 +2659,52 @@
     DOM.messageInput.focus();
   }
 
+  // FIX: "clicking the reply message doesn't do anything" — jumps to the
+  // original message the quote points at (via the data-reply-to-id set in
+  // buildMessageEl() above) and briefly highlights it so it's easy to spot.
+  // loadMessages() only keeps the last 50 messages per channel, so an
+  // older replied-to message may not currently be in the DOM — in that
+  // case this just tells the user instead of silently doing nothing.
+  function jumpToMessage(id) {
+    if (!id) return;
+    const target = DOM.chatMessages.querySelector(`.msg[data-id="${cssEscape(id)}"]`);
+    if (!target) {
+      showToast("Original message isn't loaded");
+      return;
+    }
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.classList.add('msg-highlight');
+    setTimeout(() => target.classList.remove('msg-highlight'), 1500);
+  }
+
+  // CSS.escape isn't available in every embedded webview this app runs in
+  // (e.g. some older Android WebViews), so fall back to a manual escape
+  // rather than letting an unusual message id throw inside a selector.
+  function cssEscape(value) {
+    if (window.CSS && typeof CSS.escape === 'function') return CSS.escape(String(value));
+    return String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+  }
+
+  // Small auto-dismissing pill, used for lightweight non-blocking notices
+  // like "original message isn't loaded" (an alert() would be too heavy
+  // for this).
+  function showToast(message) {
+    const existing = document.querySelector('.toast');
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2200);
+  }
+
   DOM.chatMessages.addEventListener('click', (e) => {
+    const replyQuote = e.target.closest('.msg-reply-quote[data-reply-to-id]');
+    if (replyQuote) {
+      jumpToMessage(replyQuote.dataset.replyToId);
+      return;
+    }
+
     const mediaPreview = e.target.closest('.msg-media-preview:not(.msg-media-video-wrap)');
     if (mediaPreview) {
       openImageLightbox(mediaPreview.dataset.mediaUrl);
@@ -2678,6 +2726,17 @@
       const fileName = docCard.dataset.fileName || getFileNameFromUrl(url);
       openDocViewer(url, fileName);
       return;
+    }
+  });
+
+  // Keyboard equivalent of the reply-quote click above (role="button"
+  // tabindex="0" on .msg-reply-quote makes it focusable).
+  DOM.chatMessages.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const replyQuote = e.target.closest('.msg-reply-quote[data-reply-to-id]');
+    if (replyQuote) {
+      e.preventDefault();
+      jumpToMessage(replyQuote.dataset.replyToId);
     }
   });
 
