@@ -143,6 +143,9 @@
     // and a periodic watchdog handle to detect the account itself being deleted.
     myMemberships: new Map(),
     sessionWatchdog: null,
+    // FIX: this user's own `user_roles` row id, captured at login — see
+    // handleAccountDeleted() below for why this is needed.
+    myUserRoleId: null,
   };
 
   // ============================================================
@@ -1423,10 +1426,27 @@
   // Subscribing to DELETE on it means we don't have to wait for a token
   // refresh failure or the next watchdog poll — this fires the moment the
   // row is removed, typically within a second.
+  //
+  // FIX (root cause of "delete user is not being signed out automatically"):
+  // this used to match purely on `oldRow.username`. Postgres/Supabase
+  // Realtime only guarantees the PRIMARY KEY columns are present on a
+  // DELETE payload's `old` row unless the table has REPLICA IDENTITY FULL
+  // explicitly set — and `user_roles` almost certainly has a separate `id`
+  // primary key, with `username` just a unique column. Under the default
+  // replica identity (the vast majority of Supabase projects never change
+  // this), `oldRow.username` is simply undefined on delete, so the old
+  // check silently never matched — this realtime path never fired for
+  // anyone, on any deletion, and sign-out depended entirely on the slower
+  // session-watchdog backstop. Match against this user's own row id
+  // (captured at login — see completeLogin()) instead, which is always
+  // present regardless of replica identity, with the username check kept
+  // as a fallback for projects that do have REPLICA IDENTITY FULL set.
   function handleAccountDeleted(oldRow) {
     if (!oldRow || !state.currentUser) return;
+    const matchesById = state.myUserRoleId != null && String(oldRow.id) === String(state.myUserRoleId);
     const deletedUsername = normalizeUsername(oldRow.username || '');
-    if (deletedUsername && deletedUsername === state.currentUser.username) {
+    const matchesByUsername = !!deletedUsername && deletedUsername === state.currentUser.username;
+    if (matchesById || matchesByUsername) {
       console.warn('🚫 Realtime: this account was removed, Signing Out.');
       forceSignOut('Your account has been removed. You have been Signed Out.');
     }
@@ -4716,7 +4736,7 @@
   // ============================================================
   async function completeLogin(username, user) {
     console.log('🔐 Completing login for:', username);
-    
+
     await loadRoleCache();
     const role = getRoleFromUsername(username);
     const key = roleKey(username);
@@ -4725,6 +4745,24 @@
     state.currentUser = { id: user.id, username: username, email: user.email, role: role };
     state.isAdmin = role === CONFIG.AUTH.ROLES.ADMIN;
     state.isTeacher = role === CONFIG.AUTH.ROLES.TEACHER || state.isAdmin;
+
+    // FIX: capture this user's own user_roles row id so handleAccountDeleted()
+    // can reliably recognize "that deleted row was ME" from a realtime DELETE
+    // payload — see the FIX note above handleAccountDeleted() for why matching
+    // on username alone was broken. Best-effort: if this lookup fails for any
+    // reason, handleAccountDeleted() still has the username fallback and the
+    // session watchdog backstop still catches it eventually.
+    try {
+      const { data: ownRoleRow, error: ownRoleError } = await supabase
+        .from('user_roles')
+        .select('id')
+        .eq('username', username)
+        .maybeSingle();
+      state.myUserRoleId = ownRoleError ? null : (ownRoleRow ? ownRoleRow.id : null);
+    } catch (e) {
+      console.warn('Could not capture own user_roles id:', e);
+      state.myUserRoleId = null;
+    }
 
     DOM.authCard.classList.add('hidden');
     DOM.dashboard.classList.remove('hidden');
@@ -4962,6 +5000,7 @@
     state.messageReads = new Map();
     state.statusViews = new Map();
     state.myMemberships = new Map();
+    state.myUserRoleId = null;
     DOM.navChatsBadge.textContent = '0';
     DOM.navChatsBadge.classList.add('hidden');
 
