@@ -206,6 +206,7 @@
     
     manageUserSearch: $('manageUserSearch'),
     loadUserBtn: $('loadUserBtn'),
+    registeredUsersListView: $('registeredUsersListView'),
     userEditForm: $('userEditForm'),
     editUsername: $('editUsername'),
     editDisplayName: $('editDisplayName'),
@@ -751,6 +752,9 @@
     if (name === 'settings' && typeof syncNotificationToggleState === 'function') {
       syncNotificationToggleState();
     }
+    if (name === 'settings' && state.isAdmin) {
+      loadRegisteredUsersList();
+    }
 
     if (!isBackNavigation) {
       pushScreenState(name);
@@ -972,6 +976,12 @@
   }
 
   let allChannels = [];
+
+  // username (lowercase) -> array of group/session names that user
+  // belongs to. Rebuilt by loadRegisteredUsersList(); read by
+  // renderRegisteredUsersList() so the search box can re-filter the
+  // list instantly without refetching.
+  let registeredUserGroups = new Map();
 
   async function renderChannels() {
     const channels = await loadChannels();
@@ -3204,6 +3214,9 @@
     if (error) { alert('Could not add member: ' + error.message); return; }
 
     await loadMembers(state.currentChannel.id);
+    // Keep Settings → Manage Users' assigned/unassigned view in sync —
+    // this person just moved from "Unassigned" into a group.
+    loadRegisteredUsersList();
   }
 
   async function removeMember(memberId) {
@@ -3211,6 +3224,7 @@
     const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.MEMBERS).delete().eq('id', memberId);
     if (error) { alert('Remove failed: ' + error.message); return; }
     await loadMembers(state.currentChannel.id);
+    loadRegisteredUsersList();
   }
 
   // ============================================================
@@ -3739,6 +3753,93 @@
   // ============================================================
   // 7c. ADMIN: USER MANAGEMENT
   // ============================================================
+
+  // FIX: admins had no way to see the full roster or tell who was in a
+  // group vs. left dangling with no group at all — "Manage Users" was
+  // just a blind search box (loadUserForEdit() below), and the members
+  // list only ever showed ONE channel at a time (loadMembers()). Neither
+  // gives a whole-school view. This renders every registered account
+  // (from user_roles, via state.roleCache) alongside every group/session
+  // they're a member of (from the members table), so admins can see who's
+  // unassigned at a glance and tap a row to jump straight into editing it.
+  async function loadRegisteredUsersList() {
+    if (!DOM.registeredUsersListView || !state.isAdmin) return;
+
+    DOM.registeredUsersListView.innerHTML = '<div class="empty-note">Loading users…</div>';
+
+    // state.roleCache is otherwise filled in lazily (one user at a time,
+    // see getRoleFromUsername()) — loadRoleCache() does a full table read
+    // so the list below is complete, not just whoever's been looked up
+    // so far this session.
+    await loadRoleCache();
+
+    const [membersRes, channelsRes] = await Promise.all([
+      supabase.from(CONFIG.SUPABASE.TABLES.MEMBERS).select('username, channel_id'),
+      supabase.from(CONFIG.SUPABASE.TABLES.CHANNELS).select('id, name'),
+    ]);
+
+    if (membersRes.error || channelsRes.error) {
+      console.warn('Could not load user assignments:', membersRes.error || channelsRes.error);
+      DOM.registeredUsersListView.innerHTML = '<div class="empty-note">Could not load users</div>';
+      return;
+    }
+
+    const channelNameById = new Map(
+      (channelsRes.data || []).map((c) => [String(c.id), c.name])
+    );
+
+    const groups = new Map();
+    (membersRes.data || []).forEach((m) => {
+      const key = (m.username || '').toLowerCase();
+      if (!key) return;
+      const name = channelNameById.get(String(m.channel_id)) || 'Unknown session';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(name);
+    });
+
+    registeredUserGroups = groups;
+    renderRegisteredUsersList();
+  }
+
+  function renderRegisteredUsersList() {
+    if (!DOM.registeredUsersListView) return;
+
+    const query = ((DOM.manageUserSearch && DOM.manageUserSearch.value) || '').trim().toLowerCase();
+    const usernames = Object.keys(state.roleCache)
+      .filter((u) => !query || u.includes(query))
+      .sort();
+
+    if (!usernames.length) {
+      DOM.registeredUsersListView.innerHTML = `<div class="empty-note">${query ? 'No matching users' : 'No registered users'}</div>`;
+      return;
+    }
+
+    DOM.registeredUsersListView.innerHTML = usernames.map((username) => {
+      const userGroups = registeredUserGroups.get(username) || [];
+      const groupsLabel = userGroups.length ? escapeHtml(userGroups.join(', ')) : 'Unassigned';
+      const role = state.roleCache[username];
+      const displayName = getDisplayName(username);
+      return `
+        <div class="registered-user-row" data-username="${escapeHtml(username)}">
+          ${avatarHtml(username, 'sm')}
+          <div class="registered-user-info">
+            <div class="registered-user-name">${escapeHtml(displayName)} <span class="member-display-name">(${escapeHtml(username)})</span></div>
+            <div class="registered-user-groups${userGroups.length ? '' : ' unassigned'}">${groupsLabel}</div>
+          </div>
+          <span class="role-chip role-${roleKey(username)}-chip member-role-chip">${escapeHtml(role || 'student')}</span>
+        </div>
+      `;
+    }).join('');
+
+    DOM.registeredUsersListView.querySelectorAll('[data-username]').forEach((row) => {
+      row.addEventListener('click', () => {
+        const username = row.dataset.username;
+        DOM.manageUserSearch.value = username;
+        loadUserForEdit(username);
+      });
+    });
+  }
+
   async function loadUserForEdit(username) {
     username = normalizeUsername(username);
     if (!username) { alert('Enter a username to search for.'); return; }
@@ -3857,7 +3958,8 @@
       DOM.manageUserSearch.value = '';
       populateRegisteredUsersDatalist();
       await loadRoleCache();
-      
+      await loadRegisteredUsersList();
+
     } catch (e) {
       console.error('Update user error:', e);
       alert('Could not update user: ' + (e.message || e));
@@ -3924,7 +4026,8 @@
       DOM.manageUserSearch.value = '';
       populateRegisteredUsersDatalist();
       await loadRoleCache();
-      
+      await loadRegisteredUsersList();
+
     } catch (e) {
       console.error('Delete user error:', e);
       alert('Could not delete user: ' + (e.message || e));
@@ -4253,6 +4356,10 @@
     DOM.adminUserManagementCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
     DOM.adminProfileSchedule.classList.toggle('hidden', !state.isAdmin);
 
+    if (state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE) {
+      loadRegisteredUsersList();
+    }
+
     setupPresence();
     startSessionWatchdog();
     // FIX (chat takes time to open, #1): this was `await`ed, which blocked
@@ -4492,6 +4599,7 @@
       state.roleCache[key] = role;
       state.displayNameCache[key] = displayName || username;
       populateRegisteredUsersDatalist();
+      renderRegisteredUsersList();
       DOM.newUserUsername.value = '';
       DOM.newUserDisplayName.value = '';
       DOM.newUserPassword.value = '';
@@ -4891,6 +4999,13 @@
 
   DOM.loadUserBtn.addEventListener('click', () => {
     loadUserForEdit(DOM.manageUserSearch.value);
+  });
+
+  // Live-filter the registered users list as the admin types — no
+  // refetch needed, renderRegisteredUsersList() just re-reads the
+  // already-cached roster/assignments.
+  DOM.manageUserSearch.addEventListener('input', () => {
+    renderRegisteredUsersList();
   });
 
   DOM.updateUserBtn.addEventListener('click', async () => {
