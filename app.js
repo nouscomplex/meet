@@ -87,7 +87,7 @@
   // immediately and force a clean logout with an explanation.
   supabase.auth.onAuthStateChange((event) => {
     if (event === 'SIGNED_OUT' && state.currentUser) {
-      forceSignOut('Your session has ended. Please sign in again.');
+      forceSignOut('Signed Out Successfully');
     }
   });
 
@@ -1315,7 +1315,7 @@
       state.messages = [];
       state.currentMembers = [];
       goToScreen('chats');
-      if (showAlert) alert('You were removed from this group.');
+      if (showAlert) alert('You were removed from This Session.');
     }
 
     renderChatList(allChannels);
@@ -1399,8 +1399,8 @@
     if (!oldRow || !state.currentUser) return;
     const deletedUsername = normalizeUsername(oldRow.username || '');
     if (deletedUsername && deletedUsername === state.currentUser.username) {
-      console.warn('🚫 Realtime: this account was deleted, signing out.');
-      forceSignOut('Your account has been removed. You have been signed out.');
+      console.warn('🚫 Realtime: this account was removed, Signing Out.');
+      forceSignOut('Your account has been removed. You have been Signed Out.');
     }
   }
 
