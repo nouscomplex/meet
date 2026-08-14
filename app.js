@@ -2215,7 +2215,7 @@
         const fileName = getFileNameFromUrl(msg.file_url);
         const inlineTicks = ticksMarkup ? `<span class="msg-inline-ticks">${ticksMarkup}</span>` : '';
         bubbleHtml += `
-          <a href="${escapeHtml(msg.file_url)}" target="_blank" rel="noopener" class="msg-doc-card msg-pdf-card">
+          <a href="${escapeHtml(msg.file_url)}" data-file-name="${escapeHtml(fileName)}" target="_blank" rel="noopener" class="msg-doc-card msg-pdf-card">
             <div class="msg-pdf-thumb"><i class="fas fa-file-pdf"></i></div>
             <div class="msg-pdf-info-bar">
               <span class="msg-doc-icon"><i class="fas fa-file-pdf"></i></span>
@@ -2233,7 +2233,7 @@
         const ext = getFileExt(fileName);
         const inlineTicks = ticksMarkup ? `<span class="msg-inline-ticks">${ticksMarkup}</span>` : '';
         bubbleHtml += `
-          <a href="${escapeHtml(msg.file_url)}" target="_blank" rel="noopener" class="msg-doc-card">
+          <a href="${escapeHtml(msg.file_url)}" data-file-name="${escapeHtml(fileName)}" target="_blank" rel="noopener" class="msg-doc-card">
             <span class="msg-doc-icon"><i class="fas ${getFileIconClass(ext)}"></i></span>
             <span class="msg-doc-info">
               <span class="msg-doc-name">${escapeHtml(fileName)}</span>
@@ -2651,7 +2651,93 @@
       openImageLightbox(mediaPreview.dataset.mediaUrl);
       return;
     }
+
+    // FIX: "why does opening the attached file show the supabase link" —
+    // doc cards (both the PDF card and the generic file card) were plain
+    // <a href="<raw storage URL>" target="_blank"> tags, so a click made
+    // the browser navigate a new tab straight to that URL — the backend
+    // storage link is exactly what ends up in the address bar. Intercept
+    // the click and open an in-app viewer instead (see openDocViewer()),
+    // the same way images/videos already stay inside the app rather than
+    // navigating anywhere.
+    const docCard = e.target.closest('.msg-doc-card');
+    if (docCard) {
+      e.preventDefault();
+      const url = docCard.getAttribute('href');
+      const fileName = docCard.dataset.fileName || getFileNameFromUrl(url);
+      openDocViewer(url, fileName);
+      return;
+    }
   });
+
+  // FIX: see the click-handler comment above. Opens documents (PDFs get an
+  // inline preview via iframe; other types get a "download it" prompt
+  // since browsers can't render .docx/.xlsx/.zip/etc. inline) in an
+  // overlay that never navigates the page away from this app, so the raw
+  // Supabase storage URL never appears in the address bar. Reuses
+  // state.activeLightbox so the mobile hardware/back-gesture button that
+  // already closes the image lightbox (see closeLightboxIfOpen()) closes
+  // this too.
+  function openDocViewer(url, fileName) {
+    if (!url) return;
+    const canPreviewInline = isPdfFile(url);
+    const overlay = document.createElement('div');
+    overlay.className = 'lightbox-overlay doc-viewer-overlay';
+    overlay.innerHTML = `
+      <div class="doc-viewer-panel">
+        <div class="doc-viewer-header">
+          <span class="doc-viewer-name">${escapeHtml(fileName)}</span>
+          <div class="doc-viewer-actions">
+            <button type="button" class="icon-btn doc-viewer-download" title="Download" aria-label="Download"><i class="fas fa-download"></i></button>
+            <button type="button" class="icon-btn doc-viewer-close" title="Close" aria-label="Close"><i class="fas fa-times"></i></button>
+          </div>
+        </div>
+        <div class="doc-viewer-body">
+          ${canPreviewInline
+            ? `<iframe class="doc-viewer-frame" src="${escapeHtml(url)}" title="${escapeHtml(fileName)}"></iframe>`
+            : `<div class="doc-viewer-no-preview"><i class="fas fa-file"></i><p>Preview isn't available for this file type.</p></div>`
+          }
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    state.activeLightbox = overlay;
+
+    const close = () => {
+      if (state.activeLightbox === overlay) state.activeLightbox = null;
+      overlay.remove();
+    };
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('.doc-viewer-close').addEventListener('click', close);
+    overlay.querySelector('.doc-viewer-download').addEventListener('click', () => downloadAttachment(url, fileName));
+  }
+
+  // Fetches the file as a blob and triggers a same-document download
+  // instead of navigating to it — this is also what recovers the real
+  // filename (Supabase's storage path is a timestamp-prefixed slug, not
+  // the name the user originally attached) instead of whatever name the
+  // browser would've guessed from the raw URL.
+  async function downloadAttachment(url, fileName) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = fileName || 'file';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    } catch (e) {
+      console.warn('Blob download failed, falling back to a direct link:', e);
+      // Last resort — this one does briefly show the raw storage URL, but
+      // only if the fetch above (same URL the iframe/img tags already load
+      // fine) unexpectedly failed, e.g. a CORS-blocked bucket.
+      window.open(url, '_blank', 'noopener');
+    }
+  }
 
   // FIX: Store reference to lightbox overlay for back button handling
   function openImageLightbox(url) {
