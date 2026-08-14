@@ -65,6 +65,20 @@
     }
   );
 
+  // FIX: If this device's session becomes invalid — e.g. an admin deleted
+  // this account (auth.admin.deleteUser revokes the refresh token), the
+  // password/role was reset elsewhere, or the user signed out in another
+  // tab — supabase-js will fail its automatic token refresh and emit
+  // SIGNED_OUT internally. Previously nothing listened for that, so the
+  // deleted user's tab kept showing the dashboard with a dead session
+  // (every subsequent request just silently failed). Now we react to it
+  // immediately and force a clean logout with an explanation.
+  supabase.auth.onAuthStateChange((event) => {
+    if (event === 'SIGNED_OUT' && state.currentUser) {
+      forceSignOut('Your session has ended. Please sign in again.');
+    }
+  });
+
   // ============================================================
   // 3. APPLICATION STATE
   // ============================================================
@@ -101,6 +115,11 @@
     readsSubscription: null,
     // FIX: Track active lightbox overlay for back button handling
     activeLightbox: null,
+    // FIX: Track this user's own membership row ids (channel_id -> members.id)
+    // so we can detect exactly when THEY are removed from a group via realtime,
+    // and a periodic watchdog handle to detect the account itself being deleted.
+    myMemberships: new Map(),
+    sessionWatchdog: null,
   };
 
   // ============================================================
@@ -771,6 +790,7 @@
     if (!state.currentUser) return [];
 
     if (state.isAdmin) {
+      state.myMemberships = new Map();
       const { data, error } = await supabase
         .from(CONFIG.SUPABASE.TABLES.CHANNELS)
         .select('*')
@@ -789,13 +809,18 @@
 
     const { data: memberships, error: memberError } = await supabase
       .from(CONFIG.SUPABASE.TABLES.MEMBERS)
-      .select('channel_id')
+      .select('id, channel_id')
       .eq('username', state.currentUser.username);
 
     if (memberError) {
       console.warn('Membership lookup failed:', memberError);
       return [];
     }
+
+    // FIX: remember which members-row id corresponds to which channel for
+    // THIS user, so a realtime DELETE on the members table can be matched
+    // precisely to "was I the one removed?" rather than guessing.
+    state.myMemberships = new Map((memberships || []).map((m) => [String(m.channel_id), m.id]));
 
     const channelIds = (memberships || []).map((m) => m.channel_id);
     if (!channelIds.length) return [];
@@ -1100,6 +1125,57 @@
     renderChatList(allChannels);
   }
 
+  // FIX: When an admin removes this user from a group (members row delete),
+  // that channel must disappear from their chat list immediately — not just
+  // on next login/refresh — and if they currently have it open, they must
+  // be kicked out of it right away rather than staying on a screen for a
+  // group they no longer belong to.
+  async function handleMembershipRemoved(oldRow) {
+    if (!oldRow || !state.currentUser) return;
+
+    // Match by the membership row id we recorded for this user (works
+    // regardless of the table's REPLICA IDENTITY setting, since the primary
+    // key is always present on delete payloads). Fall back to matching by
+    // username if the row happens to include it (REPLICA IDENTITY FULL).
+    let removedChannelId = null;
+    for (const [channelId, membershipId] of state.myMemberships.entries()) {
+      if (String(membershipId) === String(oldRow.id)) {
+        removedChannelId = channelId;
+        break;
+      }
+    }
+    if (!removedChannelId && oldRow.username &&
+        normalizeUsername(oldRow.username) === state.currentUser.username) {
+      removedChannelId = String(oldRow.channel_id);
+    }
+    if (!removedChannelId) return; // not this user's membership — ignore
+
+    console.log(`🚪 Removed from channel ${removedChannelId}, updating UI.`);
+
+    state.myMemberships.delete(removedChannelId);
+    allChannels = allChannels.filter((c) => String(c.id) !== removedChannelId);
+    delete state.unreadByChannel[removedChannelId];
+    delete state.channelPreviews[removedChannelId];
+
+    const wasOpen = state.currentChannel && String(state.currentChannel.id) === removedChannelId;
+    if (wasOpen) {
+      teardownMessagesSubscription();
+      teardownReadsSubscription();
+      if (scheduleSubscription) {
+        supabase.removeChannel(scheduleSubscription);
+        scheduleSubscription = null;
+      }
+      state.currentChannel = null;
+      state.messages = [];
+      state.currentMembers = [];
+      goToScreen('chats');
+      alert('You were removed from this group.');
+    }
+
+    renderChatList(allChannels);
+    await refreshUnreadBadges();
+  }
+
   function subscribeToChannelListUpdates() {
     if (channelListSubscription) {
       supabase.removeChannel(channelListSubscription);
@@ -1114,6 +1190,11 @@
         schema: 'public',
         table: CONFIG.SUPABASE.TABLES.MESSAGES,
       }, (payload) => handleGlobalMessageInsert(payload.new))
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: CONFIG.SUPABASE.TABLES.MEMBERS,
+      }, (payload) => handleMembershipRemoved(payload.old))
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           console.log('✅ Subscribed to channel-list updates');
@@ -3287,6 +3368,7 @@
     DOM.adminProfileSchedule.classList.toggle('hidden', !state.isAdmin);
 
     setupPresence();
+    startSessionWatchdog();
     await requestMediaPermissions();
     await renderChannels();
     subscribeToChannelListUpdates();
@@ -3363,15 +3445,46 @@
     }
   }
 
-  async function handleSignOut() {
-    if (!confirm('Sign out?')) return;
+  // FIX: Periodically re-verify the session against the auth server (not
+  // just the locally cached token) so a deleted/disabled account gets
+  // logged out promptly instead of only when its JWT happens to expire.
+  // supabase.auth.getUser() round-trips to Supabase Auth and fails once
+  // the underlying account no longer exists.
+  const SESSION_CHECK_INTERVAL = 30000;
 
+  function startSessionWatchdog() {
+    stopSessionWatchdog();
+    state.sessionWatchdog = setInterval(async () => {
+      if (!state.currentUser) return;
+      try {
+        const { data, error } = await supabase.auth.getUser();
+        if (error || !data || !data.user) {
+          console.warn('🚫 Session watchdog: account no longer valid, signing out.', error);
+          await forceSignOut('Your account is no longer available. You have been signed out.');
+        }
+      } catch (e) {
+        console.warn('Session watchdog check failed:', e);
+      }
+    }, SESSION_CHECK_INTERVAL);
+  }
+
+  function stopSessionWatchdog() {
+    if (state.sessionWatchdog) {
+      clearInterval(state.sessionWatchdog);
+      state.sessionWatchdog = null;
+    }
+  }
+
+  // Shared teardown used by both a normal, user-initiated sign-out and a
+  // forced sign-out (deleted account / invalidated session).
+  async function performSignOutCleanup() {
     try { 
       await supabase.auth.signOut(); 
     } catch (e) { 
       console.warn('Sign out error:', e); 
     }
 
+    stopSessionWatchdog();
     teardownMessagesSubscription();
     teardownReadsSubscription();
     unsubscribeFromChannelListUpdates();
@@ -3407,6 +3520,7 @@
     state.unreadByChannel = {};
     state.channelPreviews = {};
     state.messageReads = new Map();
+    state.myMemberships = new Map();
     DOM.navChatsBadge.textContent = '0';
     DOM.navChatsBadge.classList.add('hidden');
 
@@ -3430,6 +3544,21 @@
     hideError();
     
     screenHistory = [];
+  }
+
+  // User-initiated sign-out (Settings → Sign Out button).
+  async function handleSignOut() {
+    if (!confirm('Sign out?')) return;
+    await performSignOutCleanup();
+  }
+
+  // FIX: Sign-out triggered by the app itself — the account was deleted,
+  // removed, or the session was otherwise invalidated. No confirm() dialog
+  // (there's nothing left for the user to confirm), and we surface why.
+  async function forceSignOut(message) {
+    if (!state.currentUser) return; // already signed out, avoid duplicate alerts
+    await performSignOutCleanup();
+    if (message) alert(message);
   }
 
   // ============================================================
