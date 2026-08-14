@@ -3514,7 +3514,31 @@
         if (!state.messagesSubscription && state.currentChannel) {
           subscribeToMessages(state.currentChannel.id);
         }
-        
+
+        // FIX: root cause of "chat list preview doesn't update live" — the
+        // global `channel-list-updates` realtime subscription (see
+        // subscribeToChannelListUpdates above) is what streams new-message
+        // previews/unread counts into the chat list, completely separately
+        // from the per-open-chat `messages:<id>` subscription. Mobile
+        // browsers routinely suspend or silently drop background websockets
+        // without ever firing CHANNEL_ERROR/TIMED_OUT/CLOSED, so
+        // scheduleChannelListReconnect() never triggers and the socket comes
+        // back from the background "open" but zombied — no more INSERT
+        // events arrive, so chat-row previews/timestamps freeze even though
+        // reopening a chat (which rebuilds messagesSubscription above) looks
+        // fine again. Unconditionally rebuild it here, the same way the
+        // per-chat subscription is rebuilt, and immediately re-pull previews
+        // in case anything was missed while it was down.
+        if (state.currentUser) {
+          subscribeToChannelListUpdates();
+          try {
+            state.channelPreviews = await loadChannelPreviews(allChannels.map((c) => c.id));
+            renderChatList(allChannels);
+          } catch (e) {
+            console.warn('Failed to refresh chat list previews on refocus:', e);
+          }
+        }
+
         if (state.currentChannel && !state.isRefreshing) {
           state.isRefreshing = true;
           console.log("📥 Catching up on messages missed while tab was inactive...");
