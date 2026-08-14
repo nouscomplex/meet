@@ -173,6 +173,11 @@
     channelSelectDeleteBtn: $('channelSelectDeleteBtn'),
 
     userBadge: $('userBadge'),
+    updatesScreenHeader: $('updatesScreenHeader'),
+    statusSelectHeader: $('statusSelectHeader'),
+    statusSelectCloseBtn: $('statusSelectCloseBtn'),
+    statusSelectCount: $('statusSelectCount'),
+    statusSelectDeleteBtn: $('statusSelectDeleteBtn'),
     statusTray: $('statusTray'),
     statusPlaceholder: $('statusPlaceholder'),
     statusAddBtn: $('statusAddBtn'),
@@ -690,6 +695,12 @@
 
   function goToScreen(name) {
     if (name !== 'chatDetail' && typeof exitMessageSelection === 'function') exitMessageSelection();
+    // FIX: leaving the Updates screen (e.g. tapping another bottom-nav tab)
+    // previously left an update stuck "selected" with its header swapped
+    // out — renderStatuses() only cleared this on the next re-render, not
+    // on navigation. Clear it explicitly whenever Updates isn't the active
+    // screen, same safety net exitMessageSelection() gives chat selection.
+    if (name !== 'updates' && typeof exitStatusSelection === 'function') exitStatusSelection();
     updateChatEmptyState();
     const isDesktop = isDesktopLayout();
     const keepChatsVisible = isDesktop && CHAT_GROUP_SCREENS.includes(name);
@@ -3367,6 +3378,7 @@
   }
 
   function renderStatuses() {
+    exitStatusSelection();
     DOM.statusTray.innerHTML = '';
 
     if (!state.statuses.length) {
@@ -3375,6 +3387,7 @@
       state.statuses.forEach((st) => {
         const item = document.createElement('div');
         item.className = 'update-row';
+        item.dataset.id = st.id;
         const displayName = getDisplayName(st.username);
         const preview = st.content
           ? escapeHtml(truncate(st.content, 46))
@@ -3386,14 +3399,25 @@
             <div class="update-row-preview">${preview}</div>
           </div>
           <div class="update-row-time">${formatTimeAgo(st.created_at)}</div>
-          ${state.isAdmin ? `
-            <button class="icon-btn" style="width:26px;height:26px;" title="Delete status" data-delete-status="${st.id}">
-              <i class="fas fa-trash" style="font-size:11px;color:var(--danger);"></i>
-            </button>
-          ` : ''}
         `;
+        // FIX: the trash icon that used to sit beside every row (visible
+        // to admins at all times) is replaced by the same long-press
+        // (mobile) / right-click (desktop) selection-header pattern used
+        // for channels — see selectStatusForActions()/exitStatusSelection()
+        // below and #channelSelectHeader in renderChatList().
+        if (state.isAdmin) {
+          item.addEventListener('touchstart', () => startStatusLongPress(item, st), { passive: true });
+          ['touchend', 'touchmove', 'touchcancel'].forEach((evt) => {
+            item.addEventListener(evt, clearStatusLongPressTimer);
+          });
+          item.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            selectStatusForActions(item, st);
+          });
+        }
         item.addEventListener('pointerup', (e) => {
-          if (e.target.closest('[data-delete-status]')) return;
+          if (e.button === 2) return;
+          if (statusLongPressFired) { statusLongPressFired = false; return; }
           showStatusModal(st);
         });
         DOM.statusTray.appendChild(item);
@@ -3410,6 +3434,55 @@
     const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.STATUSES).delete().eq('id', statusId);
     if (error) { alert('Delete failed: ' + error.message); return; }
     await loadStatuses();
+  }
+
+  // FIX: long-press (mobile) / right-click (desktop) selection for a
+  // status update, mirroring startChannelLongPress()/selectChannelForActions()
+  // above — swaps the "Updates" header for a select bar with a Delete
+  // action instead of showing a delete icon beside every row.
+  let statusLongPressTimer = null;
+  let statusLongPressFired = false;
+  let selectedStatus = null;
+
+  function clearStatusLongPressTimer() {
+    if (statusLongPressTimer) { clearTimeout(statusLongPressTimer); statusLongPressTimer = null; }
+  }
+
+  function startStatusLongPress(row, st) {
+    clearStatusLongPressTimer();
+    statusLongPressTimer = setTimeout(() => {
+      statusLongPressFired = true;
+      selectStatusForActions(row, st);
+    }, 500);
+  }
+
+  function selectStatusForActions(row, st) {
+    exitStatusSelection();
+    selectedStatus = st;
+    row.classList.add('active');
+
+    if (DOM.updatesScreenHeader) DOM.updatesScreenHeader.classList.add('hidden');
+    if (DOM.statusSelectHeader) DOM.statusSelectHeader.classList.remove('hidden');
+    if (DOM.statusSelectCount) DOM.statusSelectCount.textContent = getDisplayName(st.username);
+  }
+
+  function exitStatusSelection() {
+    if (!selectedStatus) return;
+    selectedStatus = null;
+
+    if (DOM.statusSelectHeader) DOM.statusSelectHeader.classList.add('hidden');
+    if (DOM.updatesScreenHeader) DOM.updatesScreenHeader.classList.remove('hidden');
+    DOM.statusTray.querySelectorAll('.update-row.active').forEach((r) => r.classList.remove('active'));
+  }
+
+  if (DOM.statusSelectCloseBtn) DOM.statusSelectCloseBtn.addEventListener('click', exitStatusSelection);
+
+  if (DOM.statusSelectDeleteBtn) {
+    DOM.statusSelectDeleteBtn.addEventListener('click', () => {
+      const st = selectedStatus;
+      exitStatusSelection();
+      if (st) deleteStatus(st.id);
+    });
   }
 
   function generateStatusStoragePath(username, filename) {
@@ -4898,14 +4971,6 @@
   DOM.closeStatusModal.addEventListener('click', closeStatusViewer);
   DOM.statusModal.addEventListener('click', (e) => { if (e.target === DOM.statusModal) closeStatusViewer(); });
   DOM.statusPauseBtn.addEventListener('click', toggleStatusPause);
-
-  DOM.statusTray.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-delete-status]');
-    if (btn) {
-      e.stopPropagation();
-      deleteStatus(btn.dataset.deleteStatus);
-    }
-  });
 
   DOM.notifToggle.addEventListener('change', () => setNotificationsEnabled(DOM.notifToggle.checked));
   DOM.darkToggle.addEventListener('change', () => {
