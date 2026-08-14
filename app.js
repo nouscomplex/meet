@@ -1434,6 +1434,68 @@
   }
 
   // ============================================================
+  // CHAT-LIST PREVIEW POLLING FALLBACK
+  // ============================================================
+  // FIX: "closed chats never get a live last-message preview" persisted even
+  // after fixing the tab-refocus reconnect gap above — because the
+  // `channel-list-updates` postgres_changes subscription can sit at a happy
+  // "SUBSCRIBED" status forever while still never delivering a single event.
+  // That happens when the `messages` table hasn't been added to the
+  // `supabase_realtime` publication (Database → Replication in the Supabase
+  // dashboard), or when its RLS SELECT policy silently excludes the event
+  // for this user — Realtime evaluates that policy per-row server-side, and
+  // a mismatch there produces no error on the client at all, just permanent
+  // silence. subscribeToMessages()/subscribeToChannelListUpdates() can only
+  // ever detect and recover from a *dropped connection*; they have no way to
+  // detect "connected but nothing is arriving".
+  //
+  // This is a belt-and-suspenders fallback: independent of whether the
+  // realtime socket is actually delivering anything, periodically re-pull
+  // each known channel's latest message straight via REST and re-render the
+  // list if anything changed. It guarantees the "last message" preview and
+  // unread badge for a closed chat catch up within one poll interval even
+  // on a Supabase project where Realtime is misconfigured — while the
+  // instant realtime path above still gives immediate updates whenever it
+  // does work correctly.
+  let channelPreviewPollTimer = null;
+  const CHANNEL_PREVIEW_POLL_INTERVAL = 12000;
+
+  async function pollChannelPreviews() {
+    if (!state.currentUser || !allChannels.length) return;
+    try {
+      const fresh = await loadChannelPreviews(allChannels.map((c) => c.id));
+      let changed = false;
+      allChannels.forEach((ch) => {
+        const incoming = fresh[ch.id];
+        const existing = state.channelPreviews[ch.id];
+        if (incoming && (!existing || incoming.id !== existing.id)) {
+          changed = true;
+        }
+      });
+      state.channelPreviews = fresh;
+      if (changed) {
+        console.log('🔄 Preview poll found new messages — refreshing chat list.');
+        renderChatList(allChannels);
+        await refreshUnreadBadges();
+      }
+    } catch (e) {
+      console.warn('Channel preview poll failed:', e);
+    }
+  }
+
+  function startChannelPreviewPolling() {
+    stopChannelPreviewPolling();
+    channelPreviewPollTimer = setInterval(pollChannelPreviews, CHANNEL_PREVIEW_POLL_INTERVAL);
+  }
+
+  function stopChannelPreviewPolling() {
+    if (channelPreviewPollTimer) {
+      clearInterval(channelPreviewPollTimer);
+      channelPreviewPollTimer = null;
+    }
+  }
+
+  // ============================================================
   // DELIVERED / SEEN TRACKING (FIXED)
   // ============================================================
   async function markDelivered(channelId) {
@@ -3703,6 +3765,7 @@
     await requestMediaPermissions();
     await renderChannels();
     subscribeToChannelListUpdates();
+    startChannelPreviewPolling();
     // FIX: previously the nav badge was only ever set by refreshUnreadBadges()
     // as a side effect of selectChannel(), which itself only runs when
     // channels.length > 0 (see renderChannels). A user with zero channels
@@ -3819,6 +3882,7 @@
     teardownMessagesSubscription();
     teardownReadsSubscription();
     unsubscribeFromChannelListUpdates();
+    stopChannelPreviewPolling();
     if (scheduleSubscription) { 
       supabase.removeChannel(scheduleSubscription); 
       scheduleSubscription = null; 
