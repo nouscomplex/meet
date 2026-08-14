@@ -588,6 +588,24 @@
   const CHAT_GROUP_SCREENS = ['chats', 'chatDetail', 'members', 'profile'];
   const isDesktopLayout = () => window.matchMedia('(min-width: 1024px)').matches;
 
+  // FIX: "is this channel actually being looked at right now" — used to
+  // decide whether an incoming/backlogged message is allowed to be marked
+  // delivered/seen (which clears its unread badge). Being `state.currentChannel`
+  // is NOT enough: that flag stays set after the user backs out to the chat
+  // list (or on the very first auto-selected channel on load), so relying on
+  // it alone silently marked chats "read" while nobody was looking at them —
+  // that's why unread numbers were disappearing for chats that were never
+  // opened. On mobile the chat is only visible while the chatDetail screen is
+  // showing; on desktop the chat pane stays visible alongside the list on any
+  // chat-group screen (see goToScreen above), so that counts as visible too.
+  function isChatDetailVisible(channelId) {
+    if (!state.currentChannel || String(state.currentChannel.id) !== String(channelId)) return false;
+    if (isDesktopLayout()) {
+      return CHAT_GROUP_SCREENS.includes(state.currentScreen);
+    }
+    return state.currentScreen === 'chatDetail';
+  }
+
   function updateChatEmptyState() {
     if (!DOM.screenChatDetail) return;
     DOM.screenChatDetail.classList.toggle('no-chat', !state.currentChannel);
@@ -867,7 +885,14 @@
     renderChatList(channels);
 
     if (!state.currentChannel && channels.length) {
-      selectChannel(channels[0]);
+      // FIX: this auto-pick of the first channel is here so a desktop split
+      // view (chat list + chat pane side-by-side) has something to show in
+      // the pane on load — on desktop that pane really is visible, so
+      // marking it delivered/seen is correct. On mobile there is no chat
+      // pane on screen yet (the user is looking at the chat list), so this
+      // must NOT mark it as read — that was the cause of a chat's unread
+      // number disappearing before it was ever tapped open.
+      selectChannel(channels[0], { markSeenNow: isDesktopLayout() });
     }
   }
 
@@ -1114,7 +1139,13 @@
       state.channelPreviews[msg.channel_id] = msg;
     }
 
-    const isOpenChannel = state.currentChannel && String(state.currentChannel.id) === String(msg.channel_id);
+    // FIX: was `state.currentChannel?.id === msg.channel_id`, which stays
+    // true after the user backs out of a chat back to the list (currentChannel
+    // is never cleared on "back"). That made this incoming-message counter
+    // skip incrementing the badge for a chat that was actually closed on
+    // screen, so its unread count silently stayed at 0. Use the same
+    // "genuinely on screen right now" check the per-channel handler uses.
+    const isOpenChannel = isChatDetailVisible(msg.channel_id);
     if (!isOpenChannel && msg.username !== state.currentUser?.username) {
       state.unreadByChannel[msg.channel_id] = (state.unreadByChannel[msg.channel_id] || 0) + 1;
       const total = Object.values(state.unreadByChannel).reduce((a, b) => a + b, 0);
@@ -1681,8 +1712,17 @@
             if (newMessage.username !== state.currentUser?.username) {
               console.log('🔔 New message from someone else - marking delivered');
               playNotifySound();
-              await markDelivered(channelId);
-              await markSeen(channelId);
+              // FIX: only mark delivered/seen if this chat is actually the
+              // one on screen right now — see isChatDetailVisible above.
+              // Previously this fired just because it belonged to
+              // `state.currentChannel`, which stays set after backing out to
+              // the chat list, so messages arriving in a chat that was
+              // closed on screen were being auto-marked "seen" and never
+              // showed an unread badge.
+              if (isChatDetailVisible(channelId)) {
+                await markDelivered(channelId);
+                await markSeen(channelId);
+              }
             }
             return;
           }
@@ -1702,10 +1742,14 @@
         if (newMessage.username !== state.currentUser?.username) {
           console.log('🔔 New message from someone else - marking delivered');
           playNotifySound();
-          await markDelivered(channelId);
-          await markSeen(channelId);
+          // FIX: same as above — only mark seen if the chat is genuinely
+          // open on screen right now, not just "the last chat we visited".
+          if (isChatDetailVisible(channelId)) {
+            await markDelivered(channelId);
+            await markSeen(channelId);
+          }
         }
-        
+
         if (state.inactivityTimer) {
           clearTimeout(state.inactivityTimer);
           state.inactivityTimer = null;
@@ -3396,8 +3440,15 @@
             // document.hidden is true). Now that the tab is visible again
             // and the channel is still open, catch those up so the nav
             // badge actually clears instead of staying stuck on "unread".
-            await markDelivered(state.currentChannel.id);
-            await markSeen(state.currentChannel.id);
+            // Guarded by isChatDetailVisible: `state.currentChannel` can be
+            // set to a chat the user backed out of (it's never cleared on
+            // "back"), so without this check simply refocusing the browser
+            // tab — while sitting on the chat list — would wrongly mark that
+            // chat's messages as seen and drop its unread number.
+            if (isChatDetailVisible(state.currentChannel.id)) {
+              await markDelivered(state.currentChannel.id);
+              await markSeen(state.currentChannel.id);
+            }
           } catch (e) {
             console.warn('Catch-up failed:', e);
           } finally {
@@ -3435,7 +3486,13 @@
   // ============================================================
   // SELECT CHANNEL (FIXED)
   // ============================================================
-  async function selectChannel(channel) {
+  // FIX: added the `markSeenNow` option (defaults to true, i.e. unchanged
+  // behavior for every real call site — the user actually tapping/clicking
+  // a chat open). It only gets set to false by the auto-select-first-channel
+  // path in renderChannels(), so that loading the app doesn't silently mark
+  // a chat's messages as delivered/seen before the user has ever looked at
+  // it. See isChatDetailVisible above for the full explanation.
+  async function selectChannel(channel, { markSeenNow = true } = {}) {
     if (typeof exitMessageSelection === 'function') exitMessageSelection();
     state.currentChannel = channel;
     updateChatEmptyState();
@@ -3447,23 +3504,25 @@
     if (cachedMessages) {
       console.log(`⚡ Instant load: ${cachedMessages.length} messages from cache`);
     }
-    
+
     await loadMessages(channel.id);
     await loadMembers(channel.id);
     subscribeToMessages(channel.id);
     await loadMessageReads(channel.id);
     subscribeToMessageReads(channel.id);
-    await markDelivered(channel.id);
-    await markSeen(channel.id);
+    if (markSeenNow) {
+      await markDelivered(channel.id);
+      await markSeen(channel.id);
+    }
     await loadSchedule(channel.id);
     subscribeToSchedule(channel.id);
     updateChatDetailHeader();
     updateProfileScreen();
-    
+
     // FIX: Force refresh the badge after marking messages as seen
     // This ensures the badge clears immediately when opening a channel
     await refreshUnreadBadges();
-    
+
     setupInactivityManager();
     setupTabFocusManager();
   }
