@@ -998,37 +998,58 @@
     });
   }
 
+  // ============================================================
+  // UNREAD BADGE REFRESH (FIXED)
+  // ============================================================
   async function refreshUnreadBadges() {
     if (!state.currentUser) return;
 
-    const { data: fromOthers, error: msgError } = await supabase
-      .from(CONFIG.SUPABASE.TABLES.MESSAGES)
-      .select('id, channel_id')
-      .neq('username', state.currentUser.username)
-      .is('deleted_at', null);
+    try {
+      // Get all messages from others that are not deleted
+      const { data: fromOthers, error: msgError } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+        .select('id, channel_id')
+        .neq('username', state.currentUser.username)
+        .is('deleted_at', null);
 
-    if (msgError) return;
+      if (msgError) {
+        console.warn('Failed to fetch messages for badge:', msgError);
+        return;
+      }
 
-    const { data: myReads, error: readsError } = await supabase
-      .from('message_reads')
-      .select('message_id')
-      .eq('username', state.currentUser.username);
+      // Get user's read receipts
+      const { data: myReads, error: readsError } = await supabase
+        .from('message_reads')
+        .select('message_id')
+        .eq('username', state.currentUser.username);
 
-    if (readsError) return;
+      if (readsError) {
+        console.warn('Failed to fetch read receipts for badge:', readsError);
+        return;
+      }
 
-    const readIds = new Set((myReads || []).map((r) => r.message_id));
-    const counts = {};
-    (fromOthers || []).forEach((row) => {
-      if (readIds.has(row.id)) return;
-      counts[row.channel_id] = (counts[row.channel_id] || 0) + 1;
-    });
-    state.unreadByChannel = counts;
+      const readIds = new Set((myReads || []).map((r) => r.message_id));
+      const counts = {};
+      
+      (fromOthers || []).forEach((row) => {
+        if (!readIds.has(row.id)) {
+          counts[row.channel_id] = (counts[row.channel_id] || 0) + 1;
+        }
+      });
+      
+      state.unreadByChannel = counts;
 
-    const total = Object.values(counts).reduce((a, b) => a + b, 0);
-    DOM.navChatsBadge.textContent = total > 99 ? '99+' : String(total);
-    DOM.navChatsBadge.classList.toggle('hidden', total === 0);
+      const total = Object.values(counts).reduce((a, b) => a + b, 0);
+      DOM.navChatsBadge.textContent = total > 99 ? '99+' : String(total);
+      DOM.navChatsBadge.classList.toggle('hidden', total === 0);
 
-    renderChatList(allChannels);
+      // Update the chat list to show/hide unread badges
+      renderChatList(allChannels);
+      
+      console.log(`🔔 Badge updated: ${total} unread messages`);
+    } catch (e) {
+      console.warn('Error refreshing unread badges:', e);
+    }
   }
 
   // ============================================================
@@ -1090,7 +1111,7 @@
   }
 
   // ============================================================
-  // DELIVERED / SEEN TRACKING
+  // DELIVERED / SEEN TRACKING (FIXED)
   // ============================================================
   async function markDelivered(channelId) {
     if (!state.currentUser) return;
@@ -1126,6 +1147,34 @@
     try {
       console.log(`👁️ Marking messages as seen for channel ${channelId}`);
       
+      // First, get all unread messages from others in this channel
+      const { data: unreadMsgs, error: unreadError } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+        .select('id')
+        .eq('channel_id', channelId)
+        .neq('username', state.currentUser.username)
+        .is('deleted_at', null);
+
+      if (unreadError) {
+        console.warn('Failed to get unread messages:', unreadError);
+      } else if (unreadMsgs && unreadMsgs.length) {
+        // Record read receipts for each unread message
+        const rows = unreadMsgs.map((m) => ({
+          message_id: m.id,
+          channel_id: channelId,
+          username: state.currentUser.username,
+        }));
+        const { error: readsError } = await supabase
+          .from('message_reads')
+          .upsert(rows, { onConflict: 'message_id,username', ignoreDuplicates: true });
+        if (readsError) {
+          console.warn('Failed to record read receipts:', readsError);
+        } else {
+          console.log(`✅ Recorded ${rows.length} read receipts`);
+        }
+      }
+
+      // Also update the seen_at on the messages table for backward compatibility
       const { error } = await supabase
         .from(CONFIG.SUPABASE.TABLES.MESSAGES)
         .update({ 
@@ -1142,30 +1191,17 @@
         console.log('✅ Messages marked as seen');
       }
 
-      const { data: unreadMsgs, error: unreadError } = await supabase
-        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
-        .select('id')
-        .eq('channel_id', channelId)
-        .neq('username', state.currentUser.username)
-        .is('deleted_at', null);
-
-      if (!unreadError && unreadMsgs && unreadMsgs.length) {
-        const rows = unreadMsgs.map((m) => ({
-          message_id: m.id,
-          channel_id: channelId,
-          username: state.currentUser.username,
-        }));
-        const { error: readsError } = await supabase
-          .from('message_reads')
-          .upsert(rows, { onConflict: 'message_id,username', ignoreDuplicates: true });
-        if (readsError) {
-          console.warn('Failed to record read receipts:', readsError);
-        }
-      }
-
+      // FIX: Refresh the badge after marking messages as seen
       await refreshUnreadBadges();
+      
     } catch (e) {
       console.warn('Mark seen error:', e);
+      // Even if there's an error, try to refresh the badge
+      try {
+        await refreshUnreadBadges();
+      } catch (badgeError) {
+        console.warn('Failed to refresh badge after error:', badgeError);
+      }
     }
   }
 
@@ -1430,6 +1466,7 @@
         console.log(`📥 Adding new message (ID: ${newMessage.id})`);
         mergeMessagesSafely(newMessage);
         
+        // Refresh unread badges for new messages
         refreshUnreadBadges();
         
         if (newMessage.username !== state.currentUser?.username) {
@@ -3129,6 +3166,9 @@
     console.log('📋 Tab focus manager cleaned up');
   }
 
+  // ============================================================
+  // SELECT CHANNEL (FIXED)
+  // ============================================================
   async function selectChannel(channel) {
     if (typeof exitMessageSelection === 'function') exitMessageSelection();
     state.currentChannel = channel;
@@ -3153,6 +3193,10 @@
     subscribeToSchedule(channel.id);
     updateChatDetailHeader();
     updateProfileScreen();
+    
+    // FIX: Force refresh the badge after marking messages as seen
+    // This ensures the badge clears immediately when opening a channel
+    await refreshUnreadBadges();
     
     setupInactivityManager();
     setupTabFocusManager();
