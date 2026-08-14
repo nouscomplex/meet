@@ -878,38 +878,11 @@
 
   let allChannels = [];
 
-  // FIX: channels were always rendered in the order loadChannels() fetched
-  // them (alphabetical, `.order('name')` server-side) and never reordered
-  // afterwards. That meant a brand new message never moved its channel to
-  // the top of the list the way every chat app does — a chat could get a
-  // message and, if it wasn't already near the top alphabetically, the
-  // update was easy to miss entirely since it happened off-screen. This
-  // sorts most-recently-active chats first (based on the same preview data
-  // already used to render each row's snippet), with channels that have no
-  // messages yet pushed to the bottom. It's applied at render time only —
-  // the underlying `allChannels` array and the DB order are untouched — so
-  // nothing else that reads `allChannels` is affected.
-  function sortChannelsByRecency(channels) {
-    const lastActivity = (ch) => {
-      const preview = state.channelPreviews[ch.id];
-      return preview && preview.created_at ? new Date(preview.created_at).getTime() : null;
-    };
-    return [...channels].sort((a, b) => {
-      const ta = lastActivity(a);
-      const tb = lastActivity(b);
-      if (ta === null && tb === null) return a.name.localeCompare(b.name);
-      if (ta === null) return 1;
-      if (tb === null) return -1;
-      return tb - ta;
-    });
-  }
-
   async function renderChannels() {
     const channels = await loadChannels();
     allChannels = channels;
     state.channelPreviews = await loadChannelPreviews(channels.map((c) => c.id));
-    const sortedChannels = sortChannelsByRecency(channels);
-    renderChatList(sortedChannels);
+    renderChatList(channels);
 
     if (!state.currentChannel && channels.length) {
       // FIX: this auto-pick of the first channel is here so a desktop split
@@ -918,11 +891,8 @@
       // marking it delivered/seen is correct. On mobile there is no chat
       // pane on screen yet (the user is looking at the chat list), so this
       // must NOT mark it as read — that was the cause of a chat's unread
-      // number disappearing before it was ever tapped open. Uses the sorted
-      // order so the desktop pane opens the most recently active chat —
-      // the same one now shown at the top of the list — rather than
-      // whichever channel happens to sort first alphabetically.
-      selectChannel(sortedChannels[0], { markSeenNow: isDesktopLayout() });
+      // number disappearing before it was ever tapped open.
+      selectChannel(channels[0], { markSeenNow: isDesktopLayout() });
     }
   }
 
@@ -1099,7 +1069,7 @@
         state.unreadByChannel = {};
         DOM.navChatsBadge.textContent = '0';
         DOM.navChatsBadge.classList.add('hidden');
-        renderChatList(sortChannelsByRecency(allChannels));
+        renderChatList(allChannels);
         return;
       }
 
@@ -1144,7 +1114,7 @@
       DOM.navChatsBadge.classList.toggle('hidden', total === 0);
 
       // Update the chat list to show/hide unread badges
-      renderChatList(sortChannelsByRecency(allChannels));
+      renderChatList(allChannels);
       
       console.log(`🔔 Badge updated: ${total} unread messages`);
     } catch (e) {
@@ -1183,7 +1153,7 @@
       DOM.navChatsBadge.classList.toggle('hidden', total === 0);
     }
 
-    renderChatList(sortChannelsByRecency(allChannels));
+    renderChatList(allChannels);
   }
 
   // FIX: When an admin removes this user from a group (members row delete),
@@ -1222,7 +1192,7 @@
       if (showAlert) alert('You were removed from this group.');
     }
 
-    renderChatList(sortChannelsByRecency(allChannels));
+    renderChatList(allChannels);
     await refreshUnreadBadges();
   }
 
@@ -2506,7 +2476,7 @@
       }
       
       state.channelPreviews = await loadChannelPreviews(allChannels.map((c) => c.id));
-      renderChatList(sortChannelsByRecency(allChannels));
+      renderChatList(allChannels);
       
       if (state.currentChannel) {
         saveCachedMessages(state.currentChannel.id, state.messages);
