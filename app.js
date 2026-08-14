@@ -1005,10 +1005,30 @@
     if (!state.currentUser) return;
 
     try {
-      // Get all messages from others that are not deleted
+      // FIX: scope to channels the user can actually see/open.
+      // Previously this queried the messages table with no channel filter
+      // at all, so it counted messages from channels the user isn't even
+      // a member of (not in allChannels). Those messages can never be
+      // opened/marked seen, so part of the badge total was permanently
+      // stuck — the badge could never reach 0 no matter how many real
+      // messages the user read. allChannels already reflects exactly the
+      // channels this user has access to (see loadChannels/renderChannels).
+      const channelIds = allChannels.map((c) => c.id);
+
+      if (!channelIds.length) {
+        state.unreadByChannel = {};
+        DOM.navChatsBadge.textContent = '0';
+        DOM.navChatsBadge.classList.add('hidden');
+        renderChatList(allChannels);
+        return;
+      }
+
+      // Get all messages from others that are not deleted, restricted to
+      // channels this user actually belongs to.
       const { data: fromOthers, error: msgError } = await supabase
         .from(CONFIG.SUPABASE.TABLES.MESSAGES)
         .select('id, channel_id')
+        .in('channel_id', channelIds)
         .neq('username', state.currentUser.username)
         .is('deleted_at', null);
 
@@ -3270,6 +3290,14 @@
     await requestMediaPermissions();
     await renderChannels();
     subscribeToChannelListUpdates();
+    // FIX: previously the nav badge was only ever set by refreshUnreadBadges()
+    // as a side effect of selectChannel(), which itself only runs when
+    // channels.length > 0 (see renderChannels). A user with zero channels
+    // (not added to any group) never hit that path, so the badge could be
+    // left showing a stale count from a previous session on the same tab.
+    // Call it explicitly here so every login always gets a correct badge,
+    // including the "0 channels → 0 unread" case.
+    await refreshUnreadBadges();
     await loadStatuses();
     
     try {
@@ -3365,6 +3393,22 @@
     state.replyingTo = null;
     state.isChannelActive = false;
     state.isTabFocused = true;
+
+    // FIX: previously none of this was reset on sign-out. If a device is
+    // shared between users in one tab (e.g. an admin signs out and a
+    // student signs in without reloading the page), the nav badge and
+    // channel list were left showing the PREVIOUS user's stale unread
+    // count. A student with zero channels never triggers
+    // refreshUnreadBadges() on their own (selectChannel only runs when
+    // channels.length > 0), so that leftover badge would never clear —
+    // it looked like they had unread notifications for a group they were
+    // never even added to.
+    allChannels = [];
+    state.unreadByChannel = {};
+    state.channelPreviews = {};
+    state.messageReads = new Map();
+    DOM.navChatsBadge.textContent = '0';
+    DOM.navChatsBadge.classList.add('hidden');
 
     try {
       const keys = Object.keys(localStorage);
