@@ -3421,10 +3421,22 @@
     renderScheduleBanner(current);
     updateLiveButtonState();
 
-    const endsAt = new Date(current.scheduled_time).getTime() + (current.duration_minutes || 45) * 60000;
+    // FIX: the button now depends on whether `now` has reached
+    // scheduled_time (see getLiveButtonMode() above), not just on this row
+    // existing — so this watchdog has to wake up for THAT moment too, not
+    // only for the session's end. Otherwise a session scheduled for later
+    // today would stay hidden until the next unrelated reload happened to
+    // run loadSchedule() again, rather than flipping on by itself right at
+    // start time. Whichever boundary (start or end) is next just re-runs
+    // loadSchedule(), which re-arms the timer for whichever is next after
+    // that — so only one timer is ever needed at a time.
+    const startsAt = new Date(current.scheduled_time).getTime();
+    const endsAt = startsAt + (current.duration_minutes || 45) * 60000;
+    const msUntilStart = startsAt - now;
     const msUntilEnd = endsAt - now;
-    if (msUntilEnd > 0 && msUntilEnd <= SCHEDULE_EXPIRY_WATCHDOG_MAX_MS) {
-      scheduleExpiryTimer = setTimeout(() => loadSchedule(channelId), msUntilEnd + 500);
+    const msUntilNextBoundary = msUntilStart > 0 ? msUntilStart : msUntilEnd;
+    if (msUntilNextBoundary > 0 && msUntilNextBoundary <= SCHEDULE_EXPIRY_WATCHDOG_MAX_MS) {
+      scheduleExpiryTimer = setTimeout(() => loadSchedule(channelId), msUntilNextBoundary + 500);
     }
   }
 
@@ -3437,21 +3449,73 @@
     DOM.scheduleBanner.classList.remove('hidden');
   }
 
-  // FIX: the "Join/Start Live Session" button used to be clickable at all
-  // times, whether or not a class had actually been scheduled for the open
-  // group — nothing distinguished a group with a real class time from one
-  // with none at all. Gate it on state.currentSchedule (kept in sync by
-  // loadSchedule()/subscribeToSchedule() above) so it's only interactive
-  // once a schedule row actually exists for this channel, and give it the
-  // muted "dead" look from styles.css (.btn-live-pill-dead) the rest of the
-  // time so that's visually obvious, not just non-clickable.
+  // FIX: root cause of "the live session button gets activated the moment a
+  // session is scheduled instead of at its scheduled date/time, and is
+  // visible to every teacher/student instead of just the concerned
+  // teacher, then students". The previous version of this function only
+  // ever checked whether state.currentSchedule was set — but loadSchedule()
+  // intentionally keeps state.currentSchedule pointed at the next
+  // upcoming-or-in-progress row (so the banner and "Scheduled Classes" list
+  // can show it ahead of time), so "a schedule exists" was true from the
+  // instant an admin saved it, days or weeks before it actually starts.
+  // There was also no gating at all on WHO could see the button (every
+  // teacher account, via state.isTeacher, and every student) and no notion
+  // of the teacher actually having started the room versus a student just
+  // walking in.
+  //
+  // This now computes three separate things and turns them into one of
+  // three button states — hidden / start / join:
+  //   - isWithinWindow: `now` is inside [scheduled_time, scheduled_time +
+  //     duration) — i.e. it's actually the scheduled date & time, not just
+  //     "some schedule row exists".
+  //   - isConcernedTeacher: the signed-in user is the exact
+  //     schedule.teacher_username this row was booked for (not "any
+  //     teacher", not admin-by-default).
+  //   - isLive: class_schedule.is_live is true — flipped on by
+  //     joinLiveClass() only when the concerned teacher actually presses
+  //     Start (see the FIX note there). Requires an `is_live boolean not
+  //     null default false` column on class_schedule — see the FIX note
+  //     above setClassSchedule().
+  //
+  // "start": only the concerned teacher, only inside the scheduled window —
+  //   they get "Start Live Session".
+  // "join": everyone else, only once isLive is true AND still inside the
+  //   scheduled window — they get "Join Live Session". Nobody sees a Join
+  //   button before the concerned teacher has actually started the class.
+  // "hidden": every other case — the button doesn't just go "dead" looking,
+  //   it's removed from the header entirely, per spec.
+  function getLiveButtonMode() {
+    const schedule = state.currentSchedule;
+    if (!schedule || !state.currentUser) return 'hidden';
+
+    const now = Date.now();
+    const startsAt = new Date(schedule.scheduled_time).getTime();
+    const endsAt = startsAt + (schedule.duration_minutes || 45) * 60000;
+    const isWithinWindow = now >= startsAt && now < endsAt;
+
+    const isConcernedTeacher = normalizeUsername(state.currentUser.username) === normalizeUsername(schedule.teacher_username);
+    const isLive = schedule.is_live === true;
+
+    if (isConcernedTeacher && isWithinWindow) return 'start';
+    if (isLive && isWithinWindow) return 'join';
+    return 'hidden';
+  }
+
   function updateLiveButtonState() {
     if (!DOM.joinLiveBtn) return;
-    const hasSchedule = !!state.currentSchedule;
-    DOM.joinLiveBtn.disabled = !hasSchedule;
-    DOM.joinLiveBtn.classList.toggle('btn-live-pill-dead', !hasSchedule);
-    DOM.joinLiveBtn.setAttribute('aria-disabled', String(!hasSchedule));
-    DOM.joinLiveBtn.title = hasSchedule ? '' : 'No live session is scheduled for this group yet';
+    const mode = getLiveButtonMode();
+    const isHidden = mode === 'hidden';
+
+    DOM.joinLiveBtn.classList.toggle('hidden', isHidden);
+    DOM.joinLiveBtn.disabled = isHidden;
+    DOM.joinLiveBtn.classList.toggle('btn-live-pill-dead', isHidden);
+    DOM.joinLiveBtn.setAttribute('aria-disabled', String(isHidden));
+    if (DOM.liveBtnText) {
+      DOM.liveBtnText.textContent = mode === 'start' ? 'Start Live Session' : 'Join Live Session';
+    }
+    DOM.joinLiveBtn.title = isHidden
+      ? (state.currentSchedule ? 'This live session hasn\'t started yet.' : 'No live session is scheduled for this group yet')
+      : '';
   }
 
   function subscribeToSchedule(channelId) {
@@ -3648,9 +3712,14 @@
     const start = new Date(`${dateStr}T${startTimeStr}`);
     if (Number.isNaN(start.getTime())) { alert('That date/time couldn\'t be understood.'); return false; }
 
+    // FIX: reset is_live back to false whenever the time/duration changes —
+    // otherwise a session the teacher had already started, then got
+    // rescheduled to a later date/time, would still read as "live" and let
+    // students straight into a room for a class that hasn't actually
+    // started yet under its new time (see getLiveButtonMode()).
     const { error } = await supabase
       .from('class_schedule')
-      .update({ scheduled_time: start.toISOString(), duration_minutes: duration })
+      .update({ scheduled_time: start.toISOString(), duration_minutes: duration, is_live: false })
       .eq('id', id);
 
     if (error) { alert('Could not update the session: ' + error.message); return false; }
@@ -3693,7 +3762,7 @@
       duration = Math.max(1, Math.ceil((Date.now() - new Date(data.scheduled_time).getTime()) / 60000));
     }
 
-    const { error } = await supabase.from('class_schedule').update({ duration_minutes: duration }).eq('id', id);
+    const { error } = await supabase.from('class_schedule').update({ duration_minutes: duration, is_live: false }).eq('id', id);
     if (error) { alert('Could not end the session: ' + error.message); return; }
   }
 
@@ -3883,6 +3952,16 @@
   // here (never typed), giving joinLiveClass() an accurate moment to
   // auto-close the call at and loadSchedule() an accurate end time to
   // decide the live-session button is still "current".
+  //
+  // SCHEMA REQUIREMENT for the Start/Join gating in getLiveButtonMode() /
+  // updateLiveButtonState() / joinLiveClass(): class_schedule needs an
+  // `is_live` boolean column (default false) so the app can tell "a class
+  // is scheduled for this window" apart from "the teacher has actually
+  // pressed Start". Run this once in the Supabase SQL editor:
+  //   alter table class_schedule add column if not exists is_live boolean not null default false;
+  // New rows don't need to set it explicitly below — the column default
+  // covers that — but it's spelled out here so it's obvious where it's
+  // consumed.
   async function setClassSchedule(teacherUsername, occurrences) {
     if (!state.currentChannel) { alert('Select a channel first.'); return false; }
     teacherUsername = normalizeUsername(teacherUsername);
@@ -4753,7 +4832,7 @@
 
     const { error } = await supabase
       .from('class_schedule')
-      .update({ duration_minutes: elapsedMinutes })
+      .update({ duration_minutes: elapsedMinutes, is_live: false })
       .eq('id', state.activeCallScheduleId);
 
     if (error) { alert('Could not end the session: ' + error.message); return; }
@@ -4765,6 +4844,38 @@
 
   async function joinLiveClass() {
     if (!state.currentUser || !state.currentChannel) { alert('Please select a channel first.'); return; }
+
+    // FIX: belt-and-suspenders alongside the `disabled`/`hidden` state
+    // updateLiveButtonState() keeps the button in — only actually open the
+    // call if getLiveButtonMode() agrees this click was legitimate (either
+    // the concerned teacher starting it inside the scheduled window, or
+    // anyone joining a class that's already live). Stops a stale click
+    // (e.g. one queued right as a schedule row got deleted/rescheduled)
+    // from opening a call that shouldn't exist anymore.
+    const mode = getLiveButtonMode();
+    if (mode === 'hidden') { return; }
+
+    // FIX: root cause of "students can join the moment a class is
+    // scheduled, without the teacher ever pressing Start" — there was no
+    // notion anywhere of the teacher having actually started the room.
+    // class_schedule.is_live starts false (see the FIX note above
+    // setClassSchedule() — requires that boolean column) and is flipped
+    // true here, exactly once, the moment the concerned teacher presses
+    // Start. Realtime (subscribeToSchedule() above) pushes that row change
+    // to every other client with this group open, which re-runs
+    // loadSchedule() → updateLiveButtonState() — that's what actually
+    // reveals the Join button to students, not anything client-side.
+    if (mode === 'start' && state.currentSchedule && !state.currentSchedule.is_live) {
+      const { error: liveError } = await supabase
+        .from('class_schedule')
+        .update({ is_live: true })
+        .eq('id', state.currentSchedule.id);
+      if (liveError) {
+        console.warn('Could not mark session live:', liveError);
+      } else {
+        state.currentSchedule.is_live = true;
+      }
+    }
 
     if (CONFIG.FEATURES.ENABLE_ATTENDANCE_LOGGING) {
       try {
@@ -4783,7 +4894,11 @@
     DOM.videoIframe.src = buildLiveUrl();
     state.videoActive = true;
     state.activeCallScheduleId = state.currentSchedule ? state.currentSchedule.id : null;
-    DOM.liveBtnText.textContent = state.isTeacher ? 'Start Live Session' : 'Join Live Session';
+    // Button label now tracks the same start/join mode the header button
+    // uses (see getLiveButtonMode()/updateLiveButtonState()), instead of
+    // the old `state.isTeacher` check — that was true for every teacher and
+    // every admin account, not just whoever actually started this session.
+    updateLiveButtonState();
     if (DOM.endLiveSessionBtn) {
       DOM.endLiveSessionBtn.classList.toggle('hidden', !(state.isAdmin && state.activeCallScheduleId));
     }
@@ -6328,10 +6443,12 @@
 
   DOM.joinLiveBtn.addEventListener('click', () => {
     if (!CONFIG.FEATURES.ENABLE_VIDEO_CONFERENCE) { alert('Video conferencing is disabled.'); return; }
-    // FIX: safety net alongside the `disabled` attribute/CSS toggled by
+    // FIX: safety net alongside the `disabled`/`hidden` state toggled by
     // updateLiveButtonState() — belt-and-suspenders in case this ever fires
-    // while no session is scheduled for the open group.
-    if (!state.currentSchedule) { return; }
+    // outside the concerned-teacher-starts / anyone-joins-once-live window
+    // (see getLiveButtonMode()). joinLiveClass() re-checks the same thing
+    // itself, so this is just an early exit.
+    if (getLiveButtonMode() === 'hidden') { return; }
     joinLiveClass();
   });
 
