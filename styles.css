@@ -299,19 +299,20 @@ button { font-family: inherit; }
   .fab { bottom: 28px !important; }
   
   /* Hide back buttons on desktop.
-     FIX: root cause of "group profile has no way back on laptop, mobile is
-     fine" — #backFromProfile used to be blanket-hidden here along with the
-     others. That's fine for screens with an obvious alternate way back
-     (Chat/Updates/Calendar all have the persistent chat list or bottom nav
-     to fall back on), but Profile is opened by drilling into a session
-     (Chats → Chat → Profile) and, on desktop, replaces the chat pane
-     entirely with nothing left pointing back to it — re-clicking the same
-     row in the list on the left does work, but there was no visible
-     control that said so. #backFromProfile is excluded from this rule so
-     it keeps the same working back button mobile already has. */
+     FIX: root cause of "group profile / members has no way back on laptop,
+     mobile is fine" — #backFromProfile and #backFromMembers used to be
+     blanket-hidden here along with the others. That's fine for screens
+     with an obvious alternate way back (Chat/Updates/Calendar all have the
+     persistent chat list or bottom nav to fall back on), but Profile and
+     Members are reached by drilling further in (Chats → Chat → Profile →
+     Members) and, on desktop, each replaces the panel entirely with
+     nothing left pointing back to the screen you came from — re-clicking
+     the same row in the list on the left only gets you back to the chat
+     itself, not to Profile/Members specifically, and there was no visible
+     control that said so. Both are excluded from this rule so they keep
+     the same working back button mobile already has. */
   #backFromChat,
   #backFromUpdates,
-  #backFromMembers,
   #backFromCalendar {
     display: none !important;
   }
