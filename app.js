@@ -160,6 +160,12 @@
     // there was no equivalent of this, which is why the button was always
     // active even for channels with no session scheduled at all.
     currentSchedule: null,
+    // FIX: which class_schedule row (by id) the CURRENTLY OPEN video call
+    // belongs to, if any. Lets loadSchedule() recognize when that specific
+    // row has been edited/deleted/force-ended and close this client's call
+    // immediately rather than waiting on its original auto-close timer —
+    // see the FIX note inside loadSchedule() and endLiveSessionForEveryone().
+    activeCallScheduleId: null,
   };
 
   // ============================================================
@@ -282,6 +288,7 @@
     sendMsgBtn: $('sendMsgBtn'),
     videoContainer: $('videoContainer'),
     videoIframe: $('videoIframe'),
+    endLiveSessionBtn: $('endLiveSessionBtn'),
     closeVideoBtn: $('closeVideoBtn'),
 
     backFromMembers: $('backFromMembers'),
@@ -3384,6 +3391,26 @@
       return endsAt > now;
     });
 
+    // FIX: root cause of "let admin end a live session anytime, even
+    // during the session" actually taking effect for whoever is ON the
+    // call. Editing/deleting a schedule row, or the dedicated "End for
+    // everyone"/"End now" actions (see endLiveSessionForEveryone() /
+    // endScheduledSessionNow() below), all just mutate class_schedule —
+    // realtime pushes that change to every client with this channel open,
+    // which re-runs loadSchedule() right here. If THIS client currently
+    // has a call open (state.videoActive) for the schedule that no longer
+    // comes back as `current` (because it was moved to end now, or
+    // deleted outright), force-close it immediately instead of leaving it
+    // running until its stale, already-armed auto-close timer eventually
+    // fires — that timer was set for the OLD end time and would otherwise
+    // let the call run right through the early end.
+    if (state.videoActive && state.activeCallScheduleId) {
+      const stillCurrent = current && String(current.id) === String(state.activeCallScheduleId);
+      if (!stillCurrent) {
+        closeLiveSession('This live session was ended by an admin.');
+      }
+    }
+
     if (!current) {
       state.currentSchedule = null;
       DOM.scheduleBanner.classList.add('hidden');
@@ -3451,7 +3478,11 @@
   // was no admin gate needed to see that banner, but there was also no
   // place to see the whole upcoming list. This renders every upcoming (or
   // still in-progress) session for the given channel into #groupScheduleList
-  // in the Profile screen — no role check, every member sees it.
+  // in the Profile screen — no role check, every member sees it. Admins
+  // additionally get edit/delete/"end now" controls on each row — see
+  // groupScheduleItemHtml() / groupScheduleEditRowHtml() below.
+  let groupScheduleEditingId = null;
+
   async function loadGroupScheduleList(channelId) {
     if (!DOM.groupScheduleList) return;
     DOM.groupScheduleList.innerHTML = '<div class="empty-note">Loading…</div>';
@@ -3480,21 +3511,84 @@
       return endsAt > now;
     });
 
+    // The row being edited may have just been deleted (by this admin or
+    // another) or rolled off the "upcoming" list — don't leave the picker
+    // pointed at a row that's no longer there.
+    if (groupScheduleEditingId && !upcoming.some((row) => String(row.id) === String(groupScheduleEditingId))) {
+      groupScheduleEditingId = null;
+    }
+
     if (!upcoming.length) {
       DOM.groupScheduleList.innerHTML = '<div class="empty-note">No live sessions scheduled yet.</div>';
       return;
     }
 
     DOM.groupScheduleList.innerHTML = upcoming.map((row) => groupScheduleItemHtml(row)).join('');
+
+    if (!state.isAdmin) return;
+
+    DOM.groupScheduleList.querySelectorAll('.gs-edit-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        groupScheduleEditingId = btn.dataset.id;
+        loadGroupScheduleList(channelId);
+      });
+    });
+    DOM.groupScheduleList.querySelectorAll('.gs-edit-cancel').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        groupScheduleEditingId = null;
+        loadGroupScheduleList(channelId);
+      });
+    });
+    DOM.groupScheduleList.querySelectorAll('.gs-edit-save').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const row = btn.closest('.group-schedule-item');
+        const ok = await updateScheduledSession(
+          btn.dataset.id,
+          row.querySelector('.gs-edit-date').value,
+          row.querySelector('.gs-edit-start').value,
+          row.querySelector('.gs-edit-duration').value
+        );
+        if (!ok) return;
+        groupScheduleEditingId = null;
+        loadGroupScheduleList(channelId);
+      });
+    });
+    DOM.groupScheduleList.querySelectorAll('.gs-delete-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const ok = await deleteScheduledSession(btn.dataset.id);
+        if (ok) loadGroupScheduleList(channelId);
+      });
+    });
+    DOM.groupScheduleList.querySelectorAll('.group-schedule-item-end-btn').forEach((btn) => {
+      btn.addEventListener('click', () => endScheduledSessionNow(btn.dataset.id));
+    });
   }
 
   function groupScheduleItemHtml(row) {
+    if (state.isAdmin && groupScheduleEditingId && String(groupScheduleEditingId) === String(row.id)) {
+      return groupScheduleEditRowHtml(row);
+    }
+
     const start = new Date(row.scheduled_time);
     const durationMinutes = row.duration_minutes || 45;
     const end = new Date(start.getTime() + durationMinutes * 60000);
     const isLiveNow = Date.now() >= start.getTime() && Date.now() < end.getTime();
     const dateLabel = start.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
     const timeLabel = `${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+    // FIX: root cause of "add option for admin to edit, delete and end
+    // live session anytime, even during the session" — these three
+    // controls are admin-only (every role can see the list itself, but
+    // only an admin can act on it). "End now" only shows while the
+    // session is actually live, since ending an upcoming or already-past
+    // one isn't a meaningful action.
+    const adminActions = state.isAdmin ? `
+      <div class="group-schedule-item-actions">
+        ${isLiveNow ? `<button type="button" class="group-schedule-item-end-btn" data-id="${row.id}" title="End this live session now for everyone"><i class="fas fa-ban"></i> End now</button>` : ''}
+        <button type="button" class="icon-btn gs-edit-btn" data-id="${row.id}" title="Edit"><i class="fas fa-pen"></i></button>
+        <button type="button" class="icon-btn gs-delete-btn" data-id="${row.id}" title="Delete"><i class="fas fa-trash" style="color:var(--danger);"></i></button>
+      </div>
+    ` : '';
 
     return `
       <div class="group-schedule-item${isLiveNow ? ' is-live' : ''}">
@@ -3503,8 +3597,104 @@
           <span class="group-schedule-item-time-label">${escapeHtml(timeLabel)}</span>
         </div>
         <div class="group-schedule-item-teacher"><i class="fas fa-chalkboard-user"></i> ${escapeHtml(getDisplayName(row.teacher_username))}</div>
+        ${adminActions}
       </div>
     `;
+  }
+
+  function groupScheduleEditRowHtml(row) {
+    const start = new Date(row.scheduled_time);
+    const pad = (n) => String(n).padStart(2, '0');
+    const dateVal = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
+    const timeVal = `${pad(start.getHours())}:${pad(start.getMinutes())}`;
+
+    return `
+      <div class="group-schedule-item is-editing">
+        <div class="group-schedule-edit-fields">
+          <input type="date" class="field-sm gs-edit-date" value="${dateVal}">
+          <input type="time" class="field-sm gs-edit-start" value="${timeVal}">
+          <input type="number" min="5" max="${MAX_SESSION_DURATION_MINUTES}" step="5" class="field-sm gs-edit-duration" value="${row.duration_minutes || 45}" title="Duration (minutes)">
+        </div>
+        <div class="group-schedule-edit-actions">
+          <button type="button" class="btn-admin-sm gs-edit-save" data-id="${row.id}"><i class="fas fa-check"></i> Save</button>
+          <button type="button" class="btn-admin-sm gs-edit-cancel"><i class="fas fa-xmark"></i> Cancel</button>
+        </div>
+      </div>
+    `;
+  }
+
+  // NOTE: updateScheduledSession()/deleteScheduledSession()/
+  // endScheduledSessionNow()/endLiveSessionForEveryone() below all target
+  // a specific row via .eq('id', ...). This assumes class_schedule has the
+  // standard Supabase auto-generated `id` primary key column, like every
+  // other table this app already targets by id (members, channels, ...).
+  // If your class_schedule table doesn't have one, these actions will
+  // fail with a "column id does not exist" error — add an `id` primary
+  // key column (uuid, default gen_random_uuid()) to fix it.
+  //
+  // FIX: root cause of "add option for admin to edit ... a scheduled
+  // session" — previously the only way to change a session was to delete
+  // it and recreate it from scratch via the calendar picker. This updates
+  // the single row in place (same class_schedule columns as
+  // setClassSchedule() writes — no schema change).
+  async function updateScheduledSession(id, dateStr, startTimeStr, durationMinutes) {
+    if (!dateStr || !startTimeStr) { alert('Pick a date and start time.'); return false; }
+    const duration = Math.round(Number(durationMinutes));
+    if (!Number.isFinite(duration) || duration <= 0) { alert('Enter a valid duration.'); return false; }
+    if (duration > MAX_SESSION_DURATION_MINUTES) {
+      alert(`A single session can't be longer than ${MAX_SESSION_DURATION_MINUTES / 60} hours.`);
+      return false;
+    }
+    const start = new Date(`${dateStr}T${startTimeStr}`);
+    if (Number.isNaN(start.getTime())) { alert('That date/time couldn\'t be understood.'); return false; }
+
+    const { error } = await supabase
+      .from('class_schedule')
+      .update({ scheduled_time: start.toISOString(), duration_minutes: duration })
+      .eq('id', id);
+
+    if (error) { alert('Could not update the session: ' + error.message); return false; }
+    return true;
+  }
+
+  // FIX: root cause of "add option for admin to ... delete [a scheduled]
+  // session". Deleting a currently-live session's row also ends it for
+  // everyone on the call — loadSchedule() (see its FIX note above) notices
+  // the row is gone and force-closes any open call tied to it.
+  async function deleteScheduledSession(id) {
+    if (!confirm('Delete this scheduled session? This can\'t be undone.')) return false;
+    const { error } = await supabase.from('class_schedule').delete().eq('id', id);
+    if (error) { alert('Could not delete: ' + error.message); return false; }
+    return true;
+  }
+
+  // FIX: root cause of "end live session anytime, even during the
+  // session" — the counterpart to endLiveSessionForEveryone() for when the
+  // admin wants to end a session from a schedule list rather than from
+  // inside the call itself. Pushes the row's end time to right now
+  // (duration_minutes = however many minutes have actually elapsed since
+  // it started); every connected client notices via realtime and closes
+  // any call open against it — see loadSchedule()'s FIX note.
+  async function endScheduledSessionNow(id, scheduledTimeIso) {
+    if (!confirm('End this live session now for everyone in the group?')) return;
+    const startedAt = scheduledTimeIso ? new Date(scheduledTimeIso).getTime() : null;
+    const elapsedMinutes = startedAt
+      ? Math.max(1, Math.ceil((Date.now() - startedAt) / 60000))
+      : null;
+
+    // The row's own scheduled_time wasn't always passed in by callers
+    // (schedule list rows already know it from the DOM data, but let's not
+    // require that) — fetch it if needed so the row genuinely ends "now"
+    // rather than getting an arbitrary short duration.
+    let duration = elapsedMinutes;
+    if (duration === null) {
+      const { data, error } = await supabase.from('class_schedule').select('scheduled_time').eq('id', id).maybeSingle();
+      if (error || !data) { alert('Could not find that session.'); return; }
+      duration = Math.max(1, Math.ceil((Date.now() - new Date(data.scheduled_time).getTime()) / 60000));
+    }
+
+    const { error } = await supabase.from('class_schedule').update({ duration_minutes: duration }).eq('id', id);
+    if (error) { alert('Could not end the session: ' + error.message); return; }
   }
 
   // Safety ceiling on how many dates one "Set time" submission can insert.
@@ -3817,13 +4007,29 @@
       `;
     }).join('');
 
-    DOM.calendarList.querySelectorAll('[data-channel-id]').forEach((el) => {
+    DOM.calendarList.querySelectorAll('.calendar-item-link').forEach((el) => {
       el.addEventListener('click', () => {
         const channel = allChannels.find((c) => String(c.id) === el.dataset.channelId);
         if (!channel) { alert('That group no longer exists.'); return; }
         selectChannel(channel);
         goToScreen('profile');
       });
+    });
+    // FIX: root cause of "add option for admin to ... delete and end live
+    // session anytime" on the cross-group calendar — reuses the same
+    // deleteScheduledSession()/endScheduledSessionNow() that power the
+    // per-group Scheduled Classes list, so an admin can act on a session
+    // right from this overview without navigating into the group first.
+    // This screen is already admin-only (see viewCalendarBtn's gating), so
+    // no extra role check is needed here.
+    DOM.calendarList.querySelectorAll('.calendar-item-delete').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const ok = await deleteScheduledSession(btn.dataset.id);
+        if (ok) loadAllSchedules();
+      });
+    });
+    DOM.calendarList.querySelectorAll('.calendar-item-end').forEach((btn) => {
+      btn.addEventListener('click', () => endScheduledSessionNow(btn.dataset.id));
     });
   }
 
@@ -3837,17 +4043,23 @@
     const isLiveNow = Date.now() >= start.getTime() && Date.now() < end.getTime();
 
     return `
-      <button type="button" class="calendar-item${isLiveNow ? ' is-live' : ''}" data-channel-id="${escapeHtml(String(row.channel_id))}">
-        <div class="calendar-item-time">
-          <span class="calendar-item-time-start">${startLabel}</span>
-          <span class="calendar-item-time-end">${endLabel}</span>
+      <div class="calendar-item${isLiveNow ? ' is-live' : ''}">
+        <button type="button" class="calendar-item-link" data-channel-id="${escapeHtml(String(row.channel_id))}">
+          <div class="calendar-item-time">
+            <span class="calendar-item-time-start">${startLabel}</span>
+            <span class="calendar-item-time-end">${endLabel}</span>
+          </div>
+          <div class="calendar-item-text">
+            <div class="calendar-item-group">${escapeHtml(groupName)}</div>
+            <div class="calendar-item-teacher"><i class="fas fa-chalkboard-user"></i> ${escapeHtml(getDisplayName(row.teacher_username))}</div>
+          </div>
+          <div class="calendar-item-duration">${isLiveNow ? '<span class="calendar-live-dot" title="Live now"></span>' : ''}${durationMinutes}m</div>
+        </button>
+        <div class="calendar-item-admin-actions">
+          ${isLiveNow ? `<button type="button" class="icon-btn calendar-item-end" data-id="${row.id}" title="End this live session now for everyone"><i class="fas fa-ban" style="color:var(--danger);"></i></button>` : ''}
+          <button type="button" class="icon-btn calendar-item-delete" data-id="${row.id}" title="Delete"><i class="fas fa-trash" style="color:var(--danger);"></i></button>
         </div>
-        <div class="calendar-item-body">
-          <div class="calendar-item-group">${escapeHtml(groupName)}</div>
-          <div class="calendar-item-teacher"><i class="fas fa-chalkboard-user"></i> ${escapeHtml(getDisplayName(row.teacher_username))}</div>
-        </div>
-        <div class="calendar-item-duration">${isLiveNow ? '<span class="calendar-live-dot" title="Live now"></span>' : ''}${durationMinutes}m</div>
-      </button>
+      </div>
     `;
   }
 
@@ -4501,11 +4713,54 @@
   }
 
   function closeLiveSession(message) {
+    // FIX: several code paths can now try to close the same call around
+    // the same moment — the natural auto-close timer, loadSchedule()'s
+    // force-close check, a manual tap of the close button — all racing
+    // to call this. Only the FIRST one that finds a call actually active
+    // should alert; capturing this before flipping state.videoActive off
+    // stops the others from popping a duplicate "session ended" alert.
+    const wasActive = state.videoActive;
     clearLiveSessionAutoCloseTimer();
     DOM.videoContainer.classList.add('hidden');
     DOM.videoIframe.src = '';
     state.videoActive = false;
-    if (message) alert(message);
+    state.activeCallScheduleId = null;
+    if (DOM.endLiveSessionBtn) DOM.endLiveSessionBtn.classList.add('hidden');
+    if (message && wasActive) alert(message);
+  }
+
+  // FIX: root cause of "add option for admin to ... end live session
+  // anytime, even during the session" — closing a call used to only ever
+  // affect the person who tapped the local close button; there was no way
+  // for an admin to end it for everyone else still on the call. This
+  // pushes the session's end time to right now (reusing the same
+  // class_schedule row + duration_minutes column everything else already
+  // reads/writes — no schema change), which realtime pushes to every
+  // client with this group open; each one independently notices (in
+  // loadSchedule() above) that their open call's schedule is no longer
+  // current and force-closes it. See the "End for everyone" button wired
+  // to this in the video overlay, and endScheduledSessionNow() below for
+  // the equivalent action from a schedule list row when the admin isn't
+  // even on the call.
+  async function endLiveSessionForEveryone() {
+    if (!state.activeCallScheduleId) { closeLiveSession(); return; }
+    if (!confirm('End this live session now for everyone in the group?')) return;
+
+    const startedAt = state.currentSchedule && String(state.currentSchedule.id) === String(state.activeCallScheduleId)
+      ? new Date(state.currentSchedule.scheduled_time).getTime()
+      : Date.now();
+    const elapsedMinutes = Math.max(1, Math.ceil((Date.now() - startedAt) / 60000));
+
+    const { error } = await supabase
+      .from('class_schedule')
+      .update({ duration_minutes: elapsedMinutes })
+      .eq('id', state.activeCallScheduleId);
+
+    if (error) { alert('Could not end the session: ' + error.message); return; }
+    // Realtime will also reach every other participant's client and close
+    // their call — but close this one immediately rather than waiting on
+    // this client's own round trip back through the subscription.
+    closeLiveSession('You ended this live session for everyone.');
   }
 
   async function joinLiveClass() {
@@ -4527,7 +4782,11 @@
     DOM.videoContainer.classList.remove('hidden');
     DOM.videoIframe.src = buildLiveUrl();
     state.videoActive = true;
+    state.activeCallScheduleId = state.currentSchedule ? state.currentSchedule.id : null;
     DOM.liveBtnText.textContent = state.isTeacher ? 'Start Live Session' : 'Join Live Session';
+    if (DOM.endLiveSessionBtn) {
+      DOM.endLiveSessionBtn.classList.toggle('hidden', !(state.isAdmin && state.activeCallScheduleId));
+    }
 
     // Arm the auto-close timer against this specific session's real end
     // time. If somehow already past it (clock drift, a slow join right at
@@ -6098,6 +6357,10 @@
     // alert later on whatever screen the user had moved on to.
     closeLiveSession();
   });
+
+  if (DOM.endLiveSessionBtn) {
+    DOM.endLiveSessionBtn.addEventListener('click', () => endLiveSessionForEveryone());
+  }
 
   DOM.fileInput.addEventListener('change', function() {
     const file = this.files[0];
