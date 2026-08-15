@@ -31,12 +31,20 @@
   <link rel="icon" type="image/png" sizes="32x32" href="nouscomplex.png">
   <link rel="apple-touch-icon" href="nouscomplex.png">
 
-  <!-- PWA Manifest -->
-  <link rel="manifest" href='data:application/json;base64,eyJuYW1lIjogIk5vdXMgQ29tcGxleCBPcmJpdCIsICJzaG9ydF9uYW1lIjogIk9yYml0IiwgImRlc2NyaXB0aW9uIjogIlVuaWZpZWQgY29tbXVuaWNhdGlvbiBwbGF0Zm9ybSIsICJzdGFydF91cmwiOiAiLiIsICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLCAiYmFja2dyb3VuZF9jb2xvciI6ICIjZmZmZmZmIiwgInRoZW1lX2NvbG9yIjogIiMxRjZGNzgiLCAiaWNvbnMiOiBbeyJzcmMiOiAibm91c2NvbXBsZXgtc3BsYXNoLnBuZyIsICJzaXplcyI6ICI1MTJ4NTEyIiwgInR5cGUiOiAiaW1hZ2UvcG5nIiwgInB1cnBvc2UiOiAiYW55In1dfQ==' />
+  <!-- PWA Manifest
+       FIX: the manifest's "icons" entry — used by browsers/OSes as the
+       installed-app/home-screen/window icon (e.g. the taskbar icon for an
+       installed desktop PWA) — used to point at nouscomplex-splash.png.
+       That file is the splash graphic and should only ever be used for the
+       splash/loading screen (see #appLoading below); the actual app icon
+       everywhere else (favicon, apple-touch-icon, and now here) is
+       nouscomplex.png. Decoded, this base64 payload is:
+       {"name":"Nous Complex Orbit","short_name":"Orbit","description":"Unified communication platform","start_url":".","display":"standalone","background_color":"#ffffff","theme_color":"#1F6F78","icons":[{"src":"nouscomplex.png","sizes":"512x512","type":"image/png","purpose":"any"}]} -->
+  <link rel="manifest" href='data:application/json;base64,eyJuYW1lIjogIk5vdXMgQ29tcGxleCBPcmJpdCIsICJzaG9ydF9uYW1lIjogIk9yYml0IiwgImRlc2NyaXB0aW9uIjogIlVuaWZpZWQgY29tbXVuaWNhdGlvbiBwbGF0Zm9ybSIsICJzdGFydF91cmwiOiAiLiIsICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLCAiYmFja2dyb3VuZF9jb2xvciI6ICIjZmZmZmZmIiwgInRoZW1lX2NvbG9yIjogIiMxRjZGNzgiLCAiaWNvbnMiOiBbeyJzcmMiOiAibm91c2NvbXBsZXgucG5nIiwgInNpemVzIjogIjUxMng1MTIiLCAidHlwZSI6ICJpbWFnZS9wbmciLCAicHVycG9zZSI6ICJhbnkifV19' />
 </head>
 <body>
 
-<!-- ===== SESSION CHECK LOADER =====
+<!-- ===== SESSION CHECK LOADER / SPLASH SCREEN =====
      FIX: root cause of "opening the app / hard refresh shows the login
      page instead of home". #authCard used to be visible by default in the
      markup, and app.js only hid it deep inside completeLogin() — AFTER
@@ -50,9 +58,16 @@
      gap: it's the only thing visible on load, app.js flips straight from
      this to whichever of #authCard/#dashboard is correct once it knows
      the answer (see restoreSession()/completeLogin() in app.js), so the
-     login form itself is never shown to someone who is still signed in. -->
+     login form itself is never shown to someone who is still signed in.
+
+     FIX: this is also now the app's splash screen — it's the single
+     screen shown between the page loading and the app knowing where to
+     send the user, so it uses nouscomplex-splash.png (the dedicated
+     splash graphic) instead of the small nouscomplex.png app icon. There
+     is only ever this one loading/splash screen in the app; nothing else
+     needs to be removed. -->
 <div id="appLoading" class="app-loading">
-  <img src="nouscomplex.png" alt="" class="app-loading-emblem" onerror="this.style.display='none'">
+  <img src="nouscomplex-splash.png" alt="" class="app-loading-splash" onerror="this.style.display='none'">
   <div class="app-loading-spinner"></div>
 </div>
 <script>
