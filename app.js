@@ -303,13 +303,15 @@
     sharedMediaGrid: $('sharedMediaGrid'),
     adminProfileSchedule: $('adminProfileSchedule'),
     scheduleTeacherInput: $('scheduleTeacherInput'),
-    scheduleTimeInput: $('scheduleTimeInput'),
+    scheduleDateInput: $('scheduleDateInput'),
+    scheduleStartTimeInput: $('scheduleStartTimeInput'),
     scheduleEndTimeInput: $('scheduleEndTimeInput'),
     scheduleRepeatInput: $('scheduleRepeatInput'),
     scheduleRepeatUntilWrap: $('scheduleRepeatUntilWrap'),
     scheduleRepeatUntilInput: $('scheduleRepeatUntilInput'),
     scheduleRepeatHint: $('scheduleRepeatHint'),
     setScheduleBtn: $('setScheduleBtn'),
+    groupScheduleList: $('groupScheduleList'),
     
     adminDescEdit: $('adminDescEdit'),
     channelDescInput: $('channelDescInput'),
@@ -3316,6 +3318,31 @@
   // generous for any live class.
   const MAX_SESSION_DURATION_MINUTES = 8 * 60;
 
+  // FIX: root cause of "the live session should automatically disappear on
+  // ending time" — the schedule banner + Join/Start button only ever
+  // re-checked whether a session was still current when something ELSE
+  // triggered a reload (opening the group, a realtime DB change). If an
+  // admin just sat on the chat screen watching the clock tick past a
+  // session's end time with nothing else happening, the banner and the
+  // active button stayed exactly as they were — nothing was watching the
+  // clock itself. This timer is armed for the exact moment the currently
+  // shown session ends and simply re-runs loadSchedule() then, which
+  // naturally hides the banner / deactivates the button (or rolls over to
+  // the next scheduled session) with no page reload or navigation needed.
+  let scheduleExpiryTimer = null;
+  // setTimeout delays are unreliable (and in some engines fire immediately)
+  // past ~24.8 days (a 32-bit ms count) — stay well under that. A session
+  // farther out than this doesn't need a live watchdog yet anyway; it'll
+  // get one once it becomes the nearest schedule and this reloads again.
+  const SCHEDULE_EXPIRY_WATCHDOG_MAX_MS = 20 * 24 * 60 * 60 * 1000;
+
+  function clearScheduleExpiryTimer() {
+    if (scheduleExpiryTimer) {
+      clearTimeout(scheduleExpiryTimer);
+      scheduleExpiryTimer = null;
+    }
+  }
+
   async function loadSchedule(channelId) {
     // FIX: root cause of the live-session button going "dead" partway
     // through a longer class. This used to look back a flat 1 hour and
@@ -3333,6 +3360,13 @@
       .gte('scheduled_time', new Date(Date.now() - MAX_SESSION_DURATION_MINUTES * 60000).toISOString())
       .order('scheduled_time', { ascending: true })
       .limit(50);
+
+    // Every call clears any previously-armed watchdog first — including
+    // one left over from a DIFFERENT channel the admin has since switched
+    // away from — since selectChannel() always calls loadSchedule() again
+    // on every channel switch, this guarantees only ever one timer is live
+    // at a time, and it's always for the channel actually being viewed.
+    clearScheduleExpiryTimer();
 
     if (error) {
       state.currentSchedule = null;
@@ -3356,6 +3390,12 @@
     state.currentSchedule = current;
     renderScheduleBanner(current);
     updateLiveButtonState();
+
+    const endsAt = new Date(current.scheduled_time).getTime() + (current.duration_minutes || 45) * 60000;
+    const msUntilEnd = endsAt - now;
+    if (msUntilEnd > 0 && msUntilEnd <= SCHEDULE_EXPIRY_WATCHDOG_MAX_MS) {
+      scheduleExpiryTimer = setTimeout(() => loadSchedule(channelId), msUntilEnd + 500);
+    }
   }
 
   function renderScheduleBanner(schedule) {
@@ -3391,8 +3431,77 @@
     }
     scheduleSubscription = supabase
       .channel(`schedule:${channelId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'class_schedule', filter: `channel_id=eq.${channelId}` }, () => loadSchedule(channelId))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'class_schedule', filter: `channel_id=eq.${channelId}` }, () => {
+        loadSchedule(channelId);
+        // Keep the "Scheduled Classes" list on the Profile screen (see
+        // loadGroupScheduleList() below) live too, so anyone looking at it
+        // sees a newly-added/edited/removed session without reopening the
+        // group.
+        loadGroupScheduleList(channelId);
+      })
       .subscribe();
+  }
+
+  // FIX: root cause of "show the list of scheduled classes in group
+  // profile to all" — a group's scheduled sessions were only ever visible
+  // one-at-a-time (the nearest one) via the chat header banner, and there
+  // was no admin gate needed to see that banner, but there was also no
+  // place to see the whole upcoming list. This renders every upcoming (or
+  // still in-progress) session for the given channel into #groupScheduleList
+  // in the Profile screen — no role check, every member sees it.
+  async function loadGroupScheduleList(channelId) {
+    if (!DOM.groupScheduleList) return;
+    DOM.groupScheduleList.innerHTML = '<div class="empty-note">Loading…</div>';
+
+    const { data, error } = await supabase
+      .from('class_schedule')
+      .select('*')
+      .eq('channel_id', channelId)
+      .gte('scheduled_time', new Date(Date.now() - MAX_SESSION_DURATION_MINUTES * 60000).toISOString())
+      .order('scheduled_time', { ascending: true })
+      .limit(30);
+
+    // The admin may have switched groups while this was in flight — don't
+    // stomp the list with a now-stale channel's data.
+    if (!state.currentChannel || String(state.currentChannel.id) !== String(channelId)) return;
+
+    if (error) {
+      console.warn('loadGroupScheduleList failed:', error);
+      DOM.groupScheduleList.innerHTML = '<div class="empty-note">Could not load the schedule.</div>';
+      return;
+    }
+
+    const now = Date.now();
+    const upcoming = (data || []).filter((row) => {
+      const endsAt = new Date(row.scheduled_time).getTime() + (row.duration_minutes || 45) * 60000;
+      return endsAt > now;
+    });
+
+    if (!upcoming.length) {
+      DOM.groupScheduleList.innerHTML = '<div class="empty-note">No live sessions scheduled yet.</div>';
+      return;
+    }
+
+    DOM.groupScheduleList.innerHTML = upcoming.map((row) => groupScheduleItemHtml(row)).join('');
+  }
+
+  function groupScheduleItemHtml(row) {
+    const start = new Date(row.scheduled_time);
+    const durationMinutes = row.duration_minutes || 45;
+    const end = new Date(start.getTime() + durationMinutes * 60000);
+    const isLiveNow = Date.now() >= start.getTime() && Date.now() < end.getTime();
+    const dateLabel = start.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+    const timeLabel = `${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+    return `
+      <div class="group-schedule-item${isLiveNow ? ' is-live' : ''}">
+        <div class="group-schedule-item-date">
+          <span class="group-schedule-item-date-label">${escapeHtml(dateLabel)}${isLiveNow ? ' <span class="calendar-live-dot" title="Live now"></span>' : ''}</span>
+          <span class="group-schedule-item-time-label">${escapeHtml(timeLabel)}</span>
+        </div>
+        <div class="group-schedule-item-teacher"><i class="fas fa-chalkboard-user"></i> ${escapeHtml(getDisplayName(row.teacher_username))}</div>
+      </div>
+    `;
   }
 
   // Safety ceiling on how many rows a single "Set time" submission can
@@ -3413,16 +3522,26 @@
   //
   // FIX: root cause of "no meeting ending time" — `durationMinutes` used
   // to be a free-typed number nothing else in the app actually relied on.
-  // Taking a real end datetime here (`endDatetimeLocal`) lets us compute an
-  // accurate duration_minutes for storage (no schema change needed — same
-  // column as before) while giving joinLiveClass() a real clock time to
-  // auto-close the call at, and loadSchedule() an accurate end time to
-  // decide the live-session button is still "current".
-  async function setClassSchedule(teacherUsername, startDatetimeLocal, endDatetimeLocal, repeat, repeatUntilDate) {
+  // Taking a real end time here lets us compute an accurate
+  // duration_minutes for storage (no schema change needed — same column as
+  // before) while giving joinLiveClass() a real clock time to auto-close
+  // the call at, and loadSchedule() an accurate end time to decide the
+  // live-session button is still "current".
+  //
+  // FIX: root cause of "make a checklist / show a calendar to pick day,
+  // start, end" — the form used to take one combined date+time value for
+  // each of start/end, so picking a date and a time meant scrolling
+  // through both inside a single control, twice. `dateStr` (from a native
+  // <input type="date"> — an actual calendar picker) is now separate from
+  // `startTimeStr`/`endTimeStr` (native <input type="time"> pickers), and
+  // this combines them back into real Date objects here. If the end time
+  // is earlier than (or equal to) the start time, that's treated as an
+  // overnight session ending the next day rather than an error.
+  async function setClassSchedule(teacherUsername, dateStr, startTimeStr, endTimeStr, repeat, repeatUntilDate) {
     if (!state.currentChannel) { alert('Select a channel first.'); return false; }
     teacherUsername = normalizeUsername(teacherUsername);
-    if (!teacherUsername || !startDatetimeLocal || !endDatetimeLocal) {
-      alert('Enter a teacher username, a start time, and an end time.');
+    if (!teacherUsername || !dateStr || !startTimeStr || !endTimeStr) {
+      alert('Enter a teacher username, a day, a start time, and an end time.');
       return false;
     }
 
@@ -3432,12 +3551,21 @@
       return false;
     }
 
-    const start = new Date(startDatetimeLocal);
-    const end = new Date(endDatetimeLocal);
+    const start = new Date(`${dateStr}T${startTimeStr}`);
+    const end = new Date(`${dateStr}T${endTimeStr}`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      alert('That day/time couldn\'t be understood — please re-pick them.');
+      return false;
+    }
+    // An end time at or before the start time (e.g. starts 22:30, ends
+    // 00:30) means the session runs past midnight into the next day.
+    if (end.getTime() <= start.getTime()) {
+      end.setDate(end.getDate() + 1);
+    }
     const durationMinutes = Math.round((end.getTime() - start.getTime()) / 60000);
 
     if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
-      alert('The end time must be after the start time.');
+      alert('The end time must be different from the start time.');
       return false;
     }
     if (durationMinutes > MAX_SESSION_DURATION_MINUTES) {
@@ -3606,6 +3734,15 @@
     `;
   }
 
+  // FIX: the "Live now" marker on each row (see calendarItemHtml() above)
+  // only ever got recomputed when a postgres_changes event fired or the
+  // screen was reopened — so it wouldn't flip on/off by itself as the
+  // clock crossed a session's start/end while an admin just sat looking at
+  // the list. A light re-render every 30s (cheap — allChannels/rows are
+  // already in memory, no extra network call) keeps it honest without
+  // needing a dedicated timer per row.
+  let calendarLiveRefreshInterval = null;
+
   function subscribeToAllSchedules() {
     if (calendarSubscription) {
       supabase.removeChannel(calendarSubscription);
@@ -3615,12 +3752,19 @@
       .channel('schedule:all')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'class_schedule' }, () => loadAllSchedules())
       .subscribe();
+
+    if (calendarLiveRefreshInterval) clearInterval(calendarLiveRefreshInterval);
+    calendarLiveRefreshInterval = setInterval(() => loadAllSchedules(), 30000);
   }
 
   function unsubscribeFromAllSchedules() {
     if (calendarSubscription) {
       supabase.removeChannel(calendarSubscription);
       calendarSubscription = null;
+    }
+    if (calendarLiveRefreshInterval) {
+      clearInterval(calendarLiveRefreshInterval);
+      calendarLiveRefreshInterval = null;
     }
   }
 
@@ -3678,6 +3822,9 @@
     DOM.profileChannelName.textContent = state.currentChannel.name;
     loadChannelDescription(state.currentChannel.id);
     updateProfileMeta();
+    // Visible to every role — see loadGroupScheduleList() in the CLASS
+    // SCHEDULING section above.
+    loadGroupScheduleList(state.currentChannel.id);
 
     const media = state.messages.filter((m) => isImageFile(m.file_url));
     if (!media.length) {
@@ -5334,6 +5481,7 @@
       supabase.removeChannel(scheduleSubscription);
       scheduleSubscription = null;
     }
+    clearScheduleExpiryTimer();
     unsubscribeFromAllSchedules();
     teardownPresence();
     cleanupInactivityManager();
@@ -5908,7 +6056,8 @@
   DOM.setScheduleBtn.addEventListener('click', async () => {
     const ok = await setClassSchedule(
       DOM.scheduleTeacherInput.value.trim(),
-      DOM.scheduleTimeInput.value,
+      DOM.scheduleDateInput.value,
+      DOM.scheduleStartTimeInput.value,
       DOM.scheduleEndTimeInput.value,
       DOM.scheduleRepeatInput.value,
       DOM.scheduleRepeatUntilInput.value
@@ -5919,7 +6068,8 @@
     // after being told to fix it. Only clear the form on an actual save.
     if (!ok) return;
     DOM.scheduleTeacherInput.value = '';
-    DOM.scheduleTimeInput.value = '';
+    DOM.scheduleDateInput.value = '';
+    DOM.scheduleStartTimeInput.value = '';
     DOM.scheduleEndTimeInput.value = '';
     DOM.scheduleRepeatInput.value = 'none';
     DOM.scheduleRepeatUntilInput.value = '';
@@ -5938,19 +6088,21 @@
     });
   }
 
-  // FIX: keep the end-time input from ever being left before the start
-  // time — nudge it forward by the same default 45-minute class length
-  // whenever the admin (re)picks a start time and hasn't set an end time
-  // yet, so the common case needs no extra typing.
-  if (DOM.scheduleTimeInput && DOM.scheduleEndTimeInput) {
-    DOM.scheduleTimeInput.addEventListener('change', () => {
-      if (!DOM.scheduleTimeInput.value || DOM.scheduleEndTimeInput.value) return;
-      const start = new Date(DOM.scheduleTimeInput.value);
-      if (Number.isNaN(start.getTime())) return;
-      const suggestedEnd = new Date(start.getTime() + 45 * 60000);
+  // FIX: keep the end-time input from ever being left blank — nudge it
+  // forward by the same default 45-minute class length whenever the admin
+  // (re)picks a start time and hasn't set an end time yet, so the common
+  // case needs no extra typing (they can still change it).
+  if (DOM.scheduleStartTimeInput && DOM.scheduleEndTimeInput) {
+    DOM.scheduleStartTimeInput.addEventListener('change', () => {
+      if (!DOM.scheduleStartTimeInput.value || DOM.scheduleEndTimeInput.value) return;
+      const [h, m] = DOM.scheduleStartTimeInput.value.split(':').map(Number);
+      if (!Number.isFinite(h) || !Number.isFinite(m)) return;
+      // Using an arbitrary fixed date just to do minute-of-day arithmetic —
+      // rolling past midnight here is fine, setClassSchedule() already
+      // treats an end time at/before the start time as "next day".
+      const suggestedEnd = new Date(2000, 0, 1, h, m + 45);
       const pad = (n) => String(n).padStart(2, '0');
-      DOM.scheduleEndTimeInput.value =
-        `${suggestedEnd.getFullYear()}-${pad(suggestedEnd.getMonth() + 1)}-${pad(suggestedEnd.getDate())}T${pad(suggestedEnd.getHours())}:${pad(suggestedEnd.getMinutes())}`;
+      DOM.scheduleEndTimeInput.value = `${pad(suggestedEnd.getHours())}:${pad(suggestedEnd.getMinutes())}`;
     });
   }
 
