@@ -5753,6 +5753,22 @@
     DOM.authCard.classList.add('hidden');
     DOM.dashboard.classList.remove('hidden');
 
+    // FIX: root cause of "app opens showing Settings, then blinks to Home"
+    // — the app should always land on Home on open, but this used to only
+    // get set at the very END of completeLogin(), after awaiting role
+    // lookups, the channel list, unread badges, statuses, and a
+    // Notification-permission prompt. Nothing in that list needs the
+    // screen already switched to run — every one of them populates its own
+    // content once it loads, regardless of which screen is showing. On a
+    // slow mobile connection that whole chain can take a moment, during
+    // which a phone's own app-relaunch transition can still be showing
+    // whatever screen was on screen when the app was last closed (often
+    // Settings). Switching to Home the INSTANT the dashboard is revealed —
+    // before any of that network work even starts — closes that window
+    // instead of leaving it open until everything finishes loading.
+    screenHistory = [];
+    goToScreen('chats');
+
     await loadRoleCache();
     const role = getRoleFromUsername(username);
     const key = roleKey(username);
@@ -5848,10 +5864,8 @@
 
     syncNotificationToggleState();
 
-    // FIX: Reset history and go to chats (home screen)
-    screenHistory = [];
-    goToScreen('chats');
-    
+    // Home was already selected the instant the dashboard was revealed,
+    // at the top of this function — see the FIX note up there.
     console.log('✅ Login complete!');
   }
 
