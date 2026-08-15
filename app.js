@@ -234,6 +234,8 @@
 
     adminCreateUserCard: $('adminCreateUserCard'),
     adminUserManagementCard: $('adminUserManagementCard'),
+    addUserToggleBtn: $('addUserToggleBtn'),
+    manageUsersToggleBtn: $('manageUsersToggleBtn'),
     newUserUsername: $('newUserUsername'),
     newUserDisplayName: $('newUserDisplayName'),
     newUserRole: $('newUserRole'),
@@ -5792,8 +5794,14 @@
 
     DOM.adminSettingsCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
     if (DOM.viewCalendarBtn) DOM.viewCalendarBtn.classList.toggle('hidden', !state.isAdmin);
-    DOM.adminCreateUserCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
-    DOM.adminUserManagementCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
+    // FIX: "Add Teacher or Student" and "Manage Users" are now expandable
+    // panels nested inside #adminSettingsCard (see index.html) rather than
+    // their own always-visible cards, so they no longer need their own
+    // role-based hidden toggle here — #adminSettingsCard already hides the
+    // whole section (these panels included) from non-admins. Each panel
+    // starts collapsed (its "hidden" class from the markup) and is only
+    // opened by tapping its row — see the addUserToggleBtn/
+    // manageUsersToggleBtn listeners below (toggleAdminPanel()).
     DOM.adminProfileSchedule.classList.toggle('hidden', !state.isAdmin);
 
     if (state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE) {
@@ -6519,6 +6527,28 @@
     if (name) await createChannel(name);
   }
   DOM.createChannelBtn.addEventListener('click', handleCreateChannel);
+
+  // FIX: expand/collapse for the "Add Teacher or Student" / "Manage Users"
+  // rows now nested inside the Admin tools card (see index.html) — tapping
+  // the row shows/hides its panel in place and flips the chevron via
+  // aria-expanded (styled in styles.css), instead of the panel always
+  // being visible in its own separate card.
+  function toggleAdminPanel(toggleBtn, panelEl) {
+    if (!toggleBtn || !panelEl) return;
+    const willShow = panelEl.classList.contains('hidden');
+    panelEl.classList.toggle('hidden', !willShow);
+    toggleBtn.setAttribute('aria-expanded', willShow ? 'true' : 'false');
+  }
+  if (DOM.addUserToggleBtn) {
+    DOM.addUserToggleBtn.addEventListener('click', () => {
+      toggleAdminPanel(DOM.addUserToggleBtn, DOM.adminCreateUserCard);
+    });
+  }
+  if (DOM.manageUsersToggleBtn) {
+    DOM.manageUsersToggleBtn.addEventListener('click', () => {
+      toggleAdminPanel(DOM.manageUsersToggleBtn, DOM.adminUserManagementCard);
+    });
+  }
 
   DOM.generatePasswordBtn.addEventListener('click', () => {
     DOM.newUserPassword.value = generatePassword();
