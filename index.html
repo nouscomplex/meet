@@ -316,15 +316,20 @@
             <span class="title-name" id="chatDetailName">Select a Session</span>
             <span class="title-sub" id="chatDetailSub"></span>
           </button>
-          <!-- FIX: root cause of "the session button isn't dead when there's
-               nothing scheduled" — this used to be clickable at all times,
-               whether or not a class had been scheduled for the open group.
-               Defaults to disabled + the muted "dead" look here (see
-               .btn-live-pill-dead in styles.css) so there's no flash of an
-               active button before app.js has had a chance to check; it's
-               enabled the moment loadSchedule() finds a real schedule row
-               for this group (see updateLiveButtonState() in app.js). -->
-          <button id="joinLiveBtn" class="btn-live-pill btn-live-pill-dead" disabled aria-disabled="true" title="No live session is scheduled for this group yet">
+          <!-- FIX: root cause of "the live session button gets activated on
+               scheduling instead of at the scheduled time, and shows to
+               everyone instead of just the concerned teacher, then
+               students" — this used to be clickable the instant ANY
+               schedule row existed for the group, for any teacher/student.
+               Defaults to hidden + disabled + the muted "dead" look here
+               (see .btn-live-pill-dead in styles.css) so there's no flash of
+               a button before app.js has had a chance to check; it's only
+               revealed — as "Start Live Session" for the exact teacher a
+               session was booked for, once it's actually that scheduled
+               time, or as "Join Live Session" for everyone else once that
+               teacher has pressed Start — by getLiveButtonMode() /
+               updateLiveButtonState() in app.js. -->
+          <button id="joinLiveBtn" class="btn-live-pill btn-live-pill-dead hidden" disabled aria-disabled="true" title="No live session is scheduled for this group yet">
             <i class="fas fa-tower-broadcast"></i> <span id="liveBtnText">Join Live Session</span>
           </button>
         </header>
