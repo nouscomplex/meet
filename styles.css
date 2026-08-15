@@ -417,7 +417,7 @@ button { font-family: inherit; }
 .empty-note { font-size: 13px; color: var(--ink-faint); padding: 10px 2px; }
 
 /* ============================================================
-   SESSION CHECK LOADER (FIX — see #appLoading in index.html)
+   SESSION CHECK LOADER / SPLASH SCREEN (FIX — see #appLoading in index.html)
    ============================================================ */
 .app-loading {
   position: fixed;
@@ -430,12 +430,14 @@ button { font-family: inherit; }
   gap: 18px;
   background: var(--accent);
 }
-.app-loading-emblem {
-  width: 64px;
-  height: 64px;
-  border-radius: 16px;
-  object-fit: cover;
-  box-shadow: 0 8px 24px -6px rgba(0,0,0,0.35);
+/* FIX: was .app-loading-emblem — a small 64px app-icon crop of
+   nouscomplex.png. This is the app's splash screen now, so it renders the
+   dedicated nouscomplex-splash.png graphic large enough to read as a real
+   splash (not a tiny icon), without cropping it into a rounded square. */
+.app-loading-splash {
+  width: min(220px, 60vw);
+  height: auto;
+  object-fit: contain;
 }
 .app-loading-spinner {
   width: 26px;
