@@ -298,11 +298,20 @@ button { font-family: inherit; }
 
   .fab { bottom: 28px !important; }
   
-  /* Hide back buttons on desktop */
+  /* Hide back buttons on desktop.
+     FIX: root cause of "group profile has no way back on laptop, mobile is
+     fine" — #backFromProfile used to be blanket-hidden here along with the
+     others. That's fine for screens with an obvious alternate way back
+     (Chat/Updates/Calendar all have the persistent chat list or bottom nav
+     to fall back on), but Profile is opened by drilling into a session
+     (Chats → Chat → Profile) and, on desktop, replaces the chat pane
+     entirely with nothing left pointing back to it — re-clicking the same
+     row in the list on the left does work, but there was no visible
+     control that said so. #backFromProfile is excluded from this rule so
+     it keeps the same working back button mobile already has. */
   #backFromChat,
   #backFromUpdates,
   #backFromMembers,
-  #backFromProfile,
   #backFromCalendar {
     display: none !important;
   }
@@ -1032,6 +1041,26 @@ body.theme-dark .brand-word { color: #3A3E63; }
 .settings-action-row:last-child { border-bottom: none; }
 .settings-action-row:hover { background: var(--surface-sunken); }
 .settings-action-row i { color: var(--role-admin); width: 16px; }
+
+/* FIX: "Add Teacher or Student" / "Manage Users" — now rows inside the
+   Admin tools card (see #adminSettingsCard in index.html) that expand a
+   panel in place, matching how Create New Session / Live Sessions
+   Calendar already look, instead of always-open standalone cards. */
+.admin-toggle-chevron {
+  margin-left: auto;
+  width: auto !important;
+  font-size: 12px;
+  color: var(--ink-faint) !important;
+  transition: transform 0.15s ease;
+}
+.admin-toggle-row[aria-expanded="true"] .admin-toggle-chevron {
+  transform: rotate(180deg);
+}
+.admin-panel {
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-sunken);
+}
+.admin-panel:last-child { border-bottom: none; }
 
 .logout-btn {
   display: flex;
