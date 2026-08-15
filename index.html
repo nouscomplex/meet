@@ -221,6 +221,17 @@
             <button id="createChannelBtn" class="settings-action-row">
               <i class="fas fa-plus"></i> Create New Session
             </button>
+            <!-- FIX: root cause of "admin can't see the calendar within
+                 every group to schedule the live session" — scheduling a
+                 class time only ever lived inside a single group's Profile
+                 screen, one group at a time, so an admin had no way to see
+                 every group's scheduled session together and compare who's
+                 teaching what, when. Opens #screenCalendar (see app.js
+                 loadAllSchedules()/renderCalendarList()), which lists every
+                 scheduled session across every group, grouped by day. -->
+            <button id="viewCalendarBtn" class="hidden settings-action-row">
+              <i class="fas fa-calendar-days"></i> Live Sessions Calendar
+            </button>
           </div>
 
           <div id="adminCreateUserCard" class="hidden settings-list" style="margin-top:14px;">
@@ -305,7 +316,15 @@
             <span class="title-name" id="chatDetailName">Select a Session</span>
             <span class="title-sub" id="chatDetailSub"></span>
           </button>
-          <button id="joinLiveBtn" class="btn-live-pill">
+          <!-- FIX: root cause of "the session button isn't dead when there's
+               nothing scheduled" — this used to be clickable at all times,
+               whether or not a class had been scheduled for the open group.
+               Defaults to disabled + the muted "dead" look here (see
+               .btn-live-pill-dead in styles.css) so there's no flash of an
+               active button before app.js has had a chance to check; it's
+               enabled the moment loadSchedule() finds a real schedule row
+               for this group (see updateLiveButtonState() in app.js). -->
+          <button id="joinLiveBtn" class="btn-live-pill btn-live-pill-dead" disabled aria-disabled="true" title="No live session is scheduled for this group yet">
             <i class="fas fa-tower-broadcast"></i> <span id="liveBtnText">Join Live Session</span>
           </button>
         </header>
@@ -462,6 +481,30 @@
                 <i class="fas fa-clock"></i> Set time
               </button>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SCREEN: ADMIN — LIVE SESSIONS CALENDAR (all groups)
+           FIX: gives an admin one place to see every group's scheduled
+           live session together — teacher, day, time and duration — so
+           they can actually compare groups before deciding who teaches
+           when, instead of checking one group's Profile screen at a
+           time. Opened from Settings → Admin tools → "Live Sessions
+           Calendar". Tapping a session jumps into that group's Profile
+           screen to reschedule it. See loadAllSchedules() /
+           renderCalendarList() in app.js.
+      ============================================================ -->
+      <section id="screenCalendar" class="screen hidden">
+        <header class="screen-header">
+          <button id="backFromCalendar" class="icon-btn back-btn"><i class="fas fa-arrow-left"></i></button>
+          <span class="screen-title">Live Sessions Calendar</span>
+        </header>
+
+        <div class="calendar-scroll-container">
+          <div id="calendarList" class="calendar-list">
+            <div class="empty-note">Loading schedule…</div>
           </div>
         </div>
       </section>
