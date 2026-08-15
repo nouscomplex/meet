@@ -154,6 +154,12 @@
     // FIX: this user's own `user_roles` row id, captured at login — see
     // handleAccountDeleted() below for why this is needed.
     myUserRoleId: null,
+    // FIX: the currently-open channel's next/live class_schedule row (or
+    // null if none is set). Drives whether the "Join/Start Live Session"
+    // button is clickable — see updateLiveButtonState() below. Previously
+    // there was no equivalent of this, which is why the button was always
+    // active even for channels with no session scheduled at all.
+    currentSchedule: null,
   };
 
   // ============================================================
@@ -213,7 +219,12 @@
     darkToggle: $('darkToggle'),
     adminSettingsCard: $('adminSettingsCard'),
     createChannelBtn: $('createChannelBtn'),
+    viewCalendarBtn: $('viewCalendarBtn'),
     signOutBtn: $('signOutBtn'),
+
+    screenCalendar: $('screenCalendar'),
+    backFromCalendar: $('backFromCalendar'),
+    calendarList: $('calendarList'),
 
     adminCreateUserCard: $('adminCreateUserCard'),
     adminUserManagementCard: $('adminUserManagementCard'),
@@ -703,6 +714,7 @@
     chatDetail: DOM.screenChatDetail,
     members: DOM.screenMembers,
     profile: DOM.screenProfile,
+    calendar: DOM.screenCalendar,
   };
 
   const CHAT_GROUP_SCREENS = ['chats', 'chatDetail', 'members', 'profile'];
@@ -3302,10 +3314,14 @@
       .limit(1);
 
     if (error || !data || !data.length) {
+      state.currentSchedule = null;
       DOM.scheduleBanner.classList.add('hidden');
+      updateLiveButtonState();
       return;
     }
+    state.currentSchedule = data[0];
     renderScheduleBanner(data[0]);
+    updateLiveButtonState();
   }
 
   function renderScheduleBanner(schedule) {
@@ -3313,6 +3329,23 @@
     const formatted = when.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     DOM.scheduleBannerText.textContent = `Class with ${getDisplayName(schedule.teacher_username)} scheduled for ${formatted} (${schedule.duration_minutes} min)`;
     DOM.scheduleBanner.classList.remove('hidden');
+  }
+
+  // FIX: the "Join/Start Live Session" button used to be clickable at all
+  // times, whether or not a class had actually been scheduled for the open
+  // group — nothing distinguished a group with a real class time from one
+  // with none at all. Gate it on state.currentSchedule (kept in sync by
+  // loadSchedule()/subscribeToSchedule() above) so it's only interactive
+  // once a schedule row actually exists for this channel, and give it the
+  // muted "dead" look from styles.css (.btn-live-pill-dead) the rest of the
+  // time so that's visually obvious, not just non-clickable.
+  function updateLiveButtonState() {
+    if (!DOM.joinLiveBtn) return;
+    const hasSchedule = !!state.currentSchedule;
+    DOM.joinLiveBtn.disabled = !hasSchedule;
+    DOM.joinLiveBtn.classList.toggle('btn-live-pill-dead', !hasSchedule);
+    DOM.joinLiveBtn.setAttribute('aria-disabled', String(!hasSchedule));
+    DOM.joinLiveBtn.title = hasSchedule ? '' : 'No live session is scheduled for this group yet';
   }
 
   function subscribeToSchedule(channelId) {
@@ -3348,6 +3381,132 @@
     if (error) { alert('Could not set schedule: ' + error.message); return; }
     alert(`✅ Class time set for ${teacherUsername}`);
     await loadSchedule(state.currentChannel.id);
+  }
+
+  // ============================================================
+  // 8f. ADMIN — ALL-GROUPS LIVE SESSIONS CALENDAR
+  // ============================================================
+  // FIX: root cause of "admin can't see the calendar within every group to
+  // decide who teaches when". Scheduling itself lived only inside a single
+  // group's Profile screen (#adminProfileSchedule), one group at a time —
+  // there was no view an admin could open to see every scheduled session,
+  // in every group, together. This adds a dedicated admin-only screen
+  // (#screenCalendar) that lists every class_schedule row across ALL
+  // channels — grouped by day, sorted by time, each row showing group,
+  // teacher and duration — so an admin can actually compare who's teaching
+  // what, when, and for how long before deciding on a new time. Tapping a
+  // row jumps straight into that group's Profile screen so the admin can
+  // reschedule it right there.
+  let calendarSubscription = null;
+
+  async function loadAllSchedules() {
+    if (DOM.calendarList) DOM.calendarList.innerHTML = '<div class="empty-note">Loading schedule…</div>';
+
+    const { data, error } = await supabase
+      .from('class_schedule')
+      .select('*')
+      .gte('scheduled_time', new Date(Date.now() - 60 * 60 * 1000).toISOString())
+      .order('scheduled_time', { ascending: true });
+
+    if (error) {
+      console.warn('loadAllSchedules failed:', error);
+      if (DOM.calendarList) DOM.calendarList.innerHTML = '<div class="empty-note">Could not load the schedule.</div>';
+      return;
+    }
+    renderCalendarList(data || []);
+  }
+
+  function renderCalendarList(rows) {
+    if (!DOM.calendarList) return;
+
+    if (!rows.length) {
+      DOM.calendarList.innerHTML = '<div class="empty-note">No live sessions scheduled in any group yet.</div>';
+      return;
+    }
+
+    const channelNameById = new Map(allChannels.map((c) => [String(c.id), c.name]));
+
+    // Group rows by calendar day, preserving the ascending time order the
+    // query already returned them in.
+    const dayOrder = [];
+    const dayGroups = new Map();
+    rows.forEach((row) => {
+      const dateKey = new Date(row.scheduled_time).toDateString();
+      if (!dayGroups.has(dateKey)) {
+        dayGroups.set(dateKey, []);
+        dayOrder.push(dateKey);
+      }
+      dayGroups.get(dateKey).push(row);
+    });
+
+    const todayKey = new Date().toDateString();
+    const tomorrowKey = new Date(Date.now() + 24 * 60 * 60 * 1000).toDateString();
+
+    DOM.calendarList.innerHTML = dayOrder.map((dateKey) => {
+      const dayRows = dayGroups.get(dateKey);
+      let dayLabel;
+      if (dateKey === todayKey) dayLabel = 'Today';
+      else if (dateKey === tomorrowKey) dayLabel = 'Tomorrow';
+      else dayLabel = new Date(dayRows[0].scheduled_time).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+
+      return `
+        <div class="calendar-day-group">
+          <div class="calendar-day-label">${escapeHtml(dayLabel)}</div>
+          ${dayRows.map((row) => calendarItemHtml(row, channelNameById)).join('')}
+        </div>
+      `;
+    }).join('');
+
+    DOM.calendarList.querySelectorAll('[data-channel-id]').forEach((el) => {
+      el.addEventListener('click', () => {
+        const channel = allChannels.find((c) => String(c.id) === el.dataset.channelId);
+        if (!channel) { alert('That group no longer exists.'); return; }
+        selectChannel(channel);
+        goToScreen('profile');
+      });
+    });
+  }
+
+  function calendarItemHtml(row, channelNameById) {
+    const start = new Date(row.scheduled_time);
+    const durationMinutes = row.duration_minutes || 45;
+    const end = new Date(start.getTime() + durationMinutes * 60000);
+    const startLabel = start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const endLabel = end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const groupName = channelNameById.get(String(row.channel_id)) || 'Unknown group';
+    const isLiveNow = Date.now() >= start.getTime() && Date.now() < end.getTime();
+
+    return `
+      <button type="button" class="calendar-item${isLiveNow ? ' is-live' : ''}" data-channel-id="${escapeHtml(String(row.channel_id))}">
+        <div class="calendar-item-time">
+          <span class="calendar-item-time-start">${startLabel}</span>
+          <span class="calendar-item-time-end">${endLabel}</span>
+        </div>
+        <div class="calendar-item-body">
+          <div class="calendar-item-group">${escapeHtml(groupName)}</div>
+          <div class="calendar-item-teacher"><i class="fas fa-chalkboard-user"></i> ${escapeHtml(getDisplayName(row.teacher_username))}</div>
+        </div>
+        <div class="calendar-item-duration">${isLiveNow ? '<span class="calendar-live-dot" title="Live now"></span>' : ''}${durationMinutes}m</div>
+      </button>
+    `;
+  }
+
+  function subscribeToAllSchedules() {
+    if (calendarSubscription) {
+      supabase.removeChannel(calendarSubscription);
+      calendarSubscription = null;
+    }
+    calendarSubscription = supabase
+      .channel('schedule:all')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'class_schedule' }, () => loadAllSchedules())
+      .subscribe();
+  }
+
+  function unsubscribeFromAllSchedules() {
+    if (calendarSubscription) {
+      supabase.removeChannel(calendarSubscription);
+      calendarSubscription = null;
+    }
   }
 
   // ============================================================
@@ -4812,6 +4971,7 @@
     DOM.settingsDisplayName.textContent = `Username: ${username}`;
 
     DOM.adminSettingsCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
+    if (DOM.viewCalendarBtn) DOM.viewCalendarBtn.classList.toggle('hidden', !state.isAdmin);
     DOM.adminCreateUserCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
     DOM.adminUserManagementCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
     DOM.adminProfileSchedule.classList.toggle('hidden', !state.isAdmin);
@@ -5014,10 +5174,11 @@
     teardownStatusViewsSubscription();
     unsubscribeFromChannelListUpdates();
     stopChannelPreviewPolling();
-    if (scheduleSubscription) { 
-      supabase.removeChannel(scheduleSubscription); 
-      scheduleSubscription = null; 
+    if (scheduleSubscription) {
+      supabase.removeChannel(scheduleSubscription);
+      scheduleSubscription = null;
     }
+    unsubscribeFromAllSchedules();
     teardownPresence();
     cleanupInactivityManager();
     cleanupTabFocusManager();
@@ -5032,6 +5193,8 @@
     state.replyingTo = null;
     state.isChannelActive = false;
     state.isTabFocused = true;
+    state.currentSchedule = null;
+    updateLiveButtonState();
 
     // FIX: previously none of this was reset on sign-out. If a device is
     // shared between users in one tab (e.g. an admin signs out and a
@@ -5469,8 +5632,27 @@
 
   DOM.joinLiveBtn.addEventListener('click', () => {
     if (!CONFIG.FEATURES.ENABLE_VIDEO_CONFERENCE) { alert('Video conferencing is disabled.'); return; }
+    // FIX: safety net alongside the `disabled` attribute/CSS toggled by
+    // updateLiveButtonState() — belt-and-suspenders in case this ever fires
+    // while no session is scheduled for the open group.
+    if (!state.currentSchedule) { return; }
     joinLiveClass();
   });
+
+  if (DOM.viewCalendarBtn) {
+    DOM.viewCalendarBtn.addEventListener('click', () => {
+      goToScreen('calendar');
+      subscribeToAllSchedules();
+      loadAllSchedules();
+    });
+  }
+
+  if (DOM.backFromCalendar) {
+    DOM.backFromCalendar.addEventListener('click', () => {
+      unsubscribeFromAllSchedules();
+      goToScreen('settings');
+    });
+  }
 
   DOM.closeVideoBtn.addEventListener('click', () => {
     DOM.videoContainer.classList.add('hidden');
