@@ -471,16 +471,57 @@
             <div class="empty-note">No Shared Media Yet</div>
           </div>
 
+          <!-- FIX: root cause of "can't schedule a month / future months in
+               advance" — this form could only insert a single session, one
+               at a time, so booking a recurring class meant coming back and
+               refilling the form every single week. The Repeats/Repeat
+               through fields let one submit generate every occurrence up to
+               a chosen future date (see setClassSchedule() in app.js).
+               FIX: root cause of "meeting doesn't automatically close" —
+               there used to be no explicit end time at all, just a
+               free-typed "duration in minutes" number that was never used
+               for anything but display text. Asking for a real end time
+               here gives joinLiveClass() an actual clock time to auto-close
+               the call at (see closeLiveSession()/liveSessionAutoCloseTimer
+               in app.js) and fixes the live-session button going "dead"
+               mid-class on longer sessions (see loadSchedule()). -->
           <div id="adminProfileSchedule" class="hidden schedule-card">
             <div class="section-label"><i class="fas fa-calendar-clock"></i> Schedule class time</div>
             <input id="scheduleTeacherInput" placeholder="Teacher username" class="field-sm" list="registeredUsersList" autocomplete="off" style="width:100%; margin-bottom:6px;">
-            <input id="scheduleTimeInput" type="datetime-local" class="field-sm" style="width:100%; margin-bottom:6px;">
-            <div class="admin-row">
-              <input id="scheduleDurationInput" type="number" min="10" max="240" value="45" class="field-sm" style="flex:0 0 90px;" title="Duration (minutes)">
-              <button id="setScheduleBtn" class="btn-admin-sm" style="flex:1;">
-                <i class="fas fa-clock"></i> Set time
-              </button>
+
+            <div class="admin-row" style="display:flex; gap:8px; margin-bottom:6px;">
+              <div style="flex:1; min-width:0;">
+                <label class="schedule-field-label" for="scheduleTimeInput">Starts</label>
+                <input id="scheduleTimeInput" type="datetime-local" class="field-sm" style="width:100%;">
+              </div>
+              <div style="flex:1; min-width:0;">
+                <label class="schedule-field-label" for="scheduleEndTimeInput">Ends</label>
+                <input id="scheduleEndTimeInput" type="datetime-local" class="field-sm" style="width:100%;">
+              </div>
             </div>
+
+            <div class="admin-row" style="display:flex; gap:8px; margin-bottom:6px;">
+              <div style="flex:1; min-width:0;">
+                <label class="schedule-field-label" for="scheduleRepeatInput">Repeats</label>
+                <select id="scheduleRepeatInput" class="field-sm" style="width:100%;">
+                  <option value="none">Doesn't repeat</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              <div id="scheduleRepeatUntilWrap" class="hidden" style="flex:1; min-width:0;">
+                <label class="schedule-field-label" for="scheduleRepeatUntilInput">Repeat through</label>
+                <input id="scheduleRepeatUntilInput" type="date" class="field-sm" style="width:100%;">
+              </div>
+            </div>
+
+            <p id="scheduleRepeatHint" class="hidden schedule-repeat-hint">
+              <i class="fas fa-circle-info"></i> Creates one session per week/month, same time, up to and including the date above.
+            </p>
+
+            <button id="setScheduleBtn" class="btn-admin-sm" style="width:100%;">
+              <i class="fas fa-clock"></i> Set time
+            </button>
           </div>
         </div>
       </section>
