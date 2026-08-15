@@ -471,6 +471,21 @@
             <div class="empty-note">No Shared Media Yet</div>
           </div>
 
+          <!-- FIX: root cause of "show the list of scheduled classes in
+               group profile to all" — the only place a scheduled class was
+               ever visible was a single-session banner in the chat header,
+               and only the NEXT one at that; there was nowhere in the
+               group's Profile that every member (student/teacher, not just
+               admin) could see the group's upcoming sessions. This list has
+               no admin gating — everyone who opens the group sees it. See
+               loadGroupScheduleList()/groupScheduleItemHtml() in app.js. -->
+          <div class="profile-section-row">
+            <span class="section-label">Scheduled Classes</span>
+          </div>
+          <div id="groupScheduleList" class="group-schedule-list">
+            <div class="empty-note">No live sessions scheduled yet.</div>
+          </div>
+
           <!-- FIX: root cause of "can't schedule a month / future months in
                advance" — this form could only insert a single session, one
                at a time, so booking a recurring class meant coming back and
@@ -484,19 +499,35 @@
                here gives joinLiveClass() an actual clock time to auto-close
                the call at (see closeLiveSession()/liveSessionAutoCloseTimer
                in app.js) and fixes the live-session button going "dead"
-               mid-class on longer sessions (see loadSchedule()). -->
+               mid-class on longer sessions (see loadSchedule()).
+               FIX: root cause of "make a checklist or show a calendar to
+               pick day/start/end" — a single combined date+time field
+               forced typing/scrolling through a date AND a time in one
+               control (fiddly, and error-prone for recurring sessions
+               where only the time-of-day should repeat). Splitting it into
+               a Day field (native calendar picker), a Starts field and an
+               Ends field (native time pickers) reads as the three-step
+               checklist that was asked for, and — as a bonus — recurrence
+               below now cleanly means "same Day-of-week/month, same
+               Starts/Ends", which is exactly what it already did under the
+               hood. -->
           <div id="adminProfileSchedule" class="hidden schedule-card">
             <div class="section-label"><i class="fas fa-calendar-clock"></i> Schedule class time</div>
             <input id="scheduleTeacherInput" placeholder="Teacher username" class="field-sm" list="registeredUsersList" autocomplete="off" style="width:100%; margin-bottom:6px;">
 
+            <div style="margin-bottom:6px;">
+              <label class="schedule-field-label" for="scheduleDateInput"><span class="schedule-step-num">1</span> Day</label>
+              <input id="scheduleDateInput" type="date" class="field-sm" style="width:100%;">
+            </div>
+
             <div class="admin-row" style="display:flex; gap:8px; margin-bottom:6px;">
               <div style="flex:1; min-width:0;">
-                <label class="schedule-field-label" for="scheduleTimeInput">Starts</label>
-                <input id="scheduleTimeInput" type="datetime-local" class="field-sm" style="width:100%;">
+                <label class="schedule-field-label" for="scheduleStartTimeInput"><span class="schedule-step-num">2</span> Starts</label>
+                <input id="scheduleStartTimeInput" type="time" class="field-sm" style="width:100%;">
               </div>
               <div style="flex:1; min-width:0;">
-                <label class="schedule-field-label" for="scheduleEndTimeInput">Ends</label>
-                <input id="scheduleEndTimeInput" type="datetime-local" class="field-sm" style="width:100%;">
+                <label class="schedule-field-label" for="scheduleEndTimeInput"><span class="schedule-step-num">3</span> Ends</label>
+                <input id="scheduleEndTimeInput" type="time" class="field-sm" style="width:100%;">
               </div>
             </div>
 
@@ -516,7 +547,7 @@
             </div>
 
             <p id="scheduleRepeatHint" class="hidden schedule-repeat-hint">
-              <i class="fas fa-circle-info"></i> Creates one session per week/month, same time, up to and including the date above.
+              <i class="fas fa-circle-info"></i> Creates one session per week/month, same day-of-week/month and same times, up to and including the date above.
             </p>
 
             <button id="setScheduleBtn" class="btn-admin-sm" style="width:100%;">
