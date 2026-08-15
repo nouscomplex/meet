@@ -2293,7 +2293,38 @@
     return promise;
   }
 
-  function hydratePdfThumb(wrapEl, url) {
+  // FIX: "opening the chat doesn't show the last message" (attachment
+  // case) — root cause. #chatMessages/#chatContainer are scrolled to the
+  // bottom (scrollTop = scrollHeight) the moment a chat is opened/rendered,
+  // but at that instant an <img>/<video> attachment (or, for PDFs, this
+  // thumbnail — filled in later, asynchronously, by hydratePdfThumb) has no
+  // known size yet: nothing in styles.css gives .msg-media-img a fixed
+  // height or aspect-ratio, so before the image/video/PDF-thumb actually
+  // loads it renders at ~0px tall. The scroll-to-bottom math runs against
+  // that too-short height, then the asset finishes loading a moment later,
+  // grows the bubble, and pushes everything below it (often the true last
+  // message itself, if the attachment isn't the very last one, or just the
+  // bottom half of the attachment itself) below the fold — with nothing to
+  // re-scroll afterwards. Confirmed empirically: opening a chat whose last
+  // message has an image left ~170px of it cut off below the viewport once
+  // the image's real size loaded in.
+  //
+  // Fix: whenever a freshly-built message bubble contains media, remember
+  // whether the chat was scrolled to the bottom right when that bubble was
+  // inserted (`pinToBottom`, passed down from renderMessages()'s own
+  // `wasNearBottom` check — see buildMessageEl()), and once the media
+  // actually loads and the browser knows its real size, re-run the same
+  // scrollTop = scrollHeight snap — but only if it was pinned to begin
+  // with, so this never yanks the view of someone who's scrolled up reading
+  // older messages when an unrelated image below finishes loading.
+  function stickToBottomOnMediaLoad(mediaEl, eventName, pinToBottom) {
+    if (!mediaEl || !pinToBottom) return;
+    mediaEl.addEventListener(eventName, () => {
+      if (DOM.chatContainer) DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
+    }, { once: true });
+  }
+
+  function hydratePdfThumb(wrapEl, url, pinToBottom) {
     const thumbEl = wrapEl.querySelector('.msg-pdf-thumb');
     if (!thumbEl) return;
     getPdfThumbnail(url).then((dataUrl) => {
@@ -2304,6 +2335,11 @@
       img.className = 'msg-media-img';
       img.alt = 'PDF preview';
       img.loading = 'lazy';
+      // FIX: see stickToBottomOnMediaLoad() above — re-pin the scroll once
+      // this thumbnail's real dimensions are in and it has actually grown
+      // the bubble, not just when we appended it (which happens before the
+      // browser has decoded/sized the image).
+      stickToBottomOnMediaLoad(img, 'load', pinToBottom);
       img.src = dataUrl;
       thumbEl.innerHTML = '';
       thumbEl.appendChild(img);
@@ -2311,7 +2347,7 @@
     });
   }
 
-  function buildMessageEl(msg, signature) {
+  function buildMessageEl(msg, signature, pinToBottom) {
     const isMine = msg.username === state.currentUser?.username;
     const wrap = document.createElement('div');
     wrap.className = `msg ${isMine ? 'msg-mine' : 'msg-theirs'}`;
@@ -2413,7 +2449,14 @@
     `;
 
     if (hasAttachment && isPdfFile(msg.file_url)) {
-      hydratePdfThumb(wrap, msg.file_url);
+      hydratePdfThumb(wrap, msg.file_url, pinToBottom);
+    } else if (hasAttachment && isImageFile(msg.file_url)) {
+      // FIX: see stickToBottomOnMediaLoad() above — images have no known
+      // height until they actually load, so re-pin the scroll once this
+      // one's real size is in.
+      stickToBottomOnMediaLoad(wrap.querySelector('img.msg-media-img'), 'load', pinToBottom);
+    } else if (hasAttachment && isVideoFile(msg.file_url)) {
+      stickToBottomOnMediaLoad(wrap.querySelector('video.msg-media-img'), 'loadedmetadata', pinToBottom);
     }
 
     return wrap;
@@ -2472,7 +2515,11 @@
       if (node && node.dataset.sig === signature) {
         existingNodes.delete(key);
       } else {
-        const freshNode = buildMessageEl(msg, signature);
+        // FIX: pass this render pass's own `wasNearBottom` down so any
+        // image/video/PDF attachment in a freshly-built bubble knows
+        // whether to re-pin the scroll once it finishes loading and grows
+        // — see stickToBottomOnMediaLoad() above buildMessageEl().
+        const freshNode = buildMessageEl(msg, signature, wasNearBottom);
         if (node) {
           node.replaceWith(freshNode);
           existingNodes.delete(key);
