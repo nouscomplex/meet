@@ -216,6 +216,17 @@
             </div>
           </div>
 
+          <!-- FIX: root cause of "add teacher/student and manage users feel
+               bolted on" — they used to live in two extra settings-list
+               cards stacked below this one, so Settings showed three
+               separate boxes for what is really one "Admin tools" concern.
+               Both are now expandable rows inside this same card, styled
+               like Create New Session/Live Sessions Calendar above instead
+               of always-open forms — tap a row to reveal its panel in
+               place. See the addUserToggleBtn/manageUsersToggleBtn
+               listeners (toggleAdminPanel()) in app.js. Every element ID
+               below is unchanged from before, so all existing create/edit/
+               delete-user logic keeps working untouched. -->
           <div id="adminSettingsCard" class="hidden settings-list" style="margin-top:14px;">
             <div class="settings-list-label"><i class="fas fa-user-shield"></i> Admin tools</div>
             <button id="createChannelBtn" class="settings-action-row">
@@ -232,69 +243,74 @@
             <button id="viewCalendarBtn" class="hidden settings-action-row">
               <i class="fas fa-calendar-days"></i> Live Sessions Calendar
             </button>
-          </div>
 
-          <div id="adminCreateUserCard" class="hidden settings-list" style="margin-top:14px;">
-            <div class="settings-list-label"><i class="fas fa-user-plus"></i> Add Teacher or Student</div>
-            <div style="padding:4px 16px 16px; display:flex; flex-direction:column; gap:8px;">
-              <input id="newUserUsername" class="field-sm" placeholder="Username" style="width:100%;">
-              <input id="newUserDisplayName" class="field-sm" placeholder="Display name (optional)" style="width:100%;">
-              <div class="admin-row">
-                <select id="newUserRole" class="field-sm" style="flex:0 0 108px;">
-                  <option value="student">Student</option>
-                  <option value="teacher">Teacher</option>
-                </select>
-                <input id="newUserPassword" class="field-sm" placeholder="Password" style="flex:1;">
-                <button id="generatePasswordBtn" class="icon-btn" title="Generate password" type="button">
-                  <i class="fas fa-shuffle"></i>
-                </button>
-              </div>
-              <button id="createUserBtn" class="btn-admin-sm" style="width:100%;">
-                <i class="fas fa-user-plus"></i> Create Account
-              </button>
-            </div>
-          </div>
-
-          <!-- Admin User Management Panel -->
-          <div id="adminUserManagementCard" class="hidden settings-list" style="margin-top:14px;">
-            <div class="settings-list-label"><i class="fas fa-users-cog"></i> Manage Users</div>
-            <div style="padding:4px 16px 16px; display:flex; flex-direction:column; gap:8px;">
-              <div class="admin-row" style="display:flex; gap:8px;">
-                <input id="manageUserSearch" class="field-sm" placeholder="Search username..." list="registeredUsersList" autocomplete="off" style="flex:1;">
-                <button id="loadUserBtn" class="btn-admin-sm"><i class="fas fa-search"></i> Load</button>
-              </div>
-
-              <!-- Registered users: every account that exists, with the
-                   group/session each is assigned to (or "Unassigned" if
-                   in none). Tap a row to load it into the edit form
-                   below. Populated by loadRegisteredUsersList() /
-                   renderRegisteredUsersList() in app.js. -->
-              <div id="registeredUsersListWrap" class="registered-users-wrap">
-                <div id="registeredUsersListView" class="registered-users-list">
-                  <div class="empty-note">Loading users…</div>
-                </div>
-              </div>
-
-              <div id="userEditForm" style="display:none; flex-direction:column; gap:8px; padding-top:8px; border-top:1px solid var(--border);">
-                <div class="user-edit-form-header">
-                  <span class="user-edit-form-title"><i class="fas fa-user-pen"></i> Editing user</span>
-                  <button id="closeUserEditBtn" class="icon-btn" title="Close editor" aria-label="Close editor" type="button">
-                    <i class="fas fa-xmark"></i>
+            <button id="addUserToggleBtn" class="settings-action-row admin-toggle-row" type="button" aria-expanded="false" aria-controls="adminCreateUserCard">
+              <i class="fas fa-user-plus"></i> Add Teacher or Student
+              <i class="fas fa-chevron-down admin-toggle-chevron"></i>
+            </button>
+            <div id="adminCreateUserCard" class="hidden admin-panel">
+              <div style="padding:4px 16px 16px; display:flex; flex-direction:column; gap:8px;">
+                <input id="newUserUsername" class="field-sm" placeholder="Username" style="width:100%;">
+                <input id="newUserDisplayName" class="field-sm" placeholder="Display name (optional)" style="width:100%;">
+                <div class="admin-row">
+                  <select id="newUserRole" class="field-sm" style="flex:0 0 108px;">
+                    <option value="student">Student</option>
+                    <option value="teacher">Teacher</option>
+                  </select>
+                  <input id="newUserPassword" class="field-sm" placeholder="Password" style="flex:1;">
+                  <button id="generatePasswordBtn" class="icon-btn" title="Generate password" type="button">
+                    <i class="fas fa-shuffle"></i>
                   </button>
                 </div>
-                <input id="editUsername" class="field-sm" placeholder="Username (ID)" style="width:100%;">
-                <input id="editDisplayName" class="field-sm" placeholder="Display name" style="width:100%;">
-                <input id="editNewUsername" class="field-sm" placeholder="New username (optional)" style="width:100%;">
-                <input id="editPassword" class="field-sm" placeholder="New password (leave blank to keep current)" style="width:100%;">
-                <select id="editRole" class="field-sm" style="width:100%;">
-                  <option value="student">Student</option>
-                  <option value="teacher">Teacher</option>
-                  <option value="admin">Admin</option>
-                </select>
-                <button id="manageUserGroupsBtn" class="btn-admin-sm" style="width:100%;" type="button"><i class="fas fa-layer-group"></i> Manage Groups &amp; Roles</button>
-                <div style="display:flex; gap:8px;">
-                  <button id="updateUserBtn" class="btn-admin-sm" style="flex:1;"><i class="fas fa-save"></i> Update</button>
-                  <button id="deleteUserBtn" class="btn-admin-sm" style="flex:1; border-color:var(--danger); color:var(--danger);"><i class="fas fa-trash"></i> Delete</button>
+                <button id="createUserBtn" class="btn-admin-sm" style="width:100%;">
+                  <i class="fas fa-user-plus"></i> Create Account
+                </button>
+              </div>
+            </div>
+
+            <button id="manageUsersToggleBtn" class="settings-action-row admin-toggle-row" type="button" aria-expanded="false" aria-controls="adminUserManagementCard">
+              <i class="fas fa-users-cog"></i> Manage Users
+              <i class="fas fa-chevron-down admin-toggle-chevron"></i>
+            </button>
+            <div id="adminUserManagementCard" class="hidden admin-panel">
+              <div style="padding:4px 16px 16px; display:flex; flex-direction:column; gap:8px;">
+                <div class="admin-row" style="display:flex; gap:8px;">
+                  <input id="manageUserSearch" class="field-sm" placeholder="Search username..." list="registeredUsersList" autocomplete="off" style="flex:1;">
+                  <button id="loadUserBtn" class="btn-admin-sm"><i class="fas fa-search"></i> Load</button>
+                </div>
+
+                <!-- Registered users: every account that exists, with the
+                     group/session each is assigned to (or "Unassigned" if
+                     in none). Tap a row to load it into the edit form
+                     below. Populated by loadRegisteredUsersList() /
+                     renderRegisteredUsersList() in app.js. -->
+                <div id="registeredUsersListWrap" class="registered-users-wrap">
+                  <div id="registeredUsersListView" class="registered-users-list">
+                    <div class="empty-note">Loading users…</div>
+                  </div>
+                </div>
+
+                <div id="userEditForm" style="display:none; flex-direction:column; gap:8px; padding-top:8px; border-top:1px solid var(--border);">
+                  <div class="user-edit-form-header">
+                    <span class="user-edit-form-title"><i class="fas fa-user-pen"></i> Editing user</span>
+                    <button id="closeUserEditBtn" class="icon-btn" title="Close editor" aria-label="Close editor" type="button">
+                      <i class="fas fa-xmark"></i>
+                    </button>
+                  </div>
+                  <input id="editUsername" class="field-sm" placeholder="Username (ID)" style="width:100%;">
+                  <input id="editDisplayName" class="field-sm" placeholder="Display name" style="width:100%;">
+                  <input id="editNewUsername" class="field-sm" placeholder="New username (optional)" style="width:100%;">
+                  <input id="editPassword" class="field-sm" placeholder="New password (leave blank to keep current)" style="width:100%;">
+                  <select id="editRole" class="field-sm" style="width:100%;">
+                    <option value="student">Student</option>
+                    <option value="teacher">Teacher</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                  <button id="manageUserGroupsBtn" class="btn-admin-sm" style="width:100%;" type="button"><i class="fas fa-layer-group"></i> Manage Groups &amp; Roles</button>
+                  <div style="display:flex; gap:8px;">
+                    <button id="updateUserBtn" class="btn-admin-sm" style="flex:1;"><i class="fas fa-save"></i> Update</button>
+                    <button id="deleteUserBtn" class="btn-admin-sm" style="flex:1; border-color:var(--danger); color:var(--danger);"><i class="fas fa-trash"></i> Delete</button>
+                  </div>
                 </div>
               </div>
             </div>
