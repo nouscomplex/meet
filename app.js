@@ -1818,7 +1818,17 @@
   // ============================================================
   // SAFE MESSAGE MERGING
   // ============================================================
-  function mergeMessagesSafely(newMessages) {
+  // FIX: "show last message when we open chat" — added the optional
+  // `forceScroll` param (default false, so every existing call site that
+  // doesn't pass it keeps behaving exactly as before: realtime inserts and
+  // sent-message confirmations only auto-scroll when the reader is already
+  // near the bottom, so we never yank someone's view while they're reading
+  // older messages). loadMessages() below — the initial fetch that runs the
+  // moment a chat is opened (see selectChannel()) — now passes `true`, so
+  // the freshly opened chat always ends up scrolled to its true last
+  // message instead of relying on scroll-position heuristics that can be
+  // wrong the first time a channel's messages render.
+  function mergeMessagesSafely(newMessages, forceScroll) {
     if (state.isMerging) {
       console.log('⏳ Merge already in progress, skipping');
       return;
@@ -1865,8 +1875,8 @@
         saveCachedMessages(state.currentChannel.id, mergedMessages);
       }
       
-      scheduleRenderMessages();
-      
+      scheduleRenderMessages(forceScroll);
+
       console.log(`✅ Merged ${messagesToAdd.length} messages, total: ${mergedMessages.length}`);
       
     } catch (error) {
@@ -2160,6 +2170,14 @@
   // ============================================================
   // LOAD MESSAGES
   // ============================================================
+  // FIX: "show last message when we open chat" — loadMessages() is only
+  // ever called from selectChannel() (i.e. exactly when a chat is being
+  // opened), so every render triggered from here should force-scroll to
+  // the bottom rather than defer to the "only scroll if already near the
+  // bottom" heuristic renderMessages() otherwise uses for live/background
+  // updates. That heuristic is right for realtime inserts arriving while
+  // someone is reading old messages, but wrong here: the reader has just
+  // opened this chat and should always land on its true last message.
   async function loadMessages(channelId) {
     if (!channelId) return;
 
@@ -2176,24 +2194,24 @@
         if (state.messages.length === 0) {
           state.messages = [{ id: '1', content: 'Welcome to the channel!', username: 'system', created_at: Date.now() }];
         }
-        renderMessages();
+        renderMessages(true);
         return;
       }
 
       if (data && data.length > 0) {
-        mergeMessagesSafely(data);
+        mergeMessagesSafely(data, true);
         console.log(`📥 Loaded ${data.length} messages from Supabase`);
       } else if (state.messages.length === 0) {
         state.messages = [];
-        renderMessages();
+        renderMessages(true);
       }
-      
+
       updateProfileScreen();
     } catch (error) {
       console.error('Error loading messages:', error);
       if (state.messages.length === 0) {
         state.messages = [{ id: '1', content: 'Welcome to the channel!', username: 'system', created_at: Date.now() }];
-        renderMessages();
+        renderMessages(true);
       }
     }
   }
