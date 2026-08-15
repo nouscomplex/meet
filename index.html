@@ -321,15 +321,16 @@
                everyone instead of just the concerned teacher, then
                students" — this used to be clickable the instant ANY
                schedule row existed for the group, for any teacher/student.
-               Defaults to hidden + disabled + the muted "dead" look here
-               (see .btn-live-pill-dead in styles.css) so there's no flash of
-               a button before app.js has had a chance to check; it's only
-               revealed — as "Start Live Session" for the exact teacher a
-               session was booked for, once it's actually that scheduled
-               time, or as "Join Live Session" for everyone else once that
-               teacher has pressed Start — by getLiveButtonMode() /
+               Defaults to disabled + the muted "dead" look here (see
+               .btn-live-pill-dead in styles.css) — always visible, just
+               greyed out/unclickable — so there's no flash of an active
+               button before app.js has had a chance to check; it's enabled
+               — as "Start Live Session" for the exact teacher a session was
+               booked for (or an admin) once it's actually that scheduled
+               time, or as "Join Live Session" for everyone else once
+               someone has pressed Start — by getLiveButtonMode() /
                updateLiveButtonState() in app.js. -->
-          <button id="joinLiveBtn" class="btn-live-pill btn-live-pill-dead hidden" disabled aria-disabled="true" title="No live session is scheduled for this group yet">
+          <button id="joinLiveBtn" class="btn-live-pill btn-live-pill-dead" disabled aria-disabled="true" title="No live session is scheduled for this group yet">
             <i class="fas fa-tower-broadcast"></i> <span id="liveBtnText">Join Live Session</span>
           </button>
         </header>
