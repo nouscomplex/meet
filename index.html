@@ -13,8 +13,27 @@
   <!-- CSS -->
   <link rel="stylesheet" href="styles.css">
 
+  <!-- FIX: root cause of "opening the app shows a blank screen for a few
+       seconds instead of the loading/home screen" — these three <script>
+       tags used to have no defer/async attribute. A plain <script> in
+       <head> is parser-blocking: the browser must fully download AND
+       execute it before it's allowed to continue parsing the rest of the
+       document, including <body> and the #appLoading splash div sitting
+       right at the top of it. With three external, uncached CDN scripts
+       (Supabase SDK, then PDF.js) stacked here, the very first thing the
+       browser could paint was stuck behind two full network round trips —
+       on a slow/mobile connection that's easily a few seconds of a plain
+       blank/white page before #appLoading (or anything else) ever shows.
+       `defer` fixes this: deferred scripts are fetched in the background
+       *without* blocking HTML parsing, so the browser can parse and paint
+       <body> (the splash screen) immediately, while these download in
+       parallel. Deferred scripts still run in the exact order they appear
+       here, and always before DOMContentLoaded — so config.js still runs
+       after supabase-js/pdf.js, and (see the closing </body> section)
+       app.js still runs after all three, in the same order as before, just
+       without holding up the first paint. -->
   <!-- Supabase SDK -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
 
   <!-- Font Awesome -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
@@ -22,10 +41,10 @@
   <!-- PDF.js — renders a page-1 thumbnail for shared PDFs so they show a
        WhatsApp-style "half open" preview in the chat bubble instead of a
        bare file icon. See isPdfFile()/getPdfThumbnail() in app.js. -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
 
   <!-- CONFIGURATION -->
-  <script src="config.js"></script>
+  <script src="config.js" defer></script>
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" sizes="32x32" href="nouscomplex.png">
@@ -670,8 +689,14 @@
   </div>
 </div>
 
-<!-- JavaScript -->
-<script src="app.js"></script>
+<!-- JavaScript
+     FIX: also given `defer` (see the matching comment in <head>) — with
+     the head scripts deferred, app.js must be deferred too so it keeps
+     running *after* window.supabase/pdfjsLib/window.CONFIG exist. Deferred
+     scripts execute in document order, so this still runs after
+     supabase-js, pdf.js and config.js, exactly like before; it just no
+     longer blocks the initial paint of #appLoading either. -->
+<script src="app.js" defer></script>
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
