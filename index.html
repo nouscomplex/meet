@@ -36,11 +36,48 @@
 </head>
 <body>
 
+<!-- ===== SESSION CHECK LOADER =====
+     FIX: root cause of "opening the app / hard refresh shows the login
+     page instead of home". #authCard used to be visible by default in the
+     markup, and app.js only hid it deep inside completeLogin() — AFTER
+     awaiting loadRoleCache() and an extra own-role-id lookup. That's two
+     full network round trips that ran *after* the app already knew a
+     valid session existed, during which the fully interactive login form
+     sat on screen. On a slow/mobile connection (or if either of those
+     calls ever failed) that window was long enough that a returning,
+     already-logged-in user saw — and could even try to use — the login
+     page instead of landing on their chats. This loader now covers that
+     gap: it's the only thing visible on load, app.js flips straight from
+     this to whichever of #authCard/#dashboard is correct once it knows
+     the answer (see restoreSession()/completeLogin() in app.js), so the
+     login form itself is never shown to someone who is still signed in. -->
+<div id="appLoading" class="app-loading">
+  <img src="nouscomplex.png" alt="" class="app-loading-emblem" onerror="this.style.display='none'">
+  <div class="app-loading-spinner"></div>
+</div>
+<script>
+  // FIX: safety net for the loader above — if app.js fails to run at all
+  // (a script error, a blocked/slow CDN request, offline on first visit),
+  // nothing would ever hide #appLoading and the user would be stuck on a
+  // blank spinner forever, which looks even more broken than the old
+  // stuck-on-login bug this page fixes. Fall back to showing the login
+  // card after a few seconds; app.js cancels this the moment it resolves
+  // things normally (see clearAppLoadingFallback() in app.js).
+  window.__orbitLoadingFallback = setTimeout(function () {
+    var loader = document.getElementById('appLoading');
+    var auth = document.getElementById('authCard');
+    if (loader) loader.classList.add('hidden');
+    if (auth) auth.classList.remove('hidden');
+  }, 8000);
+</script>
+
 <div id="app" class="app-shell">
   <div class="phone-frame">
 
-    <!-- ===== AUTH CARD ===== -->
-    <div id="authCard" class="auth-wrap">
+    <!-- ===== AUTH CARD =====
+         FIX: hidden by default now — see #appLoading above. app.js reveals
+         this only after confirming there's no session to restore. -->
+    <div id="authCard" class="auth-wrap hidden">
       <div class="auth-card">
         <img src="nouscomplex.png" alt="Nous Complex Orbit" class="auth-emblem" id="authLogo">
         <h1 class="auth-title">Nous Complex Orbit</h1>
