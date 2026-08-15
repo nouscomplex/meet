@@ -3233,7 +3233,11 @@
 
     const query = (DOM.memberSearchInput.value || '').trim().toLowerCase();
     const members = [...state.currentMembers]
-      .filter((m) => !query || m.username.toLowerCase().includes(query))
+      // FIX: usernames are no longer shown in this list (see the member-row
+      // markup below), so matching search text against the username alone
+      // would silently return nothing for anyone typing the display name
+      // they actually see. Match against either.
+      .filter((m) => !query || m.username.toLowerCase().includes(query) || getDisplayName(m.username).toLowerCase().includes(query))
       .sort((a, b) => {
         const roleDiff = MEMBER_ROLE_ORDER.indexOf(a.role) - MEMBER_ROLE_ORDER.indexOf(b.role);
         if (roleDiff !== 0) return roleDiff;
@@ -3270,7 +3274,16 @@
         <div class="member-row" id="member-${m.id}">
           ${avatarHtml(m.username, 'sm')}
           <div style="flex:1; min-width:0;">
-            <div class="member-name">${escapeHtml(displayName)} <span class="member-display-name">(${escapeHtml(m.username)})</span></div>
+            <!-- FIX: "only show display name, hide their username in the group
+                 member list" — this used to render "Display Name (username)".
+                 Members now see just the display name here. Note: the
+                 Settings → Admin tools → "Manage Users" registered-users list
+                 (renderRegisteredUsersList()) is a separate, admin-only
+                 account-management screen that still shows "(username)" next
+                 to each entry — admins need the real username there to find
+                 and edit/delete the correct account, so that one is
+                 intentionally left as-is. -->
+            <div class="member-name">${escapeHtml(displayName)}</div>
             <div class="member-status${online ? ' online' : ''}"><span class="dot"></span>${online ? 'Active now' : 'Offline'}</div>
           </div>
           <span class="role-chip role-${m.role}-chip member-role-chip">${escapeHtml(m.role)}</span>
