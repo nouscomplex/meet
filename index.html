@@ -399,6 +399,16 @@
         <!-- Video -->
         <div id="videoContainer" class="hidden video-panel">
           <iframe id="videoIframe" src="" allow="camera; microphone; display-capture; autoplay; encrypted-media" allowfullscreen></iframe>
+          <!-- FIX: root cause of "let admin end live session anytime, even
+               during the session" — #closeVideoBtn below only ever closed
+               THIS viewer's own window onto the call; there was no way to
+               end it for everyone else still on it. Admin-only, shown by
+               joinLiveClass() only when this call is tied to a scheduled
+               session (state.activeCallScheduleId). See
+               endLiveSessionForEveryone() in app.js. -->
+          <button id="endLiveSessionBtn" class="hidden video-end-session-btn" title="End this live session for everyone">
+            <i class="fas fa-ban"></i> End for Everyone
+          </button>
           <button id="closeVideoBtn" class="video-close"><i class="fas fa-xmark"></i></button>
         </div>
       </section>
