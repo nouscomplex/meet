@@ -5989,11 +5989,24 @@
 
   // Shared teardown used by both a normal, user-initiated sign-out and a
   // forced sign-out (deleted account / invalidated session).
+  //
+  // FIX: root cause of "signing out on one device signs everyone else's
+  // device out too" — supabase-js v2's auth.signOut() defaults to
+  // { scope: 'global' }, which revokes the refresh token for EVERY active
+  // session of this account server-side, not just the tab that clicked
+  // Sign Out. Every other open device then either gets its own SIGNED_OUT
+  // event or fails its next token refresh, and the onAuthStateChange
+  // listener above (which force-logs-out on SIGNED_OUT) kicks it back to
+  // the login screen too. Passing { scope: 'local' } signs out only this
+  // browser's session and leaves every other device's session untouched,
+  // which is what "sign out" should mean here — it does not affect
+  // forceSignOut()'s own behavior (deleted account / already-invalidated
+  // session), since that path already lost its session before this runs.
   async function performSignOutCleanup() {
-    try { 
-      await supabase.auth.signOut(); 
-    } catch (e) { 
-      console.warn('Sign out error:', e); 
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch (e) {
+      console.warn('Sign out error:', e);
     }
 
     stopSessionWatchdog();
