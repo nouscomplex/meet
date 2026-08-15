@@ -304,7 +304,11 @@
     adminProfileSchedule: $('adminProfileSchedule'),
     scheduleTeacherInput: $('scheduleTeacherInput'),
     scheduleTimeInput: $('scheduleTimeInput'),
-    scheduleDurationInput: $('scheduleDurationInput'),
+    scheduleEndTimeInput: $('scheduleEndTimeInput'),
+    scheduleRepeatInput: $('scheduleRepeatInput'),
+    scheduleRepeatUntilWrap: $('scheduleRepeatUntilWrap'),
+    scheduleRepeatUntilInput: $('scheduleRepeatUntilInput'),
+    scheduleRepeatHint: $('scheduleRepeatHint'),
     setScheduleBtn: $('setScheduleBtn'),
     
     adminDescEdit: $('adminDescEdit'),
@@ -870,9 +874,11 @@
     
     // Existing video container check
     if (DOM.videoContainer && !DOM.videoContainer.classList.contains('hidden')) {
-      DOM.videoContainer.classList.add('hidden');
-      DOM.videoIframe.src = '';
-      state.videoActive = false;
+      // FIX: route through closeLiveSession() so the back button also
+      // cancels the auto-close timer armed in joinLiveClass() — otherwise
+      // it could still fire later and pop the "session is up" alert after
+      // the admin/student had already left the screen.
+      closeLiveSession();
       if (state.currentScreen) pushScreenState(state.currentScreen);
       return;
     }
@@ -3304,30 +3310,60 @@
   // ============================================================
   let scheduleSubscription = null;
 
+  // Safety ceiling on how long any one session can run — used both to
+  // bound the loadSchedule() lookback window below and to sanity-check the
+  // start/end times an admin enters in setClassSchedule(). 8 hours is
+  // generous for any live class.
+  const MAX_SESSION_DURATION_MINUTES = 8 * 60;
+
   async function loadSchedule(channelId) {
+    // FIX: root cause of the live-session button going "dead" partway
+    // through a longer class. This used to look back a flat 1 hour and
+    // take whatever row that found — so a session that *started* more than
+    // an hour ago dropped out of view even if it was still running (e.g. a
+    // 90-minute class, 70 minutes in). Look back far enough to catch any
+    // session that could still be in progress (MAX_SESSION_DURATION_MINUTES),
+    // then pick the first row — in ascending start-time order — whose real
+    // end time (start + its own duration) hasn't passed yet. That's the
+    // "current or next" session regardless of how long it runs.
     const { data, error } = await supabase
       .from('class_schedule')
       .select('*')
       .eq('channel_id', channelId)
-      .gte('scheduled_time', new Date(Date.now() - 60 * 60 * 1000).toISOString())
+      .gte('scheduled_time', new Date(Date.now() - MAX_SESSION_DURATION_MINUTES * 60000).toISOString())
       .order('scheduled_time', { ascending: true })
-      .limit(1);
+      .limit(50);
 
-    if (error || !data || !data.length) {
+    if (error) {
       state.currentSchedule = null;
       DOM.scheduleBanner.classList.add('hidden');
       updateLiveButtonState();
       return;
     }
-    state.currentSchedule = data[0];
-    renderScheduleBanner(data[0]);
+
+    const now = Date.now();
+    const current = (data || []).find((row) => {
+      const endsAt = new Date(row.scheduled_time).getTime() + (row.duration_minutes || 45) * 60000;
+      return endsAt > now;
+    });
+
+    if (!current) {
+      state.currentSchedule = null;
+      DOM.scheduleBanner.classList.add('hidden');
+      updateLiveButtonState();
+      return;
+    }
+    state.currentSchedule = current;
+    renderScheduleBanner(current);
     updateLiveButtonState();
   }
 
   function renderScheduleBanner(schedule) {
-    const when = new Date(schedule.scheduled_time);
-    const formatted = when.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-    DOM.scheduleBannerText.textContent = `Class with ${getDisplayName(schedule.teacher_username)} scheduled for ${formatted} (${schedule.duration_minutes} min)`;
+    const start = new Date(schedule.scheduled_time);
+    const end = new Date(start.getTime() + (schedule.duration_minutes || 45) * 60000);
+    const startFormatted = start.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const endFormatted = end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    DOM.scheduleBannerText.textContent = `Class with ${getDisplayName(schedule.teacher_username)} scheduled for ${startFormatted}–${endFormatted}`;
     DOM.scheduleBanner.classList.remove('hidden');
   }
 
@@ -3359,28 +3395,107 @@
       .subscribe();
   }
 
-  async function setClassSchedule(teacherUsername, datetimeLocal, durationMinutes) {
-    if (!state.currentChannel) { alert('Select a channel first.'); return; }
+  // Safety ceiling on how many rows a single "Set time" submission can
+  // create when repeating weekly/monthly. A weekly repeat spanning a full
+  // year is 52 rows; this just guards against an admin fat-fingering a
+  // repeat-through date decades out and silently generating thousands of
+  // rows.
+  const MAX_SCHEDULE_OCCURRENCES = 104;
+
+  // FIX: root cause of "admin can't schedule a month / future months in
+  // advance" — this used to insert exactly one row per submission, so
+  // booking a recurring class meant re-opening this form and re-typing
+  // the same teacher/time every single week or month. `repeat` ('none' |
+  // 'weekly' | 'monthly') + `repeatUntilDate` (a yyyy-mm-dd string, or
+  // falsy for a one-off) let one submission generate every occurrence —
+  // same teacher, same time-of-day, same length — up to and including that
+  // date, any number of months out.
+  //
+  // FIX: root cause of "no meeting ending time" — `durationMinutes` used
+  // to be a free-typed number nothing else in the app actually relied on.
+  // Taking a real end datetime here (`endDatetimeLocal`) lets us compute an
+  // accurate duration_minutes for storage (no schema change needed — same
+  // column as before) while giving joinLiveClass() a real clock time to
+  // auto-close the call at, and loadSchedule() an accurate end time to
+  // decide the live-session button is still "current".
+  async function setClassSchedule(teacherUsername, startDatetimeLocal, endDatetimeLocal, repeat, repeatUntilDate) {
+    if (!state.currentChannel) { alert('Select a channel first.'); return false; }
     teacherUsername = normalizeUsername(teacherUsername);
-    if (!teacherUsername || !datetimeLocal) { alert('Enter a teacher username and a date/time.'); return; }
+    if (!teacherUsername || !startDatetimeLocal || !endDatetimeLocal) {
+      alert('Enter a teacher username, a start time, and an end time.');
+      return false;
+    }
 
     const registeredRole = state.roleCache[teacherUsername.toLowerCase()];
     if (registeredRole !== CONFIG.AUTH.ROLES.TEACHER) {
       alert(`"${teacherUsername}" isn't a registered teacher account. Create it first from Settings → Add teacher or student.`);
-      return;
+      return false;
     }
 
-    const { error } = await supabase.from('class_schedule').insert({
+    const start = new Date(startDatetimeLocal);
+    const end = new Date(endDatetimeLocal);
+    const durationMinutes = Math.round((end.getTime() - start.getTime()) / 60000);
+
+    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+      alert('The end time must be after the start time.');
+      return false;
+    }
+    if (durationMinutes > MAX_SESSION_DURATION_MINUTES) {
+      alert(`A single session can't be longer than ${MAX_SESSION_DURATION_MINUTES / 60} hours.`);
+      return false;
+    }
+
+    repeat = repeat === 'weekly' || repeat === 'monthly' ? repeat : 'none';
+
+    // Build the list of occurrence start times: just the one the admin
+    // entered for a one-off, or one every 7 days / 1 calendar month
+    // (whichever the admin picked) through repeatUntilDate for a repeat.
+    const occurrenceStarts = [start];
+    if (repeat !== 'none') {
+      if (!repeatUntilDate) {
+        alert('Pick a "Repeat through" date, or set Repeats back to "Doesn\'t repeat".');
+        return false;
+      }
+      // End-of-day on the chosen date, in local time, so the date the
+      // admin picked is itself included as a valid occurrence day.
+      const repeatUntil = new Date(repeatUntilDate + 'T23:59:59');
+      if (repeatUntil.getTime() < start.getTime()) {
+        alert('"Repeat through" must be on or after the start date.');
+        return false;
+      }
+
+      let cursor = new Date(start.getTime());
+      while (occurrenceStarts.length < MAX_SCHEDULE_OCCURRENCES) {
+        const next = new Date(cursor.getTime());
+        if (repeat === 'weekly') {
+          next.setDate(next.getDate() + 7);
+        } else {
+          next.setMonth(next.getMonth() + 1);
+        }
+        if (next.getTime() > repeatUntil.getTime()) break;
+        occurrenceStarts.push(next);
+        cursor = next;
+      }
+    }
+
+    const rows = occurrenceStarts.map((occStart) => ({
       channel_id: state.currentChannel.id,
       teacher_username: teacherUsername,
-      scheduled_time: new Date(datetimeLocal).toISOString(),
-      duration_minutes: durationMinutes || 45,
+      scheduled_time: occStart.toISOString(),
+      duration_minutes: durationMinutes,
       set_by: state.currentUser.username,
-    });
+    }));
 
-    if (error) { alert('Could not set schedule: ' + error.message); return; }
-    alert(`✅ Class time set for ${teacherUsername}`);
+    const { error } = await supabase.from('class_schedule').insert(rows);
+
+    if (error) { alert('Could not set schedule: ' + error.message); return false; }
+    alert(
+      rows.length === 1
+        ? `✅ Class time set for ${teacherUsername}`
+        : `✅ ${rows.length} sessions scheduled for ${teacherUsername} (${repeat}, through ${repeatUntilDate}).`
+    );
     await loadSchedule(state.currentChannel.id);
+    return true;
   }
 
   // ============================================================
@@ -4091,6 +4206,30 @@
     return `${CONFIG.LIVEKIT.URL}?${params.toString()}`;
   }
 
+  // FIX: root cause of "meeting doesn't automatically close" — there was
+  // no concept of a session end time anywhere in the video-call code path,
+  // so a call just ran until someone remembered to tap the close button,
+  // however long past its booked slot that was. Now that class_schedule
+  // rows carry a real end time (start + duration_minutes — see
+  // setClassSchedule()), joinLiveClass() can arm a timer for exactly when
+  // *this* session is booked to end and close the call automatically.
+  let liveSessionAutoCloseTimer = null;
+
+  function clearLiveSessionAutoCloseTimer() {
+    if (liveSessionAutoCloseTimer) {
+      clearTimeout(liveSessionAutoCloseTimer);
+      liveSessionAutoCloseTimer = null;
+    }
+  }
+
+  function closeLiveSession(message) {
+    clearLiveSessionAutoCloseTimer();
+    DOM.videoContainer.classList.add('hidden');
+    DOM.videoIframe.src = '';
+    state.videoActive = false;
+    if (message) alert(message);
+  }
+
   async function joinLiveClass() {
     if (!state.currentUser || !state.currentChannel) { alert('Please select a channel first.'); return; }
 
@@ -4111,6 +4250,23 @@
     DOM.videoIframe.src = buildLiveUrl();
     state.videoActive = true;
     DOM.liveBtnText.textContent = state.isTeacher ? 'Start Live Session' : 'Join Live Session';
+
+    // Arm the auto-close timer against this specific session's real end
+    // time. If somehow already past it (clock drift, a slow join right at
+    // the wire), close immediately instead of leaving the call open with
+    // no timer at all.
+    clearLiveSessionAutoCloseTimer();
+    if (state.currentSchedule) {
+      const endsAt = new Date(state.currentSchedule.scheduled_time).getTime() + (state.currentSchedule.duration_minutes || 45) * 60000;
+      const msRemaining = endsAt - Date.now();
+      if (msRemaining <= 0) {
+        closeLiveSession('⏰ This session\'s scheduled time is already up.');
+      } else {
+        liveSessionAutoCloseTimer = setTimeout(() => {
+          closeLiveSession('⏰ This session\'s scheduled time is up — the call has been closed.');
+        }, msRemaining);
+      }
+    }
   }
 
   // ============================================================
@@ -5228,7 +5384,9 @@
     }
 
     DOM.dashboard.classList.add('hidden');
-    DOM.videoContainer.classList.add('hidden');
+    // FIX: clears liveSessionAutoCloseTimer too (via closeLiveSession()) so
+    // a still-armed auto-close alert can't fire after sign-out.
+    closeLiveSession();
     DOM.authCard.classList.remove('hidden');
     DOM.usernameInput.value = '';
     DOM.passwordInput.value = '';
@@ -5655,9 +5813,11 @@
   }
 
   DOM.closeVideoBtn.addEventListener('click', () => {
-    DOM.videoContainer.classList.add('hidden');
-    DOM.videoIframe.src = '';
-    state.videoActive = false;
+    // FIX: goes through closeLiveSession() now so manually closing the
+    // call also cancels its auto-close timer — without this, leaving a
+    // call early still left the timer armed to pop the "session is up"
+    // alert later on whatever screen the user had moved on to.
+    closeLiveSession();
   });
 
   DOM.fileInput.addEventListener('change', function() {
@@ -5746,14 +5906,53 @@
   });
 
   DOM.setScheduleBtn.addEventListener('click', async () => {
-    await setClassSchedule(
+    const ok = await setClassSchedule(
       DOM.scheduleTeacherInput.value.trim(),
       DOM.scheduleTimeInput.value,
-      parseInt(DOM.scheduleDurationInput.value, 10)
+      DOM.scheduleEndTimeInput.value,
+      DOM.scheduleRepeatInput.value,
+      DOM.scheduleRepeatUntilInput.value
     );
+    // FIX: previously these were cleared unconditionally, even when
+    // setClassSchedule() alerted a validation error and returned without
+    // saving anything — the admin's typed teacher/time vanished right
+    // after being told to fix it. Only clear the form on an actual save.
+    if (!ok) return;
     DOM.scheduleTeacherInput.value = '';
     DOM.scheduleTimeInput.value = '';
+    DOM.scheduleEndTimeInput.value = '';
+    DOM.scheduleRepeatInput.value = 'none';
+    DOM.scheduleRepeatUntilInput.value = '';
+    DOM.scheduleRepeatUntilWrap.classList.add('hidden');
+    DOM.scheduleRepeatHint.classList.add('hidden');
   });
+
+  // FIX: only show/require the "Repeat through" date once the admin has
+  // actually chosen to repeat the session — keeps the form uncluttered for
+  // the common one-off case while making the recurring option available.
+  if (DOM.scheduleRepeatInput) {
+    DOM.scheduleRepeatInput.addEventListener('change', () => {
+      const repeats = DOM.scheduleRepeatInput.value !== 'none';
+      DOM.scheduleRepeatUntilWrap.classList.toggle('hidden', !repeats);
+      DOM.scheduleRepeatHint.classList.toggle('hidden', !repeats);
+    });
+  }
+
+  // FIX: keep the end-time input from ever being left before the start
+  // time — nudge it forward by the same default 45-minute class length
+  // whenever the admin (re)picks a start time and hasn't set an end time
+  // yet, so the common case needs no extra typing.
+  if (DOM.scheduleTimeInput && DOM.scheduleEndTimeInput) {
+    DOM.scheduleTimeInput.addEventListener('change', () => {
+      if (!DOM.scheduleTimeInput.value || DOM.scheduleEndTimeInput.value) return;
+      const start = new Date(DOM.scheduleTimeInput.value);
+      if (Number.isNaN(start.getTime())) return;
+      const suggestedEnd = new Date(start.getTime() + 45 * 60000);
+      const pad = (n) => String(n).padStart(2, '0');
+      DOM.scheduleEndTimeInput.value =
+        `${suggestedEnd.getFullYear()}-${pad(suggestedEnd.getMonth() + 1)}-${pad(suggestedEnd.getDate())}T${pad(suggestedEnd.getHours())}:${pad(suggestedEnd.getMinutes())}`;
+    });
+  }
 
   DOM.assignStudentBtn.addEventListener('click', async () => {
     const username = DOM.assignStudentInput.value.trim();
