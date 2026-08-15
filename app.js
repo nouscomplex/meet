@@ -37,6 +37,14 @@
 
   if (!CONFIG) {
     console.error('❌ Config not loaded! Please include config.js');
+    // FIX: this used to bail out leaving #appLoading (the "checking
+    // session" spinner) on screen forever — indistinguishable from a hung
+    // app. Fall back to the login card so there's at least a visible,
+    // non-broken-looking screen before the alert.
+    const loader = document.getElementById('appLoading');
+    const authCardEl = document.getElementById('authCard');
+    if (loader) loader.classList.add('hidden');
+    if (authCardEl) authCardEl.classList.remove('hidden');
     alert('Configuration file not found. Please check your setup.');
     return;
   }
@@ -154,6 +162,7 @@
   const $ = (id) => document.getElementById(id);
 
   const DOM = {
+    appLoading: $('appLoading'),
     authCard: $('authCard'),
     dashboard: $('dashboard'),
     usernameInput: $('usernameInput'),
@@ -603,6 +612,19 @@
 
   function hideError() {
     DOM.authError.classList.add('hidden');
+  }
+
+  // FIX: see #appLoading in index.html — this is the "checking session"
+  // splash that covers the gap between page load and the app knowing
+  // whether to show the login card or the dashboard. hideAppLoading() also
+  // cancels the inline fallback timer index.html sets up in case app.js
+  // never gets this far at all (script error, blocked CDN, etc.).
+  function hideAppLoading() {
+    if (DOM.appLoading) DOM.appLoading.classList.add('hidden');
+    if (window.__orbitLoadingFallback) {
+      clearTimeout(window.__orbitLoadingFallback);
+      window.__orbitLoadingFallback = null;
+    }
   }
 
   function generateStoragePath(channelId, filename) {
@@ -4737,6 +4759,19 @@
   async function completeLogin(username, user) {
     console.log('🔐 Completing login for:', username);
 
+    // FIX: root cause of "opening the app / hard refresh shows the login
+    // page instead of home". This used to run AFTER loadRoleCache() and
+    // the own-role-id lookup below — two extra network round trips — so
+    // the login form (or, on a session restore, the #appLoading spinner)
+    // stayed on screen the whole time those were in flight. By the time we
+    // get here, authentication has already succeeded (we were handed a
+    // real `user`), so there's no reason to wait any longer to reveal the
+    // dashboard shell. Everything below still fills in profile/role detail
+    // once it's loaded; it doesn't need the screens switched to run.
+    hideAppLoading();
+    DOM.authCard.classList.add('hidden');
+    DOM.dashboard.classList.remove('hidden');
+
     await loadRoleCache();
     const role = getRoleFromUsername(username);
     const key = roleKey(username);
@@ -4764,8 +4799,9 @@
       state.myUserRoleId = null;
     }
 
-    DOM.authCard.classList.add('hidden');
-    DOM.dashboard.classList.remove('hidden');
+    // FIX: screens are already switched at the top of this function now —
+    // see the comment there. (Left this spot marked so it's clear the
+    // toggle wasn't just lost.)
 
     DOM.userBadge.textContent = displayName;
     DOM.userBadge.className = `role-chip role-${key}-chip`;
@@ -4871,6 +4907,18 @@
       await completeLogin(username, session.user);
     } catch (e) {
       console.warn('Session restore skipped:', e);
+    } finally {
+      // FIX: whatever happened above — no session, a mismatched email, a
+      // network error from getSession() itself (e.g. corrupted/blocked
+      // localStorage), or an exception thrown partway through
+      // completeLogin() — #appLoading must never be left on screen. If
+      // completeLogin() already got far enough to reveal the dashboard,
+      // this is a no-op; otherwise it's what actually shows the login
+      // card, instead of the app just sitting on a spinner forever.
+      hideAppLoading();
+      if (DOM.dashboard.classList.contains('hidden')) {
+        DOM.authCard.classList.remove('hidden');
+      }
     }
   }
 
