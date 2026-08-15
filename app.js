@@ -3467,23 +3467,29 @@
   // three button states — hidden / start / join:
   //   - isWithinWindow: `now` is inside [scheduled_time, scheduled_time +
   //     duration) — i.e. it's actually the scheduled date & time, not just
-  //     "some schedule row exists".
+  //     "some schedule row exists". Nothing is shown to anyone outside it.
   //   - isConcernedTeacher: the signed-in user is the exact
-  //     schedule.teacher_username this row was booked for (not "any
-  //     teacher", not admin-by-default).
-  //   - isLive: class_schedule.is_live is true — flipped on by
-  //     joinLiveClass() only when the concerned teacher actually presses
-  //     Start (see the FIX note there). Requires an `is_live boolean not
-  //     null default false` column on class_schedule — see the FIX note
-  //     above setClassSchedule().
+  //     schedule.teacher_username this row was booked for.
+  //   - isLive: class_schedule.is_live is true — flipped on the moment
+  //     someone actually presses Start (see joinLiveClass()). Requires an
+  //     `is_live boolean not null default false` column on class_schedule —
+  //     see the FIX note above setClassSchedule().
   //
-  // "start": only the concerned teacher, only inside the scheduled window —
-  //   they get "Start Live Session".
-  // "join": everyone else, only once isLive is true AND still inside the
-  //   scheduled window — they get "Join Live Session". Nobody sees a Join
-  //   button before the concerned teacher has actually started the class.
-  // "hidden": every other case — the button doesn't just go "dead" looking,
-  //   it's removed from the header entirely, per spec.
+  // "start": the concerned teacher (any time inside the window — starting
+  //   again once already live is harmless, joinLiveClass() only flips
+  //   is_live if it isn't already true), OR an admin when nobody has
+  //   started it yet. Admins keep the same unrestricted access they had
+  //   before this fix — able to start a session themselves (covering an
+  //   absent teacher, testing, etc.) rather than being gated behind the
+  //   concerned teacher — they just don't see a button outside the
+  //   scheduled window either.
+  // "join": everyone else (students, any other teacher account, and admins
+  //   once the session is already live) once isLive is true AND still
+  //   inside the scheduled window — they get "Join Live Session". Nobody
+  //   who isn't the concerned teacher or an admin sees a button before the
+  //   concerned teacher has actually started the class.
+  // "hidden": every other case — the button doesn't just go "dead"
+  //   looking, it's removed from the header entirely, per spec.
   function getLiveButtonMode() {
     const schedule = state.currentSchedule;
     if (!schedule || !state.currentUser) return 'hidden';
@@ -3492,28 +3498,34 @@
     const startsAt = new Date(schedule.scheduled_time).getTime();
     const endsAt = startsAt + (schedule.duration_minutes || 45) * 60000;
     const isWithinWindow = now >= startsAt && now < endsAt;
+    if (!isWithinWindow) return 'hidden';
 
     const isConcernedTeacher = normalizeUsername(state.currentUser.username) === normalizeUsername(schedule.teacher_username);
     const isLive = schedule.is_live === true;
 
-    if (isConcernedTeacher && isWithinWindow) return 'start';
-    if (isLive && isWithinWindow) return 'join';
+    if (state.isAdmin) return isLive ? 'join' : 'start';
+    if (isConcernedTeacher) return 'start';
+    if (isLive) return 'join';
     return 'hidden';
   }
 
+  // FIX: switched from fully removing the button (display:none) back to
+  // keeping it always visible but greyed out/unclickable outside its
+  // active state — same .btn-live-pill-dead "dead" look this button
+  // already had before the start/join gating work, just now driven by
+  // getLiveButtonMode() instead of a plain "does a schedule exist" check.
   function updateLiveButtonState() {
     if (!DOM.joinLiveBtn) return;
     const mode = getLiveButtonMode();
-    const isHidden = mode === 'hidden';
+    const isInactive = mode === 'hidden';
 
-    DOM.joinLiveBtn.classList.toggle('hidden', isHidden);
-    DOM.joinLiveBtn.disabled = isHidden;
-    DOM.joinLiveBtn.classList.toggle('btn-live-pill-dead', isHidden);
-    DOM.joinLiveBtn.setAttribute('aria-disabled', String(isHidden));
+    DOM.joinLiveBtn.disabled = isInactive;
+    DOM.joinLiveBtn.classList.toggle('btn-live-pill-dead', isInactive);
+    DOM.joinLiveBtn.setAttribute('aria-disabled', String(isInactive));
     if (DOM.liveBtnText) {
       DOM.liveBtnText.textContent = mode === 'start' ? 'Start Live Session' : 'Join Live Session';
     }
-    DOM.joinLiveBtn.title = isHidden
+    DOM.joinLiveBtn.title = isInactive
       ? (state.currentSchedule ? 'This live session hasn\'t started yet.' : 'No live session is scheduled for this group yet')
       : '';
   }
