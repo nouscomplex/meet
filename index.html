@@ -486,71 +486,69 @@
             <div class="empty-note">No live sessions scheduled yet.</div>
           </div>
 
-          <!-- FIX: root cause of "can't schedule a month / future months in
-               advance" — this form could only insert a single session, one
-               at a time, so booking a recurring class meant coming back and
-               refilling the form every single week. The Repeats/Repeat
-               through fields let one submit generate every occurrence up to
-               a chosen future date (see setClassSchedule() in app.js).
-               FIX: root cause of "meeting doesn't automatically close" —
-               there used to be no explicit end time at all, just a
-               free-typed "duration in minutes" number that was never used
-               for anything but display text. Asking for a real end time
-               here gives joinLiveClass() an actual clock time to auto-close
-               the call at (see closeLiveSession()/liveSessionAutoCloseTimer
-               in app.js) and fixes the live-session button going "dead"
-               mid-class on longer sessions (see loadSchedule()).
-               FIX: root cause of "make a checklist or show a calendar to
-               pick day/start/end" — a single combined date+time field
-               forced typing/scrolling through a date AND a time in one
-               control (fiddly, and error-prone for recurring sessions
-               where only the time-of-day should repeat). Splitting it into
-               a Day field (native calendar picker), a Starts field and an
-               Ends field (native time pickers) reads as the three-step
-               checklist that was asked for, and — as a bonus — recurrence
-               below now cleanly means "same Day-of-week/month, same
-               Starts/Ends", which is exactly what it already did under the
-               hood. -->
+          <!-- FIX: root cause of "make it easy for an admin to select dates
+               from a calendar, with a starting time and duration that
+               automatically sets the end time" — the previous version of
+               this form took one date at a time (or a rigid weekly/monthly
+               repeat pattern) through native date/time inputs, and a
+               manually-picked end time. This is a real month calendar
+               (#scheduleCalGrid, built by renderScheduleCalendar() in
+               app.js) an admin taps dates on directly — any combination,
+               any number of months ahead via the ‹/› nav — building up a
+               checklist of selected dates (chips below the grid, each
+               removable). A single Starts + Duration pair applies to every
+               date picked; "Ends" is computed and shown automatically,
+               never typed.
+               FIX: root cause of "add a checkbox to finalize whether the
+               class is on the same time and duration, if not set a
+               different time while selecting dates" — #scheduleSameTimeCheckbox
+               defaults to one shared Starts/Duration for the whole
+               selection; unchecking it reveals one row per selected date
+               (#schedulePerDateList) with its own Starts/Duration (and its
+               own auto-computed Ends), pre-filled from the shared values so
+               only the dates that actually differ need editing. See
+               renderSchedulePerDateList()/setClassSchedule() in app.js. -->
           <div id="adminProfileSchedule" class="hidden schedule-card">
             <div class="section-label"><i class="fas fa-calendar-clock"></i> Schedule class time</div>
-            <input id="scheduleTeacherInput" placeholder="Teacher username" class="field-sm" list="registeredUsersList" autocomplete="off" style="width:100%; margin-bottom:6px;">
+            <input id="scheduleTeacherInput" placeholder="Teacher username" class="field-sm" list="registeredUsersList" autocomplete="off" style="width:100%; margin-bottom:10px;">
 
-            <div style="margin-bottom:6px;">
-              <label class="schedule-field-label" for="scheduleDateInput"><span class="schedule-step-num">1</span> Day</label>
-              <input id="scheduleDateInput" type="date" class="field-sm" style="width:100%;">
+            <label class="schedule-field-label"><span class="schedule-step-num">1</span> Pick date(s)</label>
+            <div class="schedule-calendar-wrap">
+              <div class="schedule-calendar-header">
+                <button type="button" id="scheduleCalPrevBtn" class="icon-btn" aria-label="Previous month"><i class="fas fa-chevron-left"></i></button>
+                <span id="scheduleCalMonthLabel" class="schedule-calendar-month">—</span>
+                <button type="button" id="scheduleCalNextBtn" class="icon-btn" aria-label="Next month"><i class="fas fa-chevron-right"></i></button>
+              </div>
+              <div class="schedule-calendar-weekdays">
+                <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+              </div>
+              <div id="scheduleCalGrid" class="schedule-calendar-grid"></div>
             </div>
 
-            <div class="admin-row" style="display:flex; gap:8px; margin-bottom:6px;">
+            <div id="scheduleSelectedDates" class="schedule-selected-dates">
+              <span class="empty-note">Tap dates above to schedule a session on each.</span>
+            </div>
+
+            <div class="admin-row" style="display:flex; gap:8px; margin-bottom:4px;">
               <div style="flex:1; min-width:0;">
                 <label class="schedule-field-label" for="scheduleStartTimeInput"><span class="schedule-step-num">2</span> Starts</label>
                 <input id="scheduleStartTimeInput" type="time" class="field-sm" style="width:100%;">
               </div>
               <div style="flex:1; min-width:0;">
-                <label class="schedule-field-label" for="scheduleEndTimeInput"><span class="schedule-step-num">3</span> Ends</label>
-                <input id="scheduleEndTimeInput" type="time" class="field-sm" style="width:100%;">
+                <label class="schedule-field-label" for="scheduleDurationInput"><span class="schedule-step-num">3</span> Duration (min)</label>
+                <input id="scheduleDurationInput" type="number" min="5" max="480" step="5" value="45" class="field-sm" style="width:100%;">
               </div>
             </div>
+            <p class="schedule-end-preview"><i class="fas fa-hourglass-half"></i> Ends automatically at <span id="scheduleEndPreview">—</span></p>
 
-            <div class="admin-row" style="display:flex; gap:8px; margin-bottom:6px;">
-              <div style="flex:1; min-width:0;">
-                <label class="schedule-field-label" for="scheduleRepeatInput">Repeats</label>
-                <select id="scheduleRepeatInput" class="field-sm" style="width:100%;">
-                  <option value="none">Doesn't repeat</option>
-                  <option value="weekly">Weekly</option>
-                  <option value="monthly">Monthly</option>
-                </select>
-              </div>
-              <div id="scheduleRepeatUntilWrap" class="hidden" style="flex:1; min-width:0;">
-                <label class="schedule-field-label" for="scheduleRepeatUntilInput">Repeat through</label>
-                <input id="scheduleRepeatUntilInput" type="date" class="field-sm" style="width:100%;">
-              </div>
-            </div>
+            <label class="schedule-checkbox-row">
+              <input type="checkbox" id="scheduleSameTimeCheckbox" checked>
+              <span>Same start time &amp; duration for every date selected above</span>
+            </label>
 
-            <p id="scheduleRepeatHint" class="hidden schedule-repeat-hint">
-              <i class="fas fa-circle-info"></i> Creates one session per week/month, same day-of-week/month and same times, up to and including the date above.
-            </p>
+            <div id="schedulePerDateList" class="hidden schedule-per-date-list"></div>
 
-            <button id="setScheduleBtn" class="btn-admin-sm" style="width:100%;">
+            <button id="setScheduleBtn" class="btn-admin-sm" style="width:100%; margin-top:6px;">
               <i class="fas fa-clock"></i> Set time
             </button>
           </div>
