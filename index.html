@@ -163,8 +163,23 @@
           <input id="chatSearchInput" type="text" placeholder="Search Sessions" autocomplete="off">
         </div>
 
+        <!-- FIX: root cause of "app on opening shows the empty grey page
+             before loading the chats" — this used to ship completely
+             empty (just the comment below), so from the moment the
+             dashboard is revealed until loadChannels() finishes its
+             network round trip, this was blank space — no spinner, no
+             placeholder, nothing. These skeleton rows (see
+             .chat-row-skeleton in styles.css) show instantly instead, and
+             app.js's renderChatList() already clears #channelList before
+             drawing real rows or the "no channels" empty-state, so they
+             get replaced automatically — no app.js changes needed here. -->
         <div id="channelList" class="chat-list">
           <!-- dynamic chat rows -->
+          <div class="chat-row-skeleton" aria-hidden="true"></div>
+          <div class="chat-row-skeleton" aria-hidden="true"></div>
+          <div class="chat-row-skeleton" aria-hidden="true"></div>
+          <div class="chat-row-skeleton" aria-hidden="true"></div>
+          <div class="chat-row-skeleton" aria-hidden="true"></div>
         </div>
       </section>
 
