@@ -345,6 +345,7 @@
     statusModalTime: $('statusModalTime'),
     statusModalMedia: $('statusModalMedia'),
     statusModalContent: $('statusModalContent'),
+    statusLinkPreview: $('statusLinkPreview'),
     statusViewerBody: $('statusViewerBody'),
     statusPauseBtn: $('statusPauseBtn'),
   };
@@ -598,6 +599,59 @@
     const div = document.createElement('div');
     div.textContent = str ?? '';
     return div.innerHTML;
+  }
+
+  // ============================================================
+  // LINK DETECTION (chat messages + updates)
+  // ============================================================
+  // FIX: root cause of "shared link in chat or in updates not clickable
+  // with thumbnail" — there was no URL-detection code anywhere in this
+  // file. Chat message text went straight through escapeHtml() and status
+  // text went through .textContent (see buildMessageEl() / showStatusModal()
+  // below) — both render a shared link as completely inert plain text.
+  // linkifyText() below wraps any http(s) URL in a real, clickable <a>
+  // tag; getLinkPreview()/hydrateLinkPreview() further down (mirroring the
+  // getPdfThumbnail()/hydratePdfThumb() pattern already used for shared
+  // PDFs) fetch an actual title/thumbnail card for it.
+  const URL_REGEX = /(https?:\/\/[^\s<>"']+)/gi;
+  const TRAILING_PUNCT = /[.,:;!?'")\]]+$/;
+
+  // Splits `text` around any URLs, HTML-escapes every piece (URL included
+  // — so this stays exactly as safe against injection as escapeHtml()
+  // was), and wraps each URL in an <a> tag. Trailing punctuation right
+  // after a URL (a period ending the sentence, a closing bracket, etc.) is
+  // kept out of the link itself, same as WhatsApp/Slack-style linkifying.
+  function linkifyText(text) {
+    if (!text) return '';
+    const parts = String(text).split(URL_REGEX);
+    let html = '';
+    for (let i = 0; i < parts.length; i++) {
+      if (i % 2 === 1) {
+        let url = parts[i];
+        let trail = '';
+        const m = url.match(TRAILING_PUNCT);
+        if (m) {
+          trail = m[0];
+          url = url.slice(0, -trail.length);
+        }
+        if (!url) { html += escapeHtml(parts[i]); continue; }
+        const safeHref = escapeHtml(url);
+        html += `<a href="${safeHref}" target="_blank" rel="noopener" class="msg-link">${safeHref}</a>${escapeHtml(trail)}`;
+      } else {
+        html += escapeHtml(parts[i]);
+      }
+    }
+    return html;
+  }
+
+  // First raw URL in `text` (trailing punctuation stripped), or null.
+  // Used to decide whether to fetch/show a link-preview card.
+  function firstUrlIn(text) {
+    if (!text) return null;
+    URL_REGEX.lastIndex = 0;
+    const m = URL_REGEX.exec(String(text));
+    if (!m) return null;
+    return m[0].replace(TRAILING_PUNCT, '');
   }
 
   function isImageFile(url) {
@@ -2452,6 +2506,88 @@
     });
   }
 
+  // ============================================================
+  // LINK PREVIEW THUMBNAILS (chat + updates)
+  // ============================================================
+  // FIX: continuing the "shared link not clickable with thumbnail" fix —
+  // linkifyText() above already makes URLs clickable; this fetches the
+  // actual preview (title + thumbnail image) for the first link in a
+  // message/status. A browser can't read another site's <head> tags
+  // directly — that site's server would have to opt this app's origin
+  // into CORS, and virtually none do — so this calls microlink.io's free
+  // public preview API, which exists for exactly this and returns
+  // CORS-enabled JSON. That means the shared URL is sent to microlink.io
+  // to generate the card; if that's not acceptable, delete this function's
+  // two call sites below (in buildMessageEl() and showStatusModal()) —
+  // links stay clickable via linkifyText() either way, just without the
+  // image/title card. Mirrors getPdfThumbnail()/hydratePdfThumb() above:
+  // cached by URL, times out and fails soft (no card, not a visible error)
+  // if the fetch or the target site doesn't cooperate.
+  const linkPreviewCache = new Map();    // url -> {title, siteName, image} | null
+  const linkPreviewInFlight = new Map(); // url -> in-progress Promise
+
+  function getLinkPreview(url) {
+    if (linkPreviewCache.has(url)) return Promise.resolve(linkPreviewCache.get(url));
+    if (linkPreviewInFlight.has(url)) return linkPreviewInFlight.get(url);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+    const promise = fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}&meta=false`, { signal: controller.signal })
+      .then((res) => res.json())
+      .then((json) => {
+        const data = json && json.status === 'success' ? json.data : null;
+        const image = data && data.image && data.image.url;
+        const logo = data && data.logo && data.logo.url;
+        const preview = (data && (image || data.title)) ? {
+          title: data.title || '',
+          image: image || logo || null,
+          siteName: (() => {
+            try { return new URL(url).hostname.replace(/^www\./, ''); }
+            catch { return ''; }
+          })(),
+        } : null;
+        linkPreviewCache.set(url, preview);
+        return preview;
+      })
+      .catch((err) => {
+        console.warn(`Link preview failed for ${url}:`, err);
+        linkPreviewCache.set(url, null);
+        return null;
+      })
+      .finally(() => {
+        clearTimeout(timeoutId);
+        linkPreviewInFlight.delete(url);
+      });
+
+    linkPreviewInFlight.set(url, promise);
+    return promise;
+  }
+
+  // Fills a `.msg-link-preview-slot` placeholder (see buildMessageEl()) or
+  // any other empty container with a title/thumbnail card for `url`, once
+  // it's fetched. No-op (leaves the slot empty) if the fetch fails or the
+  // site has no title/image to show — the plain clickable link from
+  // linkifyText() is always there regardless.
+  function hydrateLinkPreview(slotEl, url, pinToBottom) {
+    if (!slotEl) return;
+    getLinkPreview(url).then((preview) => {
+      if (!preview || !slotEl.isConnected) return;
+      slotEl.classList.remove('hidden');
+      slotEl.innerHTML = `
+        <a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="msg-link-preview">
+          ${preview.image ? `<img class="msg-link-preview-img" src="${escapeHtml(preview.image)}" alt="" loading="lazy">` : ''}
+          <span class="msg-link-preview-body">
+            ${preview.title ? `<span class="msg-link-preview-title">${escapeHtml(truncate(preview.title, 90))}</span>` : ''}
+            <span class="msg-link-preview-site">${escapeHtml(preview.siteName)}</span>
+          </span>
+        </a>
+      `;
+      const img = slotEl.querySelector('img.msg-link-preview-img');
+      if (img) stickToBottomOnMediaLoad(img, 'load', pinToBottom);
+    });
+  }
+
   function buildMessageEl(msg, signature, pinToBottom) {
     const isMine = msg.username === state.currentUser?.username;
     const wrap = document.createElement('div');
@@ -2476,12 +2612,21 @@
     const ticksMarkup = (isMine && !msg.deleted_at) ? ticksHtml(msg) : '';
     const hasAttachment = !!msg.file_url && !msg.deleted_at;
 
+    // FIX: root cause of "shared link in chat not clickable with thumbnail"
+    // — only text messages (no file attachment) get a link preview card;
+    // an attachment already has its own preview and firstUrlIn() below only
+    // looks at msg.content anyway. hydrateLinkPreview() is called further
+    // down once wrap.innerHTML actually exists, same two-step pattern as
+    // hydratePdfThumb() for shared PDFs.
+    const linkUrl = (!hasAttachment && msg.content) ? firstUrlIn(msg.content) : null;
+
     let bubbleHtml = '';
     if (msg.deleted_at) {
       bubbleHtml = `<div class="msg-bubble msg-deleted"><i class="fas fa-ban"></i> This message was deleted by Nous Complex admin</div>`;
     } else if (msg.content) {
       const inlineTicks = (!hasAttachment && ticksMarkup) ? `<span class="msg-bubble-ticks">${ticksMarkup}</span>` : '';
-      bubbleHtml += `<div class="msg-bubble">${replyHtml}${escapeHtml(msg.content)}${inlineTicks}</div>`;
+      bubbleHtml += `<div class="msg-bubble">${replyHtml}${linkifyText(msg.content)}${inlineTicks}</div>`;
+      if (linkUrl) bubbleHtml += `<div class="msg-link-preview-slot hidden"></div>`;
     } else if (replyHtml) {
       const inlineTicks = (!hasAttachment && ticksMarkup) ? `<span class="msg-bubble-ticks">${ticksMarkup}</span>` : '';
       bubbleHtml += `<div class="msg-bubble">${replyHtml}${inlineTicks}</div>`;
@@ -2562,6 +2707,10 @@
       stickToBottomOnMediaLoad(wrap.querySelector('img.msg-media-img'), 'load', pinToBottom);
     } else if (hasAttachment && isVideoFile(msg.file_url)) {
       stickToBottomOnMediaLoad(wrap.querySelector('video.msg-media-img'), 'loadedmetadata', pinToBottom);
+    }
+
+    if (linkUrl) {
+      hydrateLinkPreview(wrap.querySelector('.msg-link-preview-slot'), linkUrl, pinToBottom);
     }
 
     return wrap;
@@ -4886,7 +5035,23 @@
     setAvatarEl(DOM.statusViewerAvatar, status.username, 'sm status-viewer-avatar');
     DOM.statusModalTitle.textContent = getDisplayName(status.username);
     DOM.statusModalTime.textContent = formatFullDate(status.created_at);
-    DOM.statusModalContent.textContent = status.content || '';
+    // FIX: root cause of "shared link in updates not clickable with
+    // thumbnail" — this used to be `.textContent`, which renders a shared
+    // link as plain, inert text no matter what. linkifyText() escapes the
+    // text exactly as safely as .textContent did, it just additionally
+    // wraps any http(s) URL in a real <a> tag.
+    DOM.statusModalContent.innerHTML = linkifyText(status.content || '');
+
+    if (DOM.statusLinkPreview) {
+      const statusLinkUrl = firstUrlIn(status.content);
+      if (statusLinkUrl) {
+        DOM.statusLinkPreview.innerHTML = '';
+        hydrateLinkPreview(DOM.statusLinkPreview, statusLinkUrl, false);
+      } else {
+        DOM.statusLinkPreview.classList.add('hidden');
+        DOM.statusLinkPreview.innerHTML = '';
+      }
+    }
 
     if (status.media_url && isVideoFile(status.media_url)) {
       DOM.statusModalMedia.innerHTML = `<video src="${escapeHtml(status.media_url)}" controls autoplay muted playsinline></video>`;
