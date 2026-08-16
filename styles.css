@@ -1753,7 +1753,18 @@ body.theme-dark .msg-time {
 .lightbox-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.9);
+  /* FIX: "media viewer background is black instead of the theme's navy" —
+     this was a flat rgba(0,0,0,0.9) backdrop, unrelated to the app's navy
+     brand color used everywhere else a full-screen surface shows up (the
+     status/update viewer's .status-viewer-inner, the brand header, primary
+     buttons — all var(--navy)/var(--chat-navy), #0E1B75). Shared by both
+     the image/video lightbox and the file/PDF viewer (see
+     `overlay.className = 'lightbox-overlay doc-viewer-overlay'` /
+     `= 'lightbox-overlay'` in app.js), so fixing it here covers both.
+     Tinting rgba() with the same navy instead of black keeps the
+     slightly-see-through backdrop feel (rather than going fully opaque
+     like .status-viewer-inner) while actually matching the theme. */
+  background: rgba(14, 27, 117, 0.92);
   z-index: 9999;
   display: flex;
   align-items: center;
