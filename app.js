@@ -5035,7 +5035,17 @@
       });
     }
 
-    const shouldShow = (state.isAdmin || state.isTeacher) && CONFIG.FEATURES.ENABLE_STATUS_UPDATES;
+    // FIX: root cause of "Post an update is showing to users instead of
+    // admin only" — this used to be `(state.isAdmin || state.isTeacher)`.
+    // state.isTeacher is deliberately set to `role === TEACHER || isAdmin`
+    // elsewhere (see restoreSession()/completeLogin()) so teacher-level
+    // chat features also work for admins, but that same flag being reused
+    // here meant plain teachers (isTeacher===true, isAdmin===false) also
+    // satisfied this OR and got the "Post an update" button — Updates is
+    // meant to be admin-only, matching #statusSelectHeader's admin-only
+    // gating just above and every other admin-only control on this screen.
+    // Gate on isAdmin alone so only admins can post.
+    const shouldShow = state.isAdmin && CONFIG.FEATURES.ENABLE_STATUS_UPDATES;
     DOM.statusAddBtn.classList.toggle('hidden', !shouldShow);
     if (DOM.postStatusFab) DOM.postStatusFab.classList.add('hidden');
   }
