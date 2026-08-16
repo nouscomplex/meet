@@ -419,6 +419,13 @@ button { font-family: inherit; }
 /* ============================================================
    SESSION CHECK LOADER / SPLASH SCREEN (FIX — see #appLoading in index.html)
    ============================================================ */
+/* FIX: root cause of "why is the loading screen navy blue instead of
+   white (#ffffff)" — this used to be `background: var(--accent)`, and
+   --accent resolves to #0E1B75 (navy) in light mode and #7BB8FF (pale
+   blue) in dark mode — never white. The splash shows before app.js has
+   even decided light vs. dark (it's the very first thing painted), so
+   it's pinned to a literal #ffffff here instead of a theme variable —
+   it should look the same regardless of which theme the user ends up in. */
 .app-loading {
   position: fixed;
   inset: 0;
@@ -428,7 +435,7 @@ button { font-family: inherit; }
   align-items: center;
   justify-content: center;
   gap: 18px;
-  background: var(--accent);
+  background: #ffffff;
 }
 /* FIX: was .app-loading-emblem — a small 64px app-icon crop of
    nouscomplex.png. This is the app's splash screen now, so it renders the
@@ -439,12 +446,15 @@ button { font-family: inherit; }
   height: auto;
   object-fit: contain;
 }
+/* FIX: the ring/top colors here were white-on-white, tuned for the old
+   navy background — invisible against the new #ffffff splash above.
+   Switched to the navy accent so the spinner is actually visible. */
 .app-loading-spinner {
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  border: 3px solid rgba(255,255,255,0.28);
-  border-top-color: #fff;
+  border: 3px solid rgba(14, 27, 117, 0.16);
+  border-top-color: var(--accent);
   animation: orbit-loading-spin 0.8s linear infinite;
 }
 @keyframes orbit-loading-spin {
@@ -842,6 +852,49 @@ body.theme-dark .brand-word { color: #3A3E63; }
   flex-direction: column;
 }
 
+/* FIX: root cause of "app on opening shows the empty grey page before
+   loading the chats" — #channelList used to ship with nothing in it but
+   an HTML comment (see index.html). completeLogin() in app.js reveals
+   #dashboard as soon as it knows the user is signed in (that itself is a
+   deliberate, separate fix — see the comment on #appLoading in
+   index.html), but the channel list itself still has to make its own
+   network round trip (loadChannels()) before it has anything to render.
+   Between those two moments there was no spinner, no skeleton, nothing —
+   just blank space under the search bar, which on a slow connection can
+   sit there for a second or more and reads as a broken/empty screen.
+   These placeholder rows ship directly in #channelList's markup so
+   they're visible instantly, and renderChatList() (app.js) already does
+   `channelList.innerHTML = ''` before drawing real rows, so they're
+   replaced automatically the moment the real data (or the "no channels"
+   empty-state) is ready — no app.js changes needed for this part. */
+.chat-row-skeleton {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 8px;
+}
+.chat-row-skeleton::before {
+  content: '';
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--surface-sunken);
+  flex-shrink: 0;
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+.chat-row-skeleton::after {
+  content: '';
+  flex: 1;
+  height: 14px;
+  border-radius: 6px;
+  background: var(--surface-sunken);
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
 .chat-row {
   display: flex;
   align-items: center;
@@ -1138,6 +1191,15 @@ body.theme-dark .brand-word { color: #3A3E63; }
 }
 .title-name { font-family: var(--font-display); font-weight: 800; font-size: 15.5px; color: var(--chat-accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .title-sub { font-size: 11.5px; color: var(--chat-ink-soft); }
+/* FIX: root cause of "why can't I see the user is typing in real-time" —
+   there was no typing-indicator feature anywhere in the app; nothing ever
+   broadcast a "typing" event and nothing listened for one. app.js now
+   broadcasts/listens via Supabase Realtime broadcast (see broadcastTyping()/
+   handleIncomingTyping()/renderTypingIndicator() in app.js) and swaps this
+   same #chatDetailSub subtitle to "<name> is typing…" while it's active.
+   This just makes that state visually distinct from the normal "N members
+   online" text. */
+.title-sub.typing-active { color: var(--chat-accent); font-weight: 600; }
 
 .btn-live-pill {
   display: flex;
