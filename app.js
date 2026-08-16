@@ -2560,7 +2560,19 @@
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 6000);
 
-    const promise = fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}&meta=false`, { signal: controller.signal })
+    // FIX: root cause of "shared link in updates/chats loads with no
+    // thumbnail" — this request used to include `&meta=false`. Per
+    // Microlink's own API docs that flag *disables metadata extraction
+    // entirely* (title/image/logo are simply never fetched — the response
+    // comes back with x-fetch-mode: skipped), so `data.title`/`data.image`/
+    // `data.logo` below were always empty and the `preview` object a few
+    // lines down was always null. hydrateLinkPreview() was working exactly
+    // as written; it just never had anything to render, so the
+    // `.msg-link-preview-slot`/#statusLinkPreview card stayed empty/hidden
+    // for every single link, in both chats and updates. Metadata (title +
+    // image) is exactly what this feature needs, so it must NOT be
+    // disabled — dropping the flag restores the default (meta=true).
+    const promise = fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`, { signal: controller.signal })
       .then((res) => res.json())
       .then((json) => {
         const data = json && json.status === 'success' ? json.data : null;
@@ -2918,6 +2930,14 @@
     if (!bubbleWrap || !bubbleWrap.dataset.id) return;
     if (bubbleWrap.querySelector('.msg-deleted')) return;
     if (e.target.closest('.msg-media-preview, .msg-doc-card')) return;
+    // FIX: on desktop, clicking a shared link inside a bubble used to also
+    // fall through to here and select the whole message (opening the
+    // select-header UI behind the new tab the link opened), because this
+    // handler didn't know about `.msg-link`/`.msg-link-preview` the way it
+    // already did about media previews and doc cards. Exclude them too, so
+    // clicking a link only opens it (see the dedicated click handler below)
+    // instead of also entering message-selection mode.
+    if (e.target.closest('a.msg-link, a.msg-link-preview')) return;
     selectMessageForInfo(bubbleWrap);
   });
 
