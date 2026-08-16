@@ -632,9 +632,21 @@
   // where a lookbehind group throws a SyntaxError the instant this file is
   // parsed and would take down the entire script (a blank app for those
   // users), which is worse than the bug being fixed here.
+  // NOTE: the outer group below MUST be a capturing group "(...)", not a
+  // non-capturing "(?:...)" one — String.prototype.split() only keeps a
+  // regex's matched text in its output when the regex has a capturing
+  // group; with a non-capturing group split() just deletes the match
+  // entirely instead of returning it as a piece of the array. (This is
+  // exactly what the original regex's outer parentheses were already
+  // doing — easy to lose when rewriting it into an alternation like this.)
+  // Getting this wrong doesn't throw or show up in firstUrlIn() (which
+  // uses exec(), unaffected by capturing groups either way) — only in
+  // linkifyText()'s split()-based rendering, where it silently turns any
+  // message that's ONLY a URL into an empty bubble: the exact "empty chat
+  // bubble but the preview card still shows" symptom.
   const COMMON_TLDS = 'com|net|org|io|co|dev|app|edu|gov|mil|info|biz|me|xyz|ai|tv|so|gg|pk|in|uk|us|ca|au|de|fr|jp|nl|ru|br|es|it|ch|se|no|dk|fi|pl|tech|online|store|site|shop|live|news|blog';
   const URL_REGEX = new RegExp(
-    '\\b(?:' +
+    '\\b(' +
       'https?://[^\\s<>"\']+' +                                                              // explicit http(s)://…
       '|www\\.[a-z0-9-]+(?:\\.[a-z0-9-]+)*(?:/[^\\s<>"\']*)?' +                               // www.…
       `|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.(?:${COMMON_TLDS})(?:/[^\\s<>"\']*)?` + // bare domain.tld
