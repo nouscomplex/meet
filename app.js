@@ -1178,8 +1178,22 @@
     channels.forEach((ch) => {
       const preview = state.channelPreviews[ch.id];
       const unread = state.unreadByChannel[ch.id] || 0;
+      // FIX: "it should be a hyperlink" — a shared link in the last-message
+      // snippet shown here used to go through plain escapeHtml(), so it
+      // read as inert text even though the same link is a real clickable
+      // <a> once you open the chat. firstUrlIn() looks at the *untruncated*
+      // content so the href is always the complete, correct URL — never a
+      // URL cut off mid-string by truncate() below — and only the display
+      // text is truncated. The row's own pointerup/click handlers further
+      // down are taught to let a click on this link open the link instead
+      // of opening the chat.
+      const previewLinkUrl = preview && preview.content ? firstUrlIn(preview.content) : null;
       const previewText = preview
-        ? (preview.content ? escapeHtml(truncate(preview.content, 42)) : (preview.file_url ? '📎 Attachment' : ''))
+        ? (preview.content
+            ? (previewLinkUrl
+                ? `<a href="${escapeHtml(previewLinkUrl)}" target="_blank" rel="noopener" class="msg-link">${escapeHtml(truncate(preview.content, 42))}</a>`
+                : escapeHtml(truncate(preview.content, 42)))
+            : (preview.file_url ? '📎 Attachment' : ''))
         : 'No messages yet';
       const previewAuthor = preview && preview.username ? `${escapeHtml(getDisplayName(preview.username))}: ` : '';
       const time = preview ? formatTimeAgo(preview.created_at) : '';
@@ -1214,7 +1228,18 @@
       row.addEventListener('pointerup', (e) => {
         if (e.button === 2) return;
         if (channelLongPressFired) { channelLongPressFired = false; return; }
+        if (e.target.closest('a.msg-link')) return; // let the click handler below handle it
         openChannel(ch);
+      });
+      // FIX: see previewLinkUrl above — clicking the link inside the
+      // preview snippet should open the link, not open the chat the row
+      // otherwise navigates to on pointerup.
+      row.addEventListener('click', (e) => {
+        const link = e.target.closest('a.msg-link');
+        if (!link) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openExternalLink(link.getAttribute('href'));
       });
       DOM.channelList.appendChild(row);
     });
@@ -4852,8 +4877,15 @@
         item.className = 'update-row';
         item.dataset.id = st.id;
         const displayName = getDisplayName(st.username);
+        // FIX: "it should be a hyperlink" — same fix as the chat-list
+        // preview above, applied to the Updates row snippet. firstUrlIn()
+        // reads the full status content so the href is always the complete
+        // URL, independent of where truncate() below cuts the display text.
+        const statusPreviewLinkUrl = st.content ? firstUrlIn(st.content) : null;
         const preview = st.content
-          ? escapeHtml(truncate(st.content, 46))
+          ? (statusPreviewLinkUrl
+              ? `<a href="${escapeHtml(statusPreviewLinkUrl)}" target="_blank" rel="noopener" class="msg-link">${escapeHtml(truncate(st.content, 46))}</a>`
+              : escapeHtml(truncate(st.content, 46)))
           : (st.media_url ? '<i class="fas fa-camera"></i> Photo/video' : '');
         // FIX: admin-visible "seen by N" count so it's clear at a glance who
         // has viewed an update, without needing to open each one — tapping
@@ -4892,7 +4924,18 @@
         item.addEventListener('pointerup', (e) => {
           if (e.button === 2) return;
           if (statusLongPressFired) { statusLongPressFired = false; return; }
+          if (e.target.closest('a.msg-link')) return; // let the click handler below handle it
           showStatusModal(st);
+        });
+        // FIX: see statusPreviewLinkUrl above — clicking the link inside
+        // the preview snippet should open the link, not open the full-
+        // screen status viewer the row otherwise opens on pointerup.
+        item.addEventListener('click', (e) => {
+          const link = e.target.closest('a.msg-link');
+          if (!link) return;
+          e.preventDefault();
+          e.stopPropagation();
+          openExternalLink(link.getAttribute('href'));
         });
         DOM.statusTray.appendChild(item);
       });
