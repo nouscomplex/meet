@@ -166,6 +166,13 @@
     // immediately rather than waiting on its original auto-close timer —
     // see the FIX note inside loadSchedule() and endLiveSessionForEveryone().
     activeCallScheduleId: null,
+    // FIX: root cause of "why can't I see the user is typing in real-time"
+    // — nothing in the app tracked this before. See broadcastTyping()/
+    // handleIncomingTyping()/renderTypingIndicator() below (search "8c.
+    // REAL-TIME TYPING INDICATOR"). lastTypingBroadcastAt throttles this
+    // user's own outgoing broadcasts; typingTimers (module-level, not on
+    // `state`) tracks everyone else's incoming ones per channel.
+    lastTypingBroadcastAt: 0,
   };
 
   // ============================================================
@@ -2127,6 +2134,17 @@
           saveCachedMessages(channelId, state.messages);
         }
       })
+      // FIX: root cause of "why can't I see the user is typing in
+      // real-time" — this per-channel realtime channel already existed for
+      // postgres_changes on the messages table; it just never had a
+      // broadcast listener attached. Broadcast is ephemeral (nothing is
+      // written to any table), so this piggybacks on the same socket
+      // instead of opening a second realtime channel. See broadcastTyping()
+      // (fired from #messageInput's `input` listener near the bottom of
+      // this file) for the sending side.
+      .on('broadcast', { event: 'typing' }, (payload) => {
+        handleIncomingTyping(channelId, payload.payload);
+      })
       .subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {
           reconnectAttempts = 0;
@@ -2165,6 +2183,93 @@
       });
 
     state.messagesSubscription = thisChannel;
+  }
+
+  // ============================================================
+  // 8c. REAL-TIME "TYPING…" INDICATOR
+  // ============================================================
+  // FIX: root cause of "why can't I see the user is typing in real-time" —
+  // this feature simply didn't exist anywhere in the app: nothing ever
+  // broadcast a "typing" event, and nothing listened for one. Built on top
+  // of the realtime channel subscribeToMessages() already opens per open
+  // conversation (`messages:${channelId}`), using Supabase Realtime's
+  // ephemeral broadcast feature — no new table/column, nothing persisted,
+  // no extra socket.
+  //
+  // typingTimers: `${channelId}:${username}` -> auto-expire timeout id.
+  // Module-level (not on `state`) since it's pure UI/presence, not
+  // something any other part of the app needs to read or that should be
+  // cached/restored across a reload.
+  const typingTimers = new Map();
+
+  function getTypingUsernames(channelId) {
+    const prefix = `${channelId}:`;
+    return [...typingTimers.keys()]
+      .filter((key) => key.startsWith(prefix))
+      .map((key) => key.slice(prefix.length));
+  }
+
+  // Called when a "typing" broadcast arrives from someone else in a
+  // channel we're subscribed to (see the .on('broadcast', ...) handler in
+  // subscribeToMessages() above).
+  function handleIncomingTyping(channelId, payload) {
+    if (!payload || !payload.username) return;
+    if (payload.username === state.currentUser?.username) return; // ignore our own echo
+    const key = `${channelId}:${payload.username}`;
+    if (typingTimers.has(key)) clearTimeout(typingTimers.get(key));
+    // FIX: auto-expire after 3s of silence instead of waiting for an
+    // explicit "stopped typing" event — covers the case where that event
+    // is dropped entirely (tab closed, network drop, app backgrounded),
+    // which would otherwise leave a stale "typing…" shown forever.
+    typingTimers.set(key, setTimeout(() => {
+      typingTimers.delete(key);
+      renderTypingIndicator(channelId);
+    }, 3000));
+    renderTypingIndicator(channelId);
+  }
+
+  // Swaps the chat header subtitle (#chatDetailSub, normally "N members
+  // online" — see updateChatDetailSubtitle()) to show who's typing, only
+  // for whichever channel is actually open on screen right now.
+  function renderTypingIndicator(channelId) {
+    if (!state.currentChannel || state.currentChannel.id !== channelId) return;
+    if (!DOM.chatDetailSub) return;
+    const names = getTypingUsernames(channelId).map(getDisplayName);
+    if (names.length === 0) {
+      updateChatDetailSubtitle();
+      return;
+    }
+    DOM.chatDetailSub.textContent = names.length === 1
+      ? `${names[0]} is typing…`
+      : `${names.length} people are typing…`;
+    DOM.chatDetailSub.classList.add('typing-active');
+  }
+
+  // Called when leaving a channel (selectChannel()) so a stale "typing…"
+  // from the previous conversation can't linger after switching chats.
+  function clearTypingIndicator(channelId) {
+    const prefix = `${channelId}:`;
+    [...typingTimers.keys()]
+      .filter((key) => key.startsWith(prefix))
+      .forEach((key) => {
+        clearTimeout(typingTimers.get(key));
+        typingTimers.delete(key);
+      });
+  }
+
+  // Sends this user's own "typing" broadcast, throttled to at most once
+  // every 2s so every keystroke doesn't open a socket write — fired from
+  // #messageInput's `input` listener near the bottom of this file.
+  function broadcastTyping() {
+    if (!state.currentChannel || !state.messagesSubscription || !state.currentUser) return;
+    const now = Date.now();
+    if (now - state.lastTypingBroadcastAt < 2000) return;
+    state.lastTypingBroadcastAt = now;
+    state.messagesSubscription.send({
+      type: 'broadcast',
+      event: 'typing',
+      payload: { username: state.currentUser.username },
+    });
   }
 
   // ============================================================
@@ -5755,6 +5860,11 @@
   // it. See isChatDetailVisible above for the full explanation.
   async function selectChannel(channel, { markSeenNow = true } = {}) {
     if (typeof exitMessageSelection === 'function') exitMessageSelection();
+    // FIX: clear any "typing…" state left over from the conversation being
+    // left, so it can't linger in the header after switching chats.
+    if (state.currentChannel && state.currentChannel.id !== channel.id) {
+      clearTypingIndicator(state.currentChannel.id);
+    }
     state.currentChannel = channel;
     updateChatEmptyState();
     highlightActiveChatRow();
@@ -5807,6 +5917,14 @@
 
   function updateChatDetailSubtitle() {
     if (!state.currentChannel) return;
+    // FIX: this is also called from the presence 'sync' handler (see
+    // setupPresence()) every time anyone's online status changes, which
+    // fires far more often than once — without this guard it would
+    // immediately clobber the "<name> is typing…" text renderTypingIndicator()
+    // just set with the normal member-count text on the very next presence
+    // heartbeat.
+    if (getTypingUsernames(state.currentChannel.id).length > 0) return;
+    if (DOM.chatDetailSub) DOM.chatDetailSub.classList.remove('typing-active');
     const total = state.currentMembers.length;
     const online = state.currentMembers.filter((m) => state.onlineUsers.has((m.username || '').toLowerCase())).length;
     DOM.chatDetailSub.textContent = total ? `${total} member${total === 1 ? '' : 's'} · ${online} online` : '';
@@ -6546,14 +6664,24 @@
   });
 
   DOM.messageInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') { 
-      e.preventDefault(); 
-      DOM.sendMsgBtn.click(); 
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      DOM.sendMsgBtn.click();
     }
     if (state.inactivityTimer) {
       clearTimeout(state.inactivityTimer);
       state.inactivityTimer = null;
     }
+  });
+
+  // FIX: root cause of "why can't I see the user is typing in real-time" —
+  // sending side. Fires on every keystroke; broadcastTyping() itself
+  // throttles to at most one actual network send every 2s, and the
+  // receiving end (handleIncomingTyping(), in the 8c. section above)
+  // auto-expires the indicator 3s after the last keystroke, so nothing
+  // extra is needed here to signal "stopped typing".
+  DOM.messageInput.addEventListener('input', () => {
+    broadcastTyping();
   });
 
   DOM.messageInput.addEventListener('focus', () => {
