@@ -613,8 +613,46 @@
   // tag; getLinkPreview()/hydrateLinkPreview() further down (mirroring the
   // getPdfThumbnail()/hydratePdfThumb() pattern already used for shared
   // PDFs) fetch an actual title/thumbnail card for it.
-  const URL_REGEX = /(https?:\/\/[^\s<>"']+)/gi;
+  //
+  // FIX: root cause of "the URL of any website is not being shown as a
+  // hyperlink with preview card" even after the fix above — the old
+  // URL_REGEX only ever matched text that started with an explicit
+  // "http://" or "https://" scheme. Almost nobody actually types that: a
+  // person sharing a site normally just pastes/types "www.example.com" or
+  // even just "example.com" — neither of those has a scheme, so the old
+  // regex silently ignored them completely (no <a> tag, no preview fetch,
+  // nothing) no matter how many times it was tried. This new pattern still
+  // matches explicit http(s) links, and now ALSO matches "www.…" links and
+  // bare "domain.tld" text (restricted to a curated list of common TLDs so
+  // ordinary prose like "Mr. Smith" or "e.g." can't be mistaken for a
+  // link). The domain half of an email address ("user@example.com") is
+  // excluded via a plain preceding-character check in linkifyText()/
+  // firstUrlIn() below rather than a regex lookbehind — this app is a
+  // standalone PWA that has to run on older iOS/Safari (pre-16.4) too,
+  // where a lookbehind group throws a SyntaxError the instant this file is
+  // parsed and would take down the entire script (a blank app for those
+  // users), which is worse than the bug being fixed here.
+  const COMMON_TLDS = 'com|net|org|io|co|dev|app|edu|gov|mil|info|biz|me|xyz|ai|tv|so|gg|pk|in|uk|us|ca|au|de|fr|jp|nl|ru|br|es|it|ch|se|no|dk|fi|pl|tech|online|store|site|shop|live|news|blog';
+  const URL_REGEX = new RegExp(
+    '\\b(?:' +
+      'https?://[^\\s<>"\']+' +                                                              // explicit http(s)://…
+      '|www\\.[a-z0-9-]+(?:\\.[a-z0-9-]+)*(?:/[^\\s<>"\']*)?' +                               // www.…
+      `|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.(?:${COMMON_TLDS})(?:/[^\\s<>"\']*)?` + // bare domain.tld
+    ')\\b',
+    'gi'
+  );
   const TRAILING_PUNCT = /[.,:;!?'")\]]+$/;
+
+  // A match from URL_REGEX may have no scheme at all ("www.foo.com" /
+  // "foo.com") — browsers resolve a scheme-less href as a path relative to
+  // THIS app's own origin, which is why simply reusing the typed text as
+  // href would look "linkified" but silently do nothing (or 404 inside the
+  // app) when clicked. Anything that isn't already http(s) gets "https://"
+  // prepended for the actual href/fetch target; the text shown to the user
+  // is left exactly as they typed it.
+  function normalizeUrlHref(raw) {
+    return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  }
 
   // Splits `text` around any URLs, HTML-escapes every piece (URL included
   // — so this stays exactly as safe against injection as escapeHtml()
@@ -627,16 +665,25 @@
     let html = '';
     for (let i = 0; i < parts.length; i++) {
       if (i % 2 === 1) {
-        let url = parts[i];
+        let raw = parts[i];
+        // The bare-domain alternative above has no way to see the
+        // character just before its own match, so "user@example.com"
+        // would otherwise match "example.com" and linkify half an email
+        // address. parts[i - 1] is exactly the text between the previous
+        // match (or the start) and this one, so checking its last
+        // character catches that case without needing a lookbehind.
+        const precededByAt = i > 0 && /@$/.test(parts[i - 1]);
+        if (precededByAt) { html += escapeHtml(raw); continue; }
         let trail = '';
-        const m = url.match(TRAILING_PUNCT);
+        const m = raw.match(TRAILING_PUNCT);
         if (m) {
           trail = m[0];
-          url = url.slice(0, -trail.length);
+          raw = raw.slice(0, -trail.length);
         }
-        if (!url) { html += escapeHtml(parts[i]); continue; }
-        const safeHref = escapeHtml(url);
-        html += `<a href="${safeHref}" target="_blank" rel="noopener" class="msg-link">${safeHref}</a>${escapeHtml(trail)}`;
+        if (!raw) { html += escapeHtml(parts[i]); continue; }
+        const safeHref = escapeHtml(normalizeUrlHref(raw));
+        const safeText = escapeHtml(raw);
+        html += `<a href="${safeHref}" target="_blank" rel="noopener" class="msg-link">${safeText}</a>${escapeHtml(trail)}`;
       } else {
         html += escapeHtml(parts[i]);
       }
@@ -644,14 +691,21 @@
     return html;
   }
 
-  // First raw URL in `text` (trailing punctuation stripped), or null.
-  // Used to decide whether to fetch/show a link-preview card.
+  // First URL in `text` (trailing punctuation stripped, scheme-less
+  // matches normalized to an absolute https:// href), or null. Used both
+  // to decide whether to fetch/show a link-preview card and as the actual
+  // fetch/href target for it. Skips a match that's really the domain half
+  // of an email address — see the matching comment in linkifyText().
   function firstUrlIn(text) {
     if (!text) return null;
+    const str = String(text);
     URL_REGEX.lastIndex = 0;
-    const m = URL_REGEX.exec(String(text));
-    if (!m) return null;
-    return m[0].replace(TRAILING_PUNCT, '');
+    let m;
+    while ((m = URL_REGEX.exec(str))) {
+      if (m.index > 0 && str[m.index - 1] === '@') continue;
+      return normalizeUrlHref(m[0].replace(TRAILING_PUNCT, ''));
+    }
+    return null;
   }
 
   // FIX: root cause of "website link is not directly being open from chat
@@ -2575,11 +2629,34 @@
   // image/title card. Mirrors getPdfThumbnail()/hydratePdfThumb() above:
   // cached by URL, times out and fails soft (no card, not a visible error)
   // if the fetch or the target site doesn't cooperate.
-  const linkPreviewCache = new Map();    // url -> {title, siteName, image} | null
+  // FIX: root cause of "preview card never shows, even for links that
+  // clearly work in a browser" — two problems on top of the meta=false one
+  // documented below. (1) A failed/empty lookup used to be cached as `null`
+  // FOREVER for the lifetime of the page — Microlink's free anonymous tier
+  // is rate-limited (documented ~50 requests/day per IP, no API key), so a
+  // handful of test messages sent while iterating on this feature is
+  // enough to exhaust it; every fetch afterwards started 403/429ing, and
+  // because that permanent null-cache made every retry an instant no-op,
+  // the card looked "broken" for the rest of the session even after the
+  // rate limit window reset. Failed/empty lookups are now cached for only
+  // LINK_PREVIEW_NEGATIVE_TTL_MS before being retried. (2) A non-2xx
+  // response (e.g. the 403/429 above) was fed straight into res.json() and
+  // whatever came back just silently failed the `status === 'success'`
+  // check with no record of *why* — logging res.status/res.statusText when
+  // the request isn't ok. means a real rate-limit/CORS/outage problem shows
+  // up in devtools instead of being indistinguishable from "this link has
+  // no preview".
+  const LINK_PREVIEW_NEGATIVE_TTL_MS = 10 * 60 * 1000;
+  const linkPreviewCache = new Map();    // url -> { value: {title,siteName,image}|null, ts }
   const linkPreviewInFlight = new Map(); // url -> in-progress Promise
 
   function getLinkPreview(url) {
-    if (linkPreviewCache.has(url)) return Promise.resolve(linkPreviewCache.get(url));
+    const cached = linkPreviewCache.get(url);
+    if (cached) {
+      const stale = cached.value === null && (Date.now() - cached.ts) >= LINK_PREVIEW_NEGATIVE_TTL_MS;
+      if (!stale) return Promise.resolve(cached.value);
+      linkPreviewCache.delete(url);
+    }
     if (linkPreviewInFlight.has(url)) return linkPreviewInFlight.get(url);
 
     const controller = new AbortController();
@@ -2598,7 +2675,12 @@
     // image) is exactly what this feature needs, so it must NOT be
     // disabled — dropping the flag restores the default (meta=true).
     const promise = fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`, { signal: controller.signal })
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) {
+          console.warn(`Link preview request for ${url} failed: HTTP ${res.status} ${res.statusText} (Microlink's free tier is rate-limited — this is expected if it's been called a lot recently; it will retry automatically in ${Math.round(LINK_PREVIEW_NEGATIVE_TTL_MS / 60000)} min)`);
+        }
+        return res.json();
+      })
       .then((json) => {
         const data = json && json.status === 'success' ? json.data : null;
         const image = data && data.image && data.image.url;
@@ -2611,12 +2693,12 @@
             catch { return ''; }
           })(),
         } : null;
-        linkPreviewCache.set(url, preview);
+        linkPreviewCache.set(url, { value: preview, ts: Date.now() });
         return preview;
       })
       .catch((err) => {
         console.warn(`Link preview failed for ${url}:`, err);
-        linkPreviewCache.set(url, null);
+        linkPreviewCache.set(url, { value: null, ts: Date.now() });
         return null;
       })
       .finally(() => {
