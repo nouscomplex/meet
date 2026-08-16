@@ -654,6 +654,33 @@
     return m[0].replace(TRAILING_PUNCT, '');
   }
 
+  // FIX: root cause of "website link is not directly being open from chat
+  // or updates on clicking" — this app installs as a standalone home-screen
+  // PWA (see the manifest's "display":"standalone" and the
+  // apple-mobile-web-app-capable meta tag in index.html; the whole point of
+  // #appLoading/the splash screen is to look and behave like an installed
+  // app, not a browser tab). Verified with an automated click test: the <a
+  // target="_blank"> tags linkifyText() generates are correctly formed
+  // (right href, right target) and nothing in this file's click handlers
+  // was calling preventDefault() on them — the markup was never the
+  // problem. The actual cause is a well-known WebKit/iOS limitation: inside
+  // a standalone-mode installed PWA, tapping a plain <a target="_blank">
+  // frequently does nothing at all — no new tab, no Safari launch — instead
+  // of falling back to opening it in the browser like a normal webpage
+  // would. Explicitly calling window.open() from inside the click handler
+  // (a real user-gesture context) is the standard workaround and is what
+  // every .msg-link/.msg-link-preview click is routed through below/in
+  // showStatusModal's click wiring, instead of relying on the anchor's
+  // native target="_blank" alone.
+  function openExternalLink(url) {
+    if (!url) return;
+    const win = window.open(url, '_blank', 'noopener');
+    // If window.open() itself was blocked (e.g. a popup blocker that
+    // doesn't recognize this as a user gesture) or returned nothing, still
+    // get the user to the link rather than doing nothing.
+    if (!win) window.location.href = url;
+  }
+
   function isImageFile(url) {
     return !!url && /\.(png|jpe?g|gif|webp|svg)$/i.test(url.split('?')[0]);
   }
@@ -3166,6 +3193,17 @@
       const url = docCard.getAttribute('href');
       const fileName = docCard.dataset.fileName || getFileNameFromUrl(url);
       openDocViewer(url, fileName);
+      return;
+    }
+
+    // FIX: see openExternalLink() above — "website link is not directly
+    // being open from chat ... on clicking". Explicit window.open() instead
+    // of trusting the anchor's own target="_blank" to fire, which is
+    // unreliable inside this app's standalone-PWA mode.
+    const sharedLink = e.target.closest('a.msg-link, a.msg-link-preview');
+    if (sharedLink) {
+      e.preventDefault();
+      openExternalLink(sharedLink.getAttribute('href'));
       return;
     }
   });
@@ -7125,6 +7163,20 @@
   DOM.closeStatusModal.addEventListener('click', closeStatusViewer);
   DOM.statusModal.addEventListener('click', (e) => { if (e.target === DOM.statusModal) closeStatusViewer(); });
   DOM.statusPauseBtn.addEventListener('click', toggleStatusPause);
+
+  // FIX: see openExternalLink() above — same "link not directly opening"
+  // fix, applied to shared links inside an update (#statusModalContent's
+  // linkifyText() output and #statusLinkPreview's thumbnail card).
+  if (DOM.statusViewerBody) {
+    DOM.statusViewerBody.addEventListener('click', (e) => {
+      const sharedLink = e.target.closest('a.msg-link, a.msg-link-preview');
+      if (sharedLink) {
+        e.preventDefault();
+        e.stopPropagation(); // don't let this bubble to #statusModal's close-on-backdrop-click handler
+        openExternalLink(sharedLink.getAttribute('href'));
+      }
+    });
+  }
 
   DOM.notifToggle.addEventListener('change', () => setNotificationsEnabled(DOM.notifToggle.checked));
   DOM.darkToggle.addEventListener('change', () => {
