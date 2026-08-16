@@ -1484,8 +1484,23 @@ body.theme-dark .msg-ticks.seen {
   border: 1px solid var(--chat-grey);
   color: var(--chat-ink);
   word-break: break-word;
-  user-select: text;
-  -webkit-user-select: text;
+  /* FIX: "clicking any text selects it" / "link is still plain text" —
+     these two complaints share one root cause. user-select:text here let
+     the browser's native text-selection gesture compete with every click
+     inside a bubble, including clicks on a .msg-link/.msg-link-preview
+     anchor: if the browser reads the mousedown→mouseup as a selection drag
+     (extremely easy to trigger by accident — a click rarely has zero
+     pixels of movement), it can swallow the click event entirely, so the
+     link never opens and just "selects" instead — which reads exactly like
+     an inert, unclickable link that happens to highlight when clicked.
+     Copying a message's text already has a dedicated, reliable path that
+     doesn't need native selection at all — long-press/right-click a
+     message → Copy (see DOM.msgSelectCopyBtn's navigator.clipboard.writeText()
+     call) — so native selection here was redundant on top of being
+     harmful. Matches the rest of the chat chrome (avatars, rows, nav),
+     which is already user-select:none. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 .msg-theirs .msg-bubble { border-bottom-left-radius: 4px; }
 .msg-mine .msg-bubble { background: var(--chat-navy); border-color: var(--chat-navy); color: var(--chat-white); border-bottom-right-radius: 4px; }
@@ -2747,7 +2762,11 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
 .status-viewer-name { font-weight: 700; font-size: 14px; color: #fff; }
 .status-viewer-time { font-size: 11.5px; color: rgba(255,255,255,0.55); }
 .status-viewer-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 22px; gap: 14px; overflow-y: auto; }
-.status-viewer-body p { color: #fff; font-size: 16px; line-height: 1.6; font-weight: 500; text-align: center; user-select: text; -webkit-user-select: text; }
+/* FIX: same native-selection-vs-click conflict as .msg-bubble above,
+   applied to the Updates full-screen viewer's text (#statusModalContent
+   renders inside here) — this is exactly the "clicking any text selects it
+   instead of opening the link" complaint for shared links inside updates. */
+.status-viewer-body p { color: #fff; font-size: 16px; line-height: 1.6; font-weight: 500; text-align: center; user-select: none; -webkit-user-select: none; }
 .status-viewer-body p:empty { display: none; }
 /* FIX: .msg-link's default color (var(--chat-accent), navy) is meant for
    text on light chat-bubble backgrounds — against this viewer's dark navy
@@ -2946,12 +2965,16 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
   touch-action: manipulation;
 }
 
-/* Allow text selection in specific areas */
-.msg-bubble,
+/* Allow text selection in specific areas
+   FIX: .msg-bubble and .status-viewer-body p used to be listed here too.
+   This rule comes AFTER their own dedicated rules above in the file, so —
+   same selector specificity — it was the one actually winning the cascade
+   and re-enabling native selection there, overriding the user-select:none
+   just set on them above. Dropped both from this list; see the FIX
+   comments on .msg-bubble and .status-viewer-body p for why. */
 .msg-author,
 .msg-time,
 .profile-card-desc,
-.status-viewer-body p,
 .settings-profile-name,
 .settings-profile-email,
 .settings-profile-displayname,
