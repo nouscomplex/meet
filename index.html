@@ -699,6 +699,16 @@
       <div class="status-viewer-body" id="statusViewerBody">
         <div id="statusModalMedia" class="status-viewer-media"></div>
         <p id="statusModalContent"></p>
+        <!-- FIX: root cause of "shared link in updates not clickable with
+             thumbnail" — #statusModalContent used to be filled with
+             `.textContent`, so a shared link was always inert plain text
+             and nothing showed a preview image/title for it either. See
+             showStatusModal()/hydrateLinkPreview() in app.js: content now
+             goes through linkifyText() (real clickable <a> tags) and, if
+             the text contains a link, this slot gets filled with a
+             thumbnail/title card fetched for it. Ships hidden/empty and
+             only shown when a status actually contains a link. -->
+        <div id="statusLinkPreview" class="hidden"></div>
       </div>
     </div>
   </div>
