@@ -1515,6 +1515,90 @@ body.theme-dark .msg-time {
 .msg-mine .msg-file { color: var(--chat-white); }
 .msg-file:hover { text-decoration: underline; }
 
+/* ============================================================
+   LINK PREVIEWS (FIX — see linkifyText()/hydrateLinkPreview() in app.js)
+   ============================================================
+   "shared link in chat or in updates not clickable with thumbnail" —
+   .msg-link is just the inline clickable <a> a URL becomes inside message/
+   status text. .msg-link-preview is the WhatsApp/Slack-style card
+   (thumbnail + title + domain) that gets fetched and dropped into a
+   `.msg-link-preview-slot` (chat bubbles) or #statusLinkPreview (the
+   updates viewer) once hydrateLinkPreview() resolves. */
+.msg-link { color: var(--chat-accent); text-decoration: underline; word-break: break-all; }
+.msg-mine .msg-link { color: var(--chat-white); }
+
+.msg-link-preview-slot:empty { display: none; }
+
+.msg-link-preview {
+  display: flex;
+  flex-direction: column;
+  margin-top: 6px;
+  border-radius: 10px;
+  overflow: hidden;
+  text-decoration: none;
+  background: rgba(0,0,0,0.045);
+  max-width: 260px;
+  transition: background 0.15s ease;
+}
+.msg-link-preview:hover { background: rgba(0,0,0,0.08); }
+.msg-mine .msg-link-preview { background: rgba(255,255,255,0.16); }
+.msg-mine .msg-link-preview:hover { background: rgba(255,255,255,0.24); }
+
+.msg-link-preview-img {
+  display: block;
+  width: 100%;
+  height: 130px;
+  object-fit: cover;
+  background: var(--chat-grey);
+}
+
+.msg-link-preview-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  min-width: 0;
+}
+.msg-link-preview-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--chat-ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.msg-mine .msg-link-preview-title { color: var(--chat-white); }
+.msg-link-preview-site {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--chat-ink-soft);
+}
+.msg-mine .msg-link-preview-site { color: rgba(255,255,255,0.75); }
+
+/* Updates viewer's link preview sits on the dark full-screen status
+   background rather than a bubble, so it gets its own (lighter-weight)
+   treatment instead of reusing the chat-bubble background tint above. */
+#statusLinkPreview:empty,
+#statusLinkPreview.hidden {
+  display: none;
+}
+#statusLinkPreview {
+  margin-top: 14px;
+  width: 100%;
+  max-width: 320px;
+}
+#statusLinkPreview .msg-link-preview {
+  background: rgba(255,255,255,0.1);
+  max-width: none;
+}
+#statusLinkPreview .msg-link-preview:hover { background: rgba(255,255,255,0.16); }
+#statusLinkPreview .msg-link-preview-title,
+#statusLinkPreview .msg-link-preview-site { color: #fff; }
+#statusLinkPreview .msg-link-preview-site { color: rgba(255,255,255,0.7); }
+
 /* WhatsApp-style document card for non-image/video attachments —
    file-type icon, recovered original filename, and extension badge,
    instead of a bare "Attached file" text link. */
@@ -2658,6 +2742,11 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
 .status-viewer-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 22px; gap: 14px; overflow-y: auto; }
 .status-viewer-body p { color: #fff; font-size: 16px; line-height: 1.6; font-weight: 500; text-align: center; user-select: text; -webkit-user-select: text; }
 .status-viewer-body p:empty { display: none; }
+/* FIX: .msg-link's default color (var(--chat-accent), navy) is meant for
+   text on light chat-bubble backgrounds — against this viewer's dark navy
+   background (.status-viewer-inner) it would be nearly invisible. Use the
+   same pale chat-blue already used elsewhere for text/icons on navy. */
+.status-viewer-body .msg-link { color: var(--chat-blue); }
 .status-viewer-media:empty { display: none; }
 .status-viewer-media img, .status-viewer-media video {
   max-width: 100%; max-height: 60vh; border-radius: 14px; object-fit: contain; display: block;
