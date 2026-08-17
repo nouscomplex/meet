@@ -996,7 +996,7 @@
   // update row) is handled on `pointerup` so the screen switches the
   // instant a finger/mouse lifts, without waiting the extra ~event-loop
   // tick a plain `click` listener would add. But `pointerup` isn't the
-  // last event in a tap: browsers still follow it with a compatibility
+  // last event in a tap: browsers normally follow it with a compatibility
   // `click` event a moment later, aimed at whatever element now sits at
   // those same screen coordinates. Because #screenChats/#screenUpdates
   // and #screenChatDetail/the status viewer occupy that exact same
@@ -1007,12 +1007,18 @@
   // click handler (openImageLightbox()/openExternalLink()/etc.). That's
   // the "sometimes opens the link or media file" bug, and the abrupt
   // lightbox/new-tab appearing a beat after the chat opens is the
-  // "blink". These two timestamps mark "a screen was just switched open
-  // by a tap"; the click handlers on #chatMessages and the status viewer
-  // (search suppressChatOpenClicksUntil / suppressStatusOpenClicksUntil)
-  // ignore any click that arrives while that guard is still active, so
-  // only a deliberate, later tap inside the newly-opened chat/update can
-  // trigger them.
+  // "blink".
+  //
+  // The real fix is on the row's own `pointerup` handler: calling
+  // preventDefault() there tells the browser to drop that trailing click
+  // instead of firing it at all (see the chat-row/status-row pointerup
+  // listeners below). These two timestamps are only an ~80ms backstop for
+  // browsers that don't honor that — just long enough to catch a
+  // same-tick ghost click, short enough that a real, deliberate tap on a
+  // pdf/link/media attachment made right after opening the chat/update
+  // still gets through instead of being swallowed (search
+  // suppressChatOpenClicksUntil / suppressStatusOpenClicksUntil for every
+  // spot that checks them).
   let suppressChatOpenClicksUntil = 0;
   let suppressStatusOpenClicksUntil = 0;
 
@@ -1320,6 +1326,23 @@
         if (e.button === 2) return;
         if (channelLongPressFired) { channelLongPressFired = false; return; }
         if (e.target.closest('a.msg-link')) return; // let the click handler below handle it
+        // FIX: root cause of the ghost-click bug (see suppressChatOpenClicksUntil
+        // above) at its source, not just downstream — on a touch device the
+        // browser still owes this tap a trailing compatibility `click` event
+        // after this `pointerup` fires, aimed at whatever now sits at these
+        // same coordinates once openChannel() below swaps the chat list out
+        // for the chat screen. Per the Pointer Events spec, calling
+        // preventDefault() here tells the browser to drop that trailing
+        // click entirely instead of dispatching it against the new screen —
+        // so it can never reach a message bubble/link/media element there.
+        // suppressChatOpenClicksUntil stays as a short backstop for
+        // browsers that don't honor this, but with the click suppressed at
+        // the source it no longer needs a long window, so a real tap on a
+        // pdf/link/media attachment made just after opening the chat isn't
+        // swallowed too (which was itself causing that attachment to fall
+        // through to the browser's raw default open instead of the app's
+        // viewer — see the click-handler comments below).
+        e.preventDefault();
         openChannel(ch);
       });
       // FIX: see previewLinkUrl above — clicking the link inside the
@@ -1360,12 +1383,19 @@
     // there's no reason the screen transition should wait on the network
     // too. Fire selectChannel() and flip the screen immediately; fresh
     // data fills in a moment later once it arrives.
-    // FIX: see suppressChatOpenClicksUntil above — this tap opened the
-    // chat on `pointerup`; arm the guard so the trailing compatibility
-    // `click` event the browser is about to fire at these same
-    // coordinates can't land on a message bubble/link/media thumbnail in
-    // the chat screen that just appeared here and open it by accident.
-    suppressChatOpenClicksUntil = Date.now() + 400;
+    // FIX: see suppressChatOpenClicksUntil above and the `pointerup`
+    // handler on the chat row — that handler's preventDefault() is what
+    // actually stops the browser from firing a trailing ghost click
+    // against the chat screen that's about to appear here, so this is
+    // just a short backstop for browsers that don't honor it. It used to
+    // stay armed for 400ms, but that's long enough for a real, deliberate
+    // tap on a pdf/link/media attachment made right after opening the
+    // chat to land inside the window too — which made this guard swallow
+    // that tap's own preventDefault() and let the browser fall through to
+    // its raw default handling of the attachment (a bare new-tab open of
+    // the storage URL) instead of the app's viewer. 80ms only covers a
+    // same-tick ghost click, not a human's next tap.
+    suppressChatOpenClicksUntil = Date.now() + 80;
     selectChannel(channel);
     goToScreen('chatDetail');
     requestAnimationFrame(scrollToBottom);
@@ -3344,18 +3374,27 @@
     // FIX: root cause of "opening the chat sometimes opens the link or
     // media file from chat and the chat blinks" — the chat row that was
     // just tapped opens the chat on `pointerup` (see openChannel()), but
-    // the browser still fires a trailing compatibility `click` event at
-    // those same coordinates a moment later. Since #chatMessages now
-    // occupies the exact screen position the chat list row did, that
-    // ghost click was landing on whatever message/link/media happened to
-    // render at that spot and firing openImageLightbox()/
-    // openExternalLink()/openDocViewer() below — opening a random
-    // attachment or link right after the chat opened (the "blink" is
-    // that lightbox/new tab appearing a beat late). Ignore any click
-    // that arrives while suppressChatOpenClicksUntil is still active; a
-    // deliberate follow-up tap is unaffected since the guard clears
-    // within ~400ms.
-    if (Date.now() < suppressChatOpenClicksUntil) return;
+    // on some browsers the browser can still fire a trailing
+    // compatibility `click` event at those same coordinates a moment
+    // later even though that pointerup called preventDefault(). Since
+    // #chatMessages now occupies the exact screen position the chat list
+    // row did, that ghost click was landing on whatever message/link/
+    // media happened to render at that spot and firing
+    // openImageLightbox()/openExternalLink()/openDocViewer() below —
+    // opening a random attachment or link right after the chat opened
+    // (the "blink" is that lightbox/new tab appearing a beat late).
+    // suppressChatOpenClicksUntil is a short (~80ms) backstop for that
+    // case. IMPORTANT: a docCard/sharedLink below is a real `<a href>`
+    // element — merely `return`-ing here without calling preventDefault()
+    // would let the browser fall through to ITS default action (a bare
+    // navigation to the raw, unstyled storage URL), which is worse than
+    // doing nothing. So when the guard is active, explicitly cancel the
+    // event instead of silently bailing.
+    if (Date.now() < suppressChatOpenClicksUntil) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     const replyQuote = e.target.closest('.msg-reply-quote[data-reply-to-id]');
     if (replyQuote) {
       jumpToMessage(replyQuote.dataset.replyToId);
@@ -5069,6 +5108,11 @@
           if (e.button === 2) return;
           if (statusLongPressFired) { statusLongPressFired = false; return; }
           if (e.target.closest('a.msg-link')) return; // let the click handler below handle it
+          // FIX: see the matching comment on the chat row's pointerup
+          // above — suppress the trailing compatibility click at its
+          // source so it can't land on a link/media element inside the
+          // status viewer this is about to open.
+          e.preventDefault();
           showStatusModal(st);
         });
         // FIX: see statusPreviewLinkUrl above — clicking the link inside
@@ -5281,13 +5325,13 @@
   let statusPaused = false;
 
   function showStatusModal(status) {
-    // FIX: see suppressChatOpenClicksUntil above — same ghost-click bug,
-    // same fix, for the update row that was just tapped open on
-    // `pointerup`. Arms suppressStatusOpenClicksUntil so the trailing
-    // compatibility `click` event can't land on a link/media element
-    // inside the status viewer that's about to appear at these same
-    // coordinates and open it by accident.
-    suppressStatusOpenClicksUntil = Date.now() + 400;
+    // FIX: see the `pointerup` handler on the status row and the matching
+    // comment on suppressChatOpenClicksUntil above — that handler's
+    // preventDefault() is the real fix; this is just an 80ms backstop so
+    // a real follow-up tap on a link inside the update isn't swallowed
+    // too (which would otherwise fall through to the browser's raw
+    // default open instead of openExternalLink()).
+    suppressStatusOpenClicksUntil = Date.now() + 80;
 
     // FIX: this is the actual "seen" moment — record it so admins can see
     // who viewed this update (see recordStatusView()/openStatusInfoModal()).
@@ -7402,11 +7446,17 @@
   // linkifyText() output and #statusLinkPreview's thumbnail card).
   if (DOM.statusViewerBody) {
     DOM.statusViewerBody.addEventListener('click', (e) => {
-      // FIX: see suppressStatusOpenClicksUntil above — swallow the
-      // trailing ghost click a tap-to-open-update can leave behind on
-      // this same element before treating it as a genuine click on a
-      // shared link inside the update.
-      if (Date.now() < suppressStatusOpenClicksUntil) return;
+      // FIX: see suppressStatusOpenClicksUntil above (~80ms backstop) —
+      // swallow a same-tick ghost click left behind by opening this
+      // viewer before treating it as a genuine click on a shared link.
+      // Cancel the event outright rather than just returning, since
+      // a.msg-link/a.msg-link-preview are real anchors the browser would
+      // otherwise navigate on its own.
+      if (Date.now() < suppressStatusOpenClicksUntil) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       const sharedLink = e.target.closest('a.msg-link, a.msg-link-preview');
       if (sharedLink) {
         e.preventDefault();
