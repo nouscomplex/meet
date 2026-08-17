@@ -67,7 +67,7 @@ const CONFIG = {
   // FILE UPLOAD CONFIGURATION
   // ============================================================
   UPLOAD: {
-    MAX_FILE_SIZE: 5 * 1024 * 1024, // 5MB
+    MAX_FILE_SIZE: 20 * 1024 * 1024, // 20MB
     ALLOWED_TYPES: [
       'image/*',
       '.pdf',
