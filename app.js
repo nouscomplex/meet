@@ -3772,10 +3772,32 @@
       };
 
       const tempId = `temp_${clientId}`;
+      // FIX: root cause of "sent message flashes into the second-last spot,
+      // then jumps down to the actual last spot a moment later" — this used
+      // to stamp the optimistic placeholder with new Date().toISOString(),
+      // i.e. this device's own clock at compose time. mergeMessagesSafely()
+      // (below) sorts purely by created_at, and the message already sitting
+      // last in state.messages may carry a created_at from the *server's*
+      // clock. Any time this device's clock runs even a little behind the
+      // server's, the placeholder's client-clock timestamp sorts BEFORE that
+      // already-loaded last message, so it briefly renders one row too high
+      // — until the server confirms the send and the existing re-sort (see
+      // the FIX comments below and in subscribeToMessages()'s INSERT
+      // handler) swaps in the real, server-assigned created_at and the
+      // bubble visibly jumps into its true last position.
+      // Fix: never let the placeholder's timestamp be earlier than the
+      // newest message already in the list — clamp it forward by 1ms past
+      // that message's created_at when needed, so it always sorts to the
+      // true bottom immediately, with no flash and no jump. This only ever
+      // nudges the *local, temporary* timestamp; the real created_at
+      // recorded in the database still comes from the server, untouched.
+      const lastKnownMessage = state.messages[state.messages.length - 1];
+      const lastKnownTs = lastKnownMessage ? new Date(lastKnownMessage.created_at || 0).getTime() : 0;
+      const optimisticTs = Math.max(Date.now(), (Number.isFinite(lastKnownTs) ? lastKnownTs : 0) + 1);
       const optimisticMessage = {
         id: tempId,
         ...newMessage,
-        created_at: new Date().toISOString(),
+        created_at: new Date(optimisticTs).toISOString(),
         isPending: true
       };
 
