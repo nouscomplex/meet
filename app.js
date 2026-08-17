@@ -2848,6 +2848,13 @@
     wrap.dataset.id = msg.id;
     wrap.dataset.role = roleKey(msg.username);
     wrap.dataset.sig = signature;
+    // FIX: see the "already existed" lookup in renderMessages() — lets a
+    // rebuilt node be matched back to its previous DOM node by client_id
+    // even when msg.id itself changed (the temp_ optimistic id being
+    // swapped for the server's real id). Empty string, not left unset, so
+    // dataset.clientId is always present to query even when a message has
+    // no client_id (e.g. ones loaded before this field existed).
+    wrap.dataset.clientId = msg.client_id || '';
 
     let replyHtml = '';
     if (msg.reply_to) {
@@ -3001,9 +3008,45 @@
     }
 
     const existingNodes = new Map();
+    // FIX: root cause of "last bubble jerks/bounces right after sending" and
+    // "every bubble blinks when a chat is opened" — both came from the same
+    // gap: this map only ever indexed existing DOM nodes by their CURRENT
+    // msg.id, and the loop below only ever counted a message as "already on
+    // screen" when that exact id matched. Two very normal cases broke that:
+    //   1) Sending a message: the optimistic bubble is inserted under a
+    //      temp_ id, then a moment later swapped for the server row under
+    //      its real id (see sendMessage()/subscribeToMessages()). The id
+    //      changed, so this map couldn't find the old node — the bubble was
+    //      treated as brand-new, rebuilt from scratch, and replayed its
+    //      slide/fade-in entrance animation a second time right on top of
+    //      the first, reading as a jerk/bounce.
+    //   2) Opening a chat: cached messages paint first (correctly, with no
+    //      entrance animation — see chatNeedsInitialPaint), then the live
+    //      fetch from the server lands a moment later with the same ids but
+    //      often slightly different values (ticks, exact created_at
+    //      formatting survives a JSON/localStorage round trip differently
+    //      than a fresh Supabase row). Any signature mismatch rebuilt the
+    //      node — and by then chatNeedsInitialPaint had already been
+    //      cleared by the cached paint, so every rebuilt bubble replayed its
+    //      entrance animation, reading as the whole chat blinking.
+    // Fix: also index nodes by client_id (stamped on every bubble via
+    // dataset.clientId in buildMessageEl — stable across the temp_id → real
+    // id swap, since both the optimistic and confirmed rows share it), and
+    // treat any message matched by EITHER id or client_id as an update to
+    // an existing bubble rather than a new one — updates never replay the
+    // entrance animation, no matter what changed. Only a message with no
+    // prior node under either key is genuinely new and gets to animate in.
+    const existingByClientId = new Map();
     DOM.chatMessages.querySelectorAll('.msg, .day-divider').forEach((el) => {
-      const key = el.classList.contains('day-divider') ? `day:${el.dataset.day}` : `msg:${el.dataset.id}`;
+      if (el.classList.contains('day-divider')) {
+        existingNodes.set(`day:${el.dataset.day}`, el);
+        return;
+      }
+      const key = `msg:${el.dataset.id}`;
       existingNodes.set(key, el);
+      if (el.dataset.clientId) {
+        existingByClientId.set(`client:${el.dataset.clientId}`, key);
+      }
     });
 
     const wasNearBottom = forceScrollBottom || !DOM.chatContainer || (
@@ -3034,9 +3077,19 @@
         prevNode = dividerNode;
       }
 
-      const key = `msg:${msg.id}`;
+      let key = `msg:${msg.id}`;
       const signature = messageSignature(msg);
       let node = existingNodes.get(key);
+      let alreadyOnScreen = !!node;
+
+      if (!node && msg.client_id) {
+        const fallbackKey = existingByClientId.get(`client:${msg.client_id}`);
+        if (fallbackKey) {
+          node = existingNodes.get(fallbackKey);
+          key = fallbackKey;
+          alreadyOnScreen = true;
+        }
+      }
 
       if (node && node.dataset.sig === signature) {
         existingNodes.delete(key);
@@ -3045,10 +3098,13 @@
         // image/video/PDF attachment in a freshly-built bubble knows
         // whether to re-pin the scroll once it finishes loading and grows
         // — see stickToBottomOnMediaLoad() above buildMessageEl(). Also
-        // pass `isInitialPaint` so a chat's whole history doesn't replay
-        // the per-message entrance animation on open — see
-        // chatNeedsInitialPaint / skipEnterAnim above.
-        const freshNode = buildMessageEl(msg, signature, wasNearBottom, isInitialPaint);
+        // pass `isInitialPaint || alreadyOnScreen` so a chat's whole
+        // history doesn't replay the per-message entrance animation on
+        // open, and neither does a bubble that's just being updated in
+        // place (ticks, the temp_id → real id swap, etc.) — see
+        // chatNeedsInitialPaint / skipEnterAnim above and the FIX comment
+        // on existingByClientId above.
+        const freshNode = buildMessageEl(msg, signature, wasNearBottom, isInitialPaint || alreadyOnScreen);
         if (node) {
           node.replaceWith(freshNode);
           existingNodes.delete(key);
