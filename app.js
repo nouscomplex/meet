@@ -991,6 +991,31 @@
     }
   });
 
+  // FIX: root cause of "opening a chat sometimes opens a link/media file
+  // from the chat and the screen blinks" — a tap on a chat row (or an
+  // update row) is handled on `pointerup` so the screen switches the
+  // instant a finger/mouse lifts, without waiting the extra ~event-loop
+  // tick a plain `click` listener would add. But `pointerup` isn't the
+  // last event in a tap: browsers still follow it with a compatibility
+  // `click` event a moment later, aimed at whatever element now sits at
+  // those same screen coordinates. Because #screenChats/#screenUpdates
+  // and #screenChatDetail/the status viewer occupy that exact same
+  // screen position (one is just hidden/shown in place of the other),
+  // that trailing click doesn't land on empty space — it lands on
+  // whichever message bubble, media thumbnail, or link happens to now be
+  // rendered where the row used to be, and fires that element's own
+  // click handler (openImageLightbox()/openExternalLink()/etc.). That's
+  // the "sometimes opens the link or media file" bug, and the abrupt
+  // lightbox/new-tab appearing a beat after the chat opens is the
+  // "blink". These two timestamps mark "a screen was just switched open
+  // by a tap"; the click handlers on #chatMessages and the status viewer
+  // (search suppressChatOpenClicksUntil / suppressStatusOpenClicksUntil)
+  // ignore any click that arrives while that guard is still active, so
+  // only a deliberate, later tap inside the newly-opened chat/update can
+  // trigger them.
+  let suppressChatOpenClicksUntil = 0;
+  let suppressStatusOpenClicksUntil = 0;
+
   // ============================================================
   // 5i. HISTORY NAVIGATION (mobile back button)
   // ============================================================
@@ -1335,6 +1360,12 @@
     // there's no reason the screen transition should wait on the network
     // too. Fire selectChannel() and flip the screen immediately; fresh
     // data fills in a moment later once it arrives.
+    // FIX: see suppressChatOpenClicksUntil above — this tap opened the
+    // chat on `pointerup`; arm the guard so the trailing compatibility
+    // `click` event the browser is about to fire at these same
+    // coordinates can't land on a message bubble/link/media thumbnail in
+    // the chat screen that just appeared here and open it by accident.
+    suppressChatOpenClicksUntil = Date.now() + 400;
     selectChannel(channel);
     goToScreen('chatDetail');
     requestAnimationFrame(scrollToBottom);
@@ -3044,6 +3075,10 @@
   });
 
   DOM.chatMessages.addEventListener('click', (e) => {
+    // FIX: see suppressChatOpenClicksUntil above — swallow the trailing
+    // ghost click a tap-to-open-chat can leave behind on this same
+    // element before treating it as a genuine click.
+    if (Date.now() < suppressChatOpenClicksUntil) return;
     if (!isDesktopLayout()) return;
     const bubbleWrap = e.target.closest('.msg');
     if (!bubbleWrap || !bubbleWrap.dataset.id) return;
@@ -3306,6 +3341,21 @@
   }
 
   DOM.chatMessages.addEventListener('click', (e) => {
+    // FIX: root cause of "opening the chat sometimes opens the link or
+    // media file from chat and the chat blinks" — the chat row that was
+    // just tapped opens the chat on `pointerup` (see openChannel()), but
+    // the browser still fires a trailing compatibility `click` event at
+    // those same coordinates a moment later. Since #chatMessages now
+    // occupies the exact screen position the chat list row did, that
+    // ghost click was landing on whatever message/link/media happened to
+    // render at that spot and firing openImageLightbox()/
+    // openExternalLink()/openDocViewer() below — opening a random
+    // attachment or link right after the chat opened (the "blink" is
+    // that lightbox/new tab appearing a beat late). Ignore any click
+    // that arrives while suppressChatOpenClicksUntil is still active; a
+    // deliberate follow-up tap is unaffected since the guard clears
+    // within ~400ms.
+    if (Date.now() < suppressChatOpenClicksUntil) return;
     const replyQuote = e.target.closest('.msg-reply-quote[data-reply-to-id]');
     if (replyQuote) {
       jumpToMessage(replyQuote.dataset.replyToId);
@@ -5231,6 +5281,14 @@
   let statusPaused = false;
 
   function showStatusModal(status) {
+    // FIX: see suppressChatOpenClicksUntil above — same ghost-click bug,
+    // same fix, for the update row that was just tapped open on
+    // `pointerup`. Arms suppressStatusOpenClicksUntil so the trailing
+    // compatibility `click` event can't land on a link/media element
+    // inside the status viewer that's about to appear at these same
+    // coordinates and open it by accident.
+    suppressStatusOpenClicksUntil = Date.now() + 400;
+
     // FIX: this is the actual "seen" moment — record it so admins can see
     // who viewed this update (see recordStatusView()/openStatusInfoModal()).
     // Fire-and-forget: the viewer shouldn't wait on a network round trip to
@@ -7328,7 +7386,15 @@
   });
 
   DOM.closeStatusModal.addEventListener('click', closeStatusViewer);
-  DOM.statusModal.addEventListener('click', (e) => { if (e.target === DOM.statusModal) closeStatusViewer(); });
+  // FIX: see suppressStatusOpenClicksUntil above — without this guard, the
+  // ghost click that follows the pointerup which opened this viewer could
+  // land on the modal's own backdrop and immediately call
+  // closeStatusViewer(), so the viewer would flash open then instantly
+  // shut ("blinks") before the user ever saw it.
+  DOM.statusModal.addEventListener('click', (e) => {
+    if (Date.now() < suppressStatusOpenClicksUntil) return;
+    if (e.target === DOM.statusModal) closeStatusViewer();
+  });
   DOM.statusPauseBtn.addEventListener('click', toggleStatusPause);
 
   // FIX: see openExternalLink() above — same "link not directly opening"
@@ -7336,6 +7402,11 @@
   // linkifyText() output and #statusLinkPreview's thumbnail card).
   if (DOM.statusViewerBody) {
     DOM.statusViewerBody.addEventListener('click', (e) => {
+      // FIX: see suppressStatusOpenClicksUntil above — swallow the
+      // trailing ghost click a tap-to-open-update can leave behind on
+      // this same element before treating it as a genuine click on a
+      // shared link inside the update.
+      if (Date.now() < suppressStatusOpenClicksUntil) return;
       const sharedLink = e.target.closest('a.msg-link, a.msg-link-preview');
       if (sharedLink) {
         e.preventDefault();
