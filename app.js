@@ -2395,6 +2395,13 @@
       .on('broadcast', { event: 'typing' }, (payload) => {
         handleIncomingTyping(channelId, payload.payload);
       })
+      // FIX: see broadcastStoppedTyping()/handleIncomingStoppedTyping()
+      // below — the explicit, immediate counterpart to the 'typing' event
+      // above, so "X is typing…" clears the instant X hits Send instead of
+      // lingering for whatever's left of the 3s auto-expire window.
+      .on('broadcast', { event: 'stopped_typing' }, (payload) => {
+        handleIncomingStoppedTyping(channelId, payload.payload);
+      })
       .subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {
           reconnectAttempts = 0;
@@ -2470,11 +2477,53 @@
     // FIX: auto-expire after 3s of silence instead of waiting for an
     // explicit "stopped typing" event — covers the case where that event
     // is dropped entirely (tab closed, network drop, app backgrounded),
-    // which would otherwise leave a stale "typing…" shown forever.
+    // which would otherwise leave a stale "typing…" shown forever. This is
+    // now purely a fallback/safety net — see broadcastStoppedTyping()/
+    // handleIncomingStoppedTyping() below for the normal, immediate path
+    // that fires the moment a message is actually sent.
     typingTimers.set(key, setTimeout(() => {
       typingTimers.delete(key);
       renderTypingIndicator(channelId);
     }, 3000));
+    renderTypingIndicator(channelId);
+  }
+
+  // FIX: root cause of "the header still says 'X is typing…' for a few
+  // seconds after their message already arrived" — until now, the ONLY way
+  // a "typing…" indicator ever went away was handleIncomingTyping()'s own
+  // 3s-of-silence timer above, restarted from whenever the sender's last
+  // keystroke was broadcast. That timer has no idea when the sender
+  // actually hits Send — it just keeps counting down on its own schedule.
+  // So a recipient would see the real message bubble show up, while the
+  // header above it kept reading "typing…" for however much of that 3s
+  // window happened to be left, which looks broken. Called from the
+  // sendMsgBtn click handler the instant Send is pressed (before waiting
+  // on the network round trip to actually insert the message), this sends
+  // an explicit, unthrottled "I'm done" signal so every recipient can
+  // clear it immediately instead of waiting the timer out.
+  function broadcastStoppedTyping() {
+    if (!state.currentChannel || !state.messagesSubscription || !state.currentUser) return;
+    // Reset the throttle too — if this user starts typing again right
+    // away (e.g. sends a quick follow-up), that next keystroke should
+    // broadcast immediately instead of waiting out the normal 2s window,
+    // since as far as anyone watching is concerned they'd just gone quiet.
+    state.lastTypingBroadcastAt = 0;
+    state.messagesSubscription.send({
+      type: 'broadcast',
+      event: 'stopped_typing',
+      payload: { username: state.currentUser.username },
+    });
+  }
+
+  // Called when a "stopped_typing" broadcast arrives — see
+  // broadcastStoppedTyping() above for exactly when this fires.
+  function handleIncomingStoppedTyping(channelId, payload) {
+    if (!payload || !payload.username) return;
+    if (payload.username === state.currentUser?.username) return;
+    const key = `${channelId}:${payload.username}`;
+    if (!typingTimers.has(key)) return;
+    clearTimeout(typingTimers.get(key));
+    typingTimers.delete(key);
     renderTypingIndicator(channelId);
   }
 
@@ -7346,6 +7395,13 @@
     const content = DOM.messageInput.value.trim();
     const file = DOM.fileInput.files[0];
     if (!content && !file) return;
+    // FIX: see broadcastStoppedTyping() above — fire this immediately, on
+    // the same tick as pressing Send, rather than after `sendMessage()`
+    // resolves. sendMessage() waits on a network round trip to actually
+    // insert the row; delaying the stop-typing signal until then would
+    // recreate the exact same "header still says typing… after the
+    // message shows up" lag this is meant to fix, just shifted later.
+    broadcastStoppedTyping();
     await sendMessage(content, file);
     DOM.messageInput.value = '';
     DOM.fileInput.value = '';
