@@ -1530,6 +1530,22 @@ body.theme-dark .msg-mine .msg-bubble {
   color: #FFFFFF;
 }
 
+/* FIX: placeholder shown once a message's attached image/video/PDF/file has
+   aged out 168h after being sent — see isMessageMediaExpired() in app.js.
+   Mirrors .msg-deleted's plain-bubble-plus-icon look (no dedicated CSS of
+   its own, it just inherits .msg-bubble) but muted/italic instead of the
+   bubble's normal ink color, so it visually reads as "gone" rather than as
+   an ordinary text message. */
+.msg-media-expired {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-style: italic;
+  color: var(--ink-faint);
+}
+.msg-mine .msg-media-expired { color: rgba(255, 255, 255, 0.72); }
+.msg-media-expired i { flex-shrink: 0; }
+
 body.theme-dark .msg-author {
   color: #7BB8FF;
 }
