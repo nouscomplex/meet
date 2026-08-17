@@ -3857,7 +3857,21 @@
         isPending: true
       };
 
-      mergeMessagesSafely(optimisticMessage);
+      // FIX: root cause of "sending a message doesn't scroll to it
+      // automatically" — mergeMessagesSafely()'s default (no `forceScroll`
+      // passed) only auto-scrolls when the reader is already within ~80px
+      // of the bottom (see the `wasNearBottom` check in renderMessages()).
+      // That heuristic exists so an incoming message from someone ELSE
+      // never yanks your view while you're scrolled up reading older
+      // history — but it was also being applied to the message YOU just
+      // typed and sent, which is a different case entirely: whoever sends
+      // a message obviously wants to see it land, regardless of where they
+      // were scrolled a moment ago (this is standard chat-app behavior —
+      // WhatsApp, iMessage, etc. all snap to the bottom on your own send).
+      // Passing `true` here forces it unconditionally for your own
+      // outgoing message, the same way loadMessages()/selectChannel()
+      // already force it when a chat is first opened.
+      mergeMessagesSafely(optimisticMessage, true);
       console.log(`✉️ Message added (optimistic, clientId: ${clientId})`);
 
       const { error, data } = await supabase
@@ -3885,7 +3899,11 @@
           // re-sorting), same fix: re-sort by created_at so it lands in
           // its real last position right away.
           state.messages.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
-          renderMessages();
+          // FIX: same reasoning as the optimistic mergeMessagesSafely() call
+          // above — this is still finishing YOUR OWN send, so force the
+          // scroll instead of leaving it to the "was already near the
+          // bottom" heuristic (renderMessages() with no argument).
+          renderMessages(true);
           console.log(`✅ Message replaced: ${tempId} → ${realMessage.id}`);
         } else {
           mergeMessagesSafely(realMessage);
