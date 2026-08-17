@@ -1306,6 +1306,18 @@ body.theme-dark .btn-live-pill.btn-live-pill-dead {
 .msg { display: flex; gap: 8px; max-width: 84%; animation: msgIn 0.2s ease-out; }
 .msg-theirs { align-self: flex-start; }
 .msg-mine { align-self: flex-end; flex-direction: row-reverse; }
+/* FIX: root cause of "opening the chat appears as animation from bottom
+   to up instead of being consistent" — every .msg plays msgIn below so a
+   genuinely new message eases into view. But opening (or reopening) a
+   chat builds every message in its history as a fresh .msg node in one
+   pass, so without this override they'd all play msgIn at once and the
+   whole conversation would visibly slide up from the bottom on open.
+   app.js's buildMessageEl()/renderMessages() (see chatNeedsInitialPaint)
+   add this class only to that first bulk paint's nodes, so opening a
+   chat is instant like every other screen while a real new message
+   arriving afterward still gets its entrance animation. Higher
+   specificity than the .msg rule above so it wins over it. */
+.msg.msg-no-enter-anim { animation: none; }
 
 /* Centered "Today / Yesterday / Wed, Aug 12" pill between groups of
    messages from different calendar days, WhatsApp-style. */
