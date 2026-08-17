@@ -3804,14 +3804,19 @@
   // guards on this flag before calling in.
   let isSendingMessage = false;
 
+  // FIX: now returns true/false (used to return nothing) — see the
+  // sendMsgBtn click handler below, which needs to know whether the send
+  // actually failed so it can put the typed text back in the box instead
+  // of silently losing it (the box is now cleared up front, before this
+  // even runs — see the FIX comment on that handler for why).
   async function sendMessage(content, file) {
     if (isSendingMessage) {
       console.log('✋ Send already in progress, ignoring duplicate call');
-      return;
+      return false;
     }
     if (!state.currentChannel || !state.currentUser) {
       alert('Please select a channel first.');
-      return;
+      return false;
     }
 
     isSendingMessage = true;
@@ -3826,7 +3831,7 @@
         const stillMember = await verifyChannelMembership(state.currentChannel.id);
         if (!stillMember) {
           await expelFromChannel(state.currentChannel.id);
-          return;
+          return false;
         }
       }
 
@@ -3835,7 +3840,7 @@
       if (file) {
         if (file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
           alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
-          return;
+          return false;
         }
 
         const path = generateStoragePath(state.currentChannel.id, file.name);
@@ -3853,7 +3858,7 @@
         } catch (e) {
           console.error('Upload error:', e);
           alert(`File upload failed: ${e.message}`);
-          return;
+          return false;
         }
       }
 
@@ -3934,6 +3939,7 @@
         state.messages = state.messages.filter((m) => m.id !== tempId);
         renderMessages();
         console.log('❌ Message rolled back');
+        return false;
       } else if (data && data[0]) {
         const realMessage = data[0];
 
@@ -3968,6 +3974,7 @@
 
       state.replyingTo = null;
       DOM.replyPreview.classList.add('hidden');
+      return true;
     } finally {
       isSendingMessage = false;
       if (DOM.sendMsgBtn) DOM.sendMsgBtn.disabled = false;
@@ -7402,11 +7409,36 @@
     // recreate the exact same "header still says typing… after the
     // message shows up" lag this is meant to fix, just shifted later.
     broadcastStoppedTyping();
-    await sendMessage(content, file);
+
+    // FIX: root cause of "the text I typed sits in the message box for a
+    // few seconds after my message already shows up in the chat bubble" —
+    // clearing the field used to happen only AFTER `await
+    // sendMessage(...)` resolved. But sendMessage() doesn't resolve until
+    // the full network round trip finishes (inserting the row, or
+    // uploading a file first) — the message bubble itself shows up well
+    // before that, painted optimistically the moment sendMessage() starts
+    // (see the mergeMessagesSafely() FIX comment inside it). So on
+    // anything slower than an instant connection, the bubble was already
+    // sitting in the chat while the compose box kept stubbornly showing
+    // what had just been "sent". `content`/`file` are already captured
+    // into local variables above, so sendMessage() doesn't need the DOM
+    // field to still hold them — clear it right here, the same instant the
+    // bubble appears, matching WhatsApp/iMessage.
     DOM.messageInput.value = '';
     DOM.fileInput.value = '';
     DOM.filePreview.classList.add('hidden');
-    
+
+    const sent = await sendMessage(content, file);
+
+    // FIX: sendMessage() now reports whether it actually failed (network
+    // error, file too large, upload failure — it's already shown its own
+    // alert() for those). Since the field is cleared up front now, a
+    // failed send used to just silently lose whatever the user had typed;
+    // put it back so nothing is lost.
+    if (!sent && content) {
+      DOM.messageInput.value = content;
+    }
+
     if (state.inactivityTimer) {
       clearTimeout(state.inactivityTimer);
       state.inactivityTimer = null;
