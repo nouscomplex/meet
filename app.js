@@ -2263,6 +2263,23 @@
             console.log(`✅ Replacing optimistic message (clientId: ${newMessage.client_id})`);
             state.messages[optimisticIndex] = newMessage;
             delete state.messages[optimisticIndex].isPending;
+            // FIX: root cause of "the message I just sent lands one row
+            // above where it belongs until I refresh" — this used to swap
+            // the confirmed server row in at the SAME array index the
+            // optimistic placeholder held, without re-sorting afterward.
+            // The placeholder's created_at is stamped from this device's
+            // own clock at compose time, which can run a little behind the
+            // database server's clock; when that happens the placeholder
+            // (and therefore the confirmed row swapped into its slot)
+            // sorts one position before the true last message instead of
+            // after it — until something re-sorts by the real,
+            // server-assigned created_at, which previously only happened
+            // on a full refresh (loadMessages() fetches fresh from the
+            // database, where created_at values are always correctly
+            // ordered). Re-sorting right here, the same way
+            // renderMessages() already orders the DOM, fixes the position
+            // immediately instead of waiting on a refresh.
+            state.messages.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
             scheduleRenderMessages();
             saveCachedMessages(channelId, state.messages);
 
@@ -3666,115 +3683,150 @@
   // ============================================================
   // 9. SEND MESSAGE
   // ============================================================
+  // FIX: root cause of "sending a single message sends it twice" — the
+  // repo's deployed app.js had gotten its entire contents duplicated (the
+  // whole file pasted in twice back-to-back), so every event listener,
+  // including this one's, was bound twice and every click ran sendMessage()
+  // twice. That duplication has been removed. This flag is a second,
+  // independent line of defense so the same symptom can never come back
+  // from a different cause — a double-tap on mobile, the Enter-key handler
+  // and a stray click both firing in the same tick, a slow network making
+  // someone tap Send again before the first request finishes, or any
+  // future accidental double-binding. While a send is in flight, every
+  // extra call (from any source) is a no-op until this one settles, and
+  // the send button is visibly disabled so a second tap can't even reach
+  // this function. See DOM.sendMsgBtn's click handler below, which also
+  // guards on this flag before calling in.
+  let isSendingMessage = false;
+
   async function sendMessage(content, file) {
+    if (isSendingMessage) {
+      console.log('✋ Send already in progress, ignoring duplicate call');
+      return;
+    }
     if (!state.currentChannel || !state.currentUser) {
       alert('Please select a channel first.');
       return;
     }
 
-    // FIX: see verifyChannelMembership() above — this is what actually stops
-    // a removed user from posting when the realtime "you were removed"
-    // signal was missed. Admins aren't rows in `members` (loadChannels()
-    // gives them every channel unconditionally), so they're exempt here too.
-    if (!state.isAdmin) {
-      const stillMember = await verifyChannelMembership(state.currentChannel.id);
-      if (!stillMember) {
-        await expelFromChannel(state.currentChannel.id);
-        return;
-      }
-    }
+    isSendingMessage = true;
+    if (DOM.sendMsgBtn) DOM.sendMsgBtn.disabled = true;
 
-    let fileUrl = null;
-
-    if (file) {
-      if (file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
-        alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
-        return;
-      }
-
-      const path = generateStoragePath(state.currentChannel.id, file.name);
-
-      try {
-        const { error } = await supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).upload(path, file);
-        if (error) throw error;
-
-        const { data: urlData } = supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).getPublicUrl(path);
-        fileUrl = urlData.publicUrl;
-
-        DOM.fileUploadStatus.textContent = `📎 ${file.name} uploaded`;
-        DOM.fileUploadStatus.classList.remove('hidden');
-        setTimeout(() => DOM.fileUploadStatus.classList.add('hidden'), 4000);
-      } catch (e) {
-        console.error('Upload error:', e);
-        alert(`File upload failed: ${e.message}`);
-        return;
-      }
-    }
-
-    const replyPayload = state.replyingTo
-      ? { 
-          reply_to: state.replyingTo.id, 
-          reply_username: state.replyingTo.username, 
-          reply_content: state.replyingTo.content || (state.replyingTo.file_url ? '📎 Attached file' : '') 
+    try {
+      // FIX: see verifyChannelMembership() above — this is what actually stops
+      // a removed user from posting when the realtime "you were removed"
+      // signal was missed. Admins aren't rows in `members` (loadChannels()
+      // gives them every channel unconditionally), so they're exempt here too.
+      if (!state.isAdmin) {
+        const stillMember = await verifyChannelMembership(state.currentChannel.id);
+        if (!stillMember) {
+          await expelFromChannel(state.currentChannel.id);
+          return;
         }
-      : {};
+      }
 
-    const clientId = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      let fileUrl = null;
 
-    const newMessage = {
-      channel_id: state.currentChannel.id,
-      username: state.currentUser.username,
-      content: content || '',
-      file_url: fileUrl,
-      client_id: clientId,
-      ...replyPayload,
-    };
+      if (file) {
+        if (file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
+          alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
+          return;
+        }
 
-    const tempId = `temp_${clientId}`;
-    const optimisticMessage = { 
-      id: tempId, 
-      ...newMessage,
-      created_at: new Date().toISOString(),
-      isPending: true 
-    };
-    
-    mergeMessagesSafely(optimisticMessage);
-    console.log(`✉️ Message added (optimistic, clientId: ${clientId})`);
+        const path = generateStoragePath(state.currentChannel.id, file.name);
 
-    const { error, data } = await supabase
-      .from(CONFIG.SUPABASE.TABLES.MESSAGES)
-      .insert(newMessage)
-      .select();
+        try {
+          const { error } = await supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).upload(path, file);
+          if (error) throw error;
 
-    if (error) {
-      console.error('Send error:', error);
-      alert('Failed to send message.');
-      state.messages = state.messages.filter((m) => m.id !== tempId);
-      renderMessages();
-      console.log('❌ Message rolled back');
-    } else if (data && data[0]) {
-      const realMessage = data[0];
-      
-      const index = state.messages.findIndex((m) => m.id === tempId);
-      if (index !== -1) {
-        state.messages[index] = realMessage;
-        delete state.messages[index].isPending;
+          const { data: urlData } = supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).getPublicUrl(path);
+          fileUrl = urlData.publicUrl;
+
+          DOM.fileUploadStatus.textContent = `📎 ${file.name} uploaded`;
+          DOM.fileUploadStatus.classList.remove('hidden');
+          setTimeout(() => DOM.fileUploadStatus.classList.add('hidden'), 4000);
+        } catch (e) {
+          console.error('Upload error:', e);
+          alert(`File upload failed: ${e.message}`);
+          return;
+        }
+      }
+
+      const replyPayload = state.replyingTo
+        ? {
+            reply_to: state.replyingTo.id,
+            reply_username: state.replyingTo.username,
+            reply_content: state.replyingTo.content || (state.replyingTo.file_url ? '📎 Attached file' : '')
+          }
+        : {};
+
+      const clientId = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      const newMessage = {
+        channel_id: state.currentChannel.id,
+        username: state.currentUser.username,
+        content: content || '',
+        file_url: fileUrl,
+        client_id: clientId,
+        ...replyPayload,
+      };
+
+      const tempId = `temp_${clientId}`;
+      const optimisticMessage = {
+        id: tempId,
+        ...newMessage,
+        created_at: new Date().toISOString(),
+        isPending: true
+      };
+
+      mergeMessagesSafely(optimisticMessage);
+      console.log(`✉️ Message added (optimistic, clientId: ${clientId})`);
+
+      const { error, data } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+        .insert(newMessage)
+        .select();
+
+      if (error) {
+        console.error('Send error:', error);
+        alert('Failed to send message.');
+        state.messages = state.messages.filter((m) => m.id !== tempId);
         renderMessages();
-        console.log(`✅ Message replaced: ${tempId} → ${realMessage.id}`);
-      } else {
-        mergeMessagesSafely(realMessage);
-      }
-      
-      state.channelPreviews = await loadChannelPreviews(allChannels.map((c) => c.id));
-      renderChatList(allChannels);
-      
-      if (state.currentChannel) {
-        saveCachedMessages(state.currentChannel.id, state.messages);
-      }
-    }
+        console.log('❌ Message rolled back');
+      } else if (data && data[0]) {
+        const realMessage = data[0];
 
-    state.replyingTo = null;
-    DOM.replyPreview.classList.add('hidden');
+        const index = state.messages.findIndex((m) => m.id === tempId);
+        if (index !== -1) {
+          state.messages[index] = realMessage;
+          delete state.messages[index].isPending;
+          // FIX: see the matching fix in subscribeToMessages()'s INSERT
+          // handler above — same bug (message you just sent shows one row
+          // too high until a refresh), same cause (swapping the confirmed
+          // row into the optimistic placeholder's old array index without
+          // re-sorting), same fix: re-sort by created_at so it lands in
+          // its real last position right away.
+          state.messages.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+          renderMessages();
+          console.log(`✅ Message replaced: ${tempId} → ${realMessage.id}`);
+        } else {
+          mergeMessagesSafely(realMessage);
+        }
+
+        state.channelPreviews = await loadChannelPreviews(allChannels.map((c) => c.id));
+        renderChatList(allChannels);
+
+        if (state.currentChannel) {
+          saveCachedMessages(state.currentChannel.id, state.messages);
+        }
+      }
+
+      state.replyingTo = null;
+      DOM.replyPreview.classList.add('hidden');
+    } finally {
+      isSendingMessage = false;
+      if (DOM.sendMsgBtn) DOM.sendMsgBtn.disabled = false;
+    }
   }
 
   // ============================================================
