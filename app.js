@@ -759,6 +759,95 @@
     return !!url && /\.pdf$/i.test(url.split('?')[0]);
   }
 
+  // ============================================================
+  // CLIENT-SIDE IMAGE COMPRESSION (before upload)
+  // FIX: at scale (hundreds of students each sending phone photos daily),
+  // Supabase's free-tier 1GB storage / 5GB egress allowance gets eaten up
+  // fast — a single uncompressed phone photo is routinely 2-4MB. Shrinking
+  // to a sane max dimension and re-encoding as JPEG before upload cuts that
+  // to a few hundred KB with no visible quality loss in a chat bubble, which
+  // directly reduces both what's stored AND what's re-downloaded every time
+  // someone views it (egress is the bigger of the two costs). Applied at
+  // both upload sites — sendMessage()'s attachment and postStatus()'s
+  // photo/video — via compressImageFile() below.
+  //
+  // Deliberately skipped:
+  //  - Anything that isn't image/*  (PDFs, docs, videos — canvas can't
+  //    touch these; videos in particular need real transcoding, not a
+  //    client-side resize).
+  //  - image/gif — re-encoding through <canvas> would flatten an animated
+  //    GIF to a single static frame, visibly breaking what the user chose
+  //    to send.
+  //  - image/svg+xml — a vector format; rasterizing it through canvas would
+  //    only make it *worse* (fixed-resolution, usually larger) and it's
+  //    essentially never large enough to matter anyway.
+  //  - Anything already under IMAGE_COMPRESS_SKIP_UNDER_BYTES — small
+  //    images (icons, already-compressed screenshots) aren't worth the
+  //    CPU cost or the extra JPEG generation-loss.
+  // Any failure along the way (corrupt image, canvas/toBlob unsupported,
+  // etc.) falls back to sending the original file untouched rather than
+  // blocking the send — compression is a cost optimization, never a
+  // requirement for the message to go through.
+  const IMAGE_COMPRESS_MAX_DIMENSION = 1600; // px, longest edge
+  const IMAGE_COMPRESS_QUALITY = 0.82;
+  const IMAGE_COMPRESS_SKIP_UNDER_BYTES = 300 * 1024; // 300KB
+
+  function isCompressibleImageType(file) {
+    return !!file && !!file.type && file.type.startsWith('image/') &&
+      file.type !== 'image/gif' && file.type !== 'image/svg+xml';
+  }
+
+  function shouldCompressImage(file) {
+    return isCompressibleImageType(file) && file.size > IMAGE_COMPRESS_SKIP_UNDER_BYTES;
+  }
+
+  function compressImageFile(file) {
+    return new Promise((resolve) => {
+      if (!shouldCompressImage(file)) { resolve(file); return; }
+
+      const objectUrl = URL.createObjectURL(file);
+      const img = new Image();
+      const cleanupAndResolve = (result) => {
+        URL.revokeObjectURL(objectUrl);
+        resolve(result);
+      };
+
+      img.onload = () => {
+        try {
+          let { width, height } = img;
+          const longestEdge = Math.max(width, height);
+          if (longestEdge > IMAGE_COMPRESS_MAX_DIMENSION) {
+            const scale = IMAGE_COMPRESS_MAX_DIMENSION / longestEdge;
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) { cleanupAndResolve(file); return; }
+          ctx.drawImage(img, 0, 0, width, height);
+
+          canvas.toBlob((blob) => {
+            // If re-encoding somehow didn't actually save space (rare —
+            // e.g. an already near-optimal JPEG at a similar resolution),
+            // keep the original rather than uploading a same-or-worse file.
+            if (!blob || blob.size >= file.size) { cleanupAndResolve(file); return; }
+            const newName = (file.name || 'photo').replace(/\.[a-z0-9]+$/i, '') + '.jpg';
+            const compressed = new File([blob], newName, { type: 'image/jpeg', lastModified: Date.now() });
+            cleanupAndResolve(compressed);
+          }, 'image/jpeg', IMAGE_COMPRESS_QUALITY);
+        } catch (e) {
+          console.warn('Image compression failed, sending original file:', e);
+          cleanupAndResolve(file);
+        }
+      };
+      img.onerror = () => cleanupAndResolve(file);
+      img.src = objectUrl;
+    });
+  }
+
   function getFileNameFromUrl(url) {
     if (!url) return 'File';
     try {
@@ -2873,6 +2962,28 @@
     });
   }
 
+  // FIX: root cause of "keep messages forever but delete images/videos/
+  // PDFs/other files 168 hours after they were sent" — messages themselves
+  // (msg.content, the row) are never touched by this; only whether the
+  // attached media is still shown. The actual file is removed from Supabase
+  // Storage server-side by a scheduled job 168 hours after msg.created_at
+  // (see purge_expired_message_media in the Supabase project — client code
+  // can't delete storage objects on a timer by itself, since nothing runs
+  // here unless the app happens to be open at the exact moment a file turns
+  // 168h old). This client-side check is a second, independent guard: it
+  // hides the media the instant 168h have elapsed even if the server-side
+  // job hasn't swept it yet (cron jobs run on their own schedule, not
+  // exactly on each file's 168th hour), so no device ever gets a window
+  // where it shows a link to a file that's actually already gone. See its
+  // two call sites below (the attachment branch in buildMessageEl(), and
+  // the Shared Media grid in openGroupProfile()/renderSharedMedia()).
+  const MESSAGE_MEDIA_EXPIRY_MS = 168 * 60 * 60 * 1000; // 168 hours = 7 days
+
+  function isMessageMediaExpired(msg) {
+    if (!msg || !msg.created_at) return false;
+    return (Date.now() - new Date(msg.created_at).getTime()) >= MESSAGE_MEDIA_EXPIRY_MS;
+  }
+
   function buildMessageEl(msg, signature, pinToBottom, skipEnterAnim) {
     const isMine = msg.username === state.currentUser?.username;
     const wrap = document.createElement('div');
@@ -2920,6 +3031,7 @@
 
     const ticksMarkup = (isMine && !msg.deleted_at) ? ticksHtml(msg) : '';
     const hasAttachment = !!msg.file_url && !msg.deleted_at;
+    const mediaExpired = hasAttachment && isMessageMediaExpired(msg);
 
     // FIX: root cause of "shared link in chat not clickable with thumbnail"
     // — only text messages (no file attachment) get a link preview card;
@@ -2942,7 +3054,23 @@
     }
     if (hasAttachment) {
       const cornerTicks = ticksMarkup ? `<span class="msg-corner-ticks">${ticksMarkup}</span>` : '';
-      if (isImageFile(msg.file_url)) {
+      if (mediaExpired) {
+        // FIX: see isMessageMediaExpired() above — the file itself is gone
+        // (or about to be swept) 168h after it was sent; the message and
+        // this placeholder stay forever. Kept inside a `.msg-bubble` shell,
+        // same pattern as the `.msg-deleted` branch above, so it inherits
+        // the normal bubble padding/border/background instead of needing
+        // its own layout rules. Uses .msg-inline-ticks (not .msg-bubble-ticks)
+        // for the ticks since this is a flex row, same as the doc-card
+        // pattern below — .msg-bubble-ticks relies on float, which flex
+        // items ignore.
+        const inlineTicks = ticksMarkup ? `<span class="msg-inline-ticks">${ticksMarkup}</span>` : '';
+        bubbleHtml += `
+          <div class="msg-bubble msg-media-expired">
+            <i class="fas fa-file-circle-xmark"></i> Can't view this media because it's no longer on your device${inlineTicks}
+          </div>
+        `;
+      } else if (isImageFile(msg.file_url)) {
         bubbleHtml += `
           <div class="msg-media-preview" data-media-url="${escapeHtml(msg.file_url)}">
             <img class="msg-media-img" src="${escapeHtml(msg.file_url)}" alt="Attached image" loading="lazy">
@@ -3007,14 +3135,14 @@
       </div>
     `;
 
-    if (hasAttachment && isPdfFile(msg.file_url)) {
+    if (hasAttachment && !mediaExpired && isPdfFile(msg.file_url)) {
       hydratePdfThumb(wrap, msg.file_url, pinToBottom);
-    } else if (hasAttachment && isImageFile(msg.file_url)) {
+    } else if (hasAttachment && !mediaExpired && isImageFile(msg.file_url)) {
       // FIX: see stickToBottomOnMediaLoad() above — images have no known
       // height until they actually load, so re-pin the scroll once this
       // one's real size is in.
       stickToBottomOnMediaLoad(wrap.querySelector('img.msg-media-img'), 'load', pinToBottom);
-    } else if (hasAttachment && isVideoFile(msg.file_url)) {
+    } else if (hasAttachment && !mediaExpired && isVideoFile(msg.file_url)) {
       stickToBottomOnMediaLoad(wrap.querySelector('video.msg-media-img'), 'loadedmetadata', pinToBottom);
     }
 
@@ -3838,21 +3966,28 @@
       let fileUrl = null;
 
       if (file) {
-        if (file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
+        // FIX: see compressImageFile() above — shrinks photos before the
+        // size check/upload, so a large-but-compressible camera photo gets
+        // a real chance to land under the limit instead of being rejected
+        // outright (the fileInput 'change' handler no longer hard-blocks
+        // compressible images either, for the same reason).
+        const uploadFile = await compressImageFile(file);
+
+        if (uploadFile.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
           alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
           return false;
         }
 
-        const path = generateStoragePath(state.currentChannel.id, file.name);
+        const path = generateStoragePath(state.currentChannel.id, uploadFile.name);
 
         try {
-          const { error } = await supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).upload(path, file);
+          const { error } = await supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).upload(path, uploadFile);
           if (error) throw error;
 
           const { data: urlData } = supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).getPublicUrl(path);
           fileUrl = urlData.publicUrl;
 
-          DOM.fileUploadStatus.textContent = `📎 ${file.name} uploaded`;
+          DOM.fileUploadStatus.textContent = `📎 ${uploadFile.name} uploaded`;
           DOM.fileUploadStatus.classList.remove('hidden');
           setTimeout(() => DOM.fileUploadStatus.classList.add('hidden'), 4000);
         } catch (e) {
@@ -5111,7 +5246,10 @@
       renderSchedulePerDateList();
     }
 
-    const media = state.messages.filter((m) => isImageFile(m.file_url));
+    // FIX: see isMessageMediaExpired() — an image whose 168h window has
+    // passed no longer has a live file behind it, so it's excluded here
+    // the same way it's excluded from the chat bubble itself.
+    const media = state.messages.filter((m) => isImageFile(m.file_url) && !isMessageMediaExpired(m));
     if (!media.length) {
       DOM.sharedMediaGrid.innerHTML = '<div class="empty-note">No shared media yet</div>';
       DOM.profileSeeAllMedia.classList.add('hidden');
@@ -5482,13 +5620,19 @@
 
     let mediaUrl = null;
     if (file) {
-      if (file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
+      // FIX: see compressImageFile() above — a status photo goes through
+      // the same shrink-before-upload pass as a chat attachment; a status
+      // video is left as-is (isCompressibleImageType() only matches
+      // image/*), since canvas can't compress video.
+      const uploadFile = await compressImageFile(file);
+
+      if (uploadFile.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
         alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
         return;
       }
-      const path = generateStatusStoragePath(state.currentUser.username, file.name);
+      const path = generateStatusStoragePath(state.currentUser.username, uploadFile.name);
       try {
-        const { error: uploadError } = await supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).upload(path, file);
+        const { error: uploadError } = await supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).upload(path, uploadFile);
         if (uploadError) throw uploadError;
         const { data: urlData } = supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).getPublicUrl(path);
         mediaUrl = urlData.publicUrl;
@@ -7517,7 +7661,13 @@
   DOM.fileInput.addEventListener('change', function() {
     const file = this.files[0];
     if (!file) { DOM.filePreview.classList.add('hidden'); return; }
-    if (file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
+    // FIX: see compressImageFile()/sendMessage() — a compressible photo is
+    // no longer hard-blocked here even if it's currently over the limit,
+    // since it gets resized/re-encoded (and re-checked against the limit)
+    // at send time and routinely ends up well under it. Only file types
+    // that can't be shrunk client-side (PDFs, docs, videos, GIFs, SVGs)
+    // still need to fail fast at selection time.
+    if (!isCompressibleImageType(file) && file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
       alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
       this.value = '';
       DOM.filePreview.classList.add('hidden');
