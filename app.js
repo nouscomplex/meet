@@ -7305,6 +7305,25 @@
     goToScreen('profile');
   });
 
+  // FIX: root cause of "the mobile keyboard disappears after sending a
+  // single text message — have to tap the field again to keep typing" — a
+  // tap on #sendMsgBtn is a tap on a *different* focusable element than
+  // #messageInput, and the browser's default behavior for any pointer-down
+  // on a focusable element is to move DOM focus to it. On mobile, the
+  // on-screen keyboard is tied purely to which element currently has focus
+  // — so the instant focus left #messageInput for the button, the OS
+  // closed the keyboard, before sendMessage() below had even started
+  // running. That focus shift happens on `mousedown` (which mobile
+  // browsers fire, in this order, for every tap: touchstart, touchend,
+  // mousedown, mouseup, click — so this still runs for touch, not just an
+  // actual mouse), one event ahead of the `click` handler further down.
+  // preventDefault() here stops the browser's default focus-move for this
+  // one button without blocking the click event that follows, so
+  // #messageInput simply never loses focus and the keyboard never closes
+  // in the first place — no close-then-reopen flash, and no need to tap
+  // the field again before the next message.
+  DOM.sendMsgBtn.addEventListener('mousedown', (e) => e.preventDefault());
+
   DOM.sendMsgBtn.addEventListener('click', async () => {
     const content = DOM.messageInput.value.trim();
     const file = DOM.fileInput.files[0];
