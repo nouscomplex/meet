@@ -1806,6 +1806,53 @@ body.theme-dark .msg-time {
   border-radius: 8px;
   object-fit: contain;
 }
+/* FIX: root cause of "opening media takes time instead of being smooth and
+   fast" — see the matching FIX comment in openImageLightbox() (app.js).
+   The overlay used to render the <img> immediately with nothing else on
+   screen, so the full-screen backdrop sat there empty (no spinner, no
+   placeholder) for however long the actual photo/video took to download —
+   that empty wait is what reads as "slow", not the overlay opening itself.
+   .loading hides the (possibly half-rendered) image while a spinner takes
+   its place; app.js removes .loading the moment the image's `load` event
+   fires. */
+.lightbox-img.loading { visibility: hidden; }
+/* Explicit top/left/transform centering rather than relying on the
+   .lightbox-overlay flex container's align-items/justify-content to
+   center this — those don't reliably apply to absolutely-positioned flex
+   children across browsers, which would silently reproduce the exact
+   "not centered" bug this spinner exists to avoid. */
+.lightbox-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+  animation: orbit-loading-spin 0.8s linear infinite;
+}
+.lightbox-spinner.hidden { display: none; }
+/* FIX: root cause of "media not showing in center" for any attachment that
+   fails to load (wrong/expired URL, unrecognized file type misread as an
+   image, network error) — a plain broken <img> renders the browser's tiny
+   native broken-image glyph pinned to the top-left of its box rather than
+   centered like a loaded image would be via object-fit, which reads
+   exactly like "the media isn't centered". Shown instead of the native
+   glyph once the image's `error` event fires (see openImageLightbox() in
+   app.js); already centered for free since it's a sibling flex child of
+   .lightbox-overlay (display:flex; align-items:center; justify-content:center). */
+.lightbox-broken {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 14px;
+}
+.lightbox-broken.hidden { display: none; }
+.lightbox-broken i { font-size: 30px; }
 .lightbox-close {
   position: absolute;
   top: 18px;
@@ -2820,6 +2867,48 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
   -webkit-user-select: none;
   touch-action: manipulation;
 }
+/* FIX: root cause of "media in status takes time to open" — see the big
+   comment in showStatusModal() (app.js). This spinner is appended next to
+   the img/video while it's still downloading (the auto-advance story timer
+   is now paused for that same window, so the update can't skip itself
+   before its media is visible). Absolutely positioned over
+   .status-viewer-media, which is the centering flex container in both the
+   has-media and text+media layouts, so the spinner is centered no matter
+   which layout is active. */
+.status-media-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+  animation: orbit-loading-spin 0.8s linear infinite;
+  z-index: 1;
+}
+/* FIX: root cause of "media in status is not showing in center" for any
+   update whose photo/video actually fails to load (expired/broken URL,
+   network error) — a bare broken <img> renders the browser's native
+   broken-image glyph pinned to the top-left of its box instead of a
+   centered photo, which is indistinguishable from "the media isn't
+   centered". Shown instead once app.js's `error` handler fires; centered
+   via the same flex rules as a real loaded image/video (see
+   .status-viewer-media and .status-viewer-body.has-media .status-viewer-media
+   above/below). */
+.status-media-broken {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 14px;
+  width: 100%;
+  height: 100%;
+  justify-content: center;
+}
+.status-media-broken i { font-size: 30px; }
 
 /* FIX: "display media in full screen not in small screen" — when an update
    has a photo/video, .has-media (toggled in showStatusModal() in app.js)
