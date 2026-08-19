@@ -3840,6 +3840,7 @@
         <button class="lightbox-nav lightbox-prev" aria-label="Previous image"><i class="fas fa-chevron-left"></i></button>
         <button class="lightbox-nav lightbox-next" aria-label="Next image"><i class="fas fa-chevron-right"></i></button>
       ` : ''}
+      <div class="lightbox-spinner" aria-hidden="true"></div>
       <img class="lightbox-img" src="${escapeHtml(hasGallery ? gallery[index] : url)}" alt="Attached image, full size">
     `;
     document.body.appendChild(overlay);
@@ -3848,10 +3849,50 @@
     state.activeLightbox = overlay;
 
     const imgEl = overlay.querySelector('.lightbox-img');
+    const spinnerEl = overlay.querySelector('.lightbox-spinner');
+
+    // FIX: root cause of "opening media takes time instead of being smooth
+    // and fast" — the overlay/backdrop itself has always appeared
+    // instantly (it's plain synchronous DOM, no network involved), but the
+    // full-resolution photo/video behind it is a real file that still has
+    // to download over the network, and until now nothing was shown while
+    // that happened — the overlay just sat there with an empty transparent
+    // spot where the image will eventually appear. On a slow connection (or
+    // just a large, uncompressed photo) that empty wait is what actually
+    // reads as "opening is slow" — the app wasn't slow, it just gave no
+    // feedback that anything was happening. imgEl starts hidden (see
+    // .lightbox-img.loading in styles.css) and the spinner shows in its
+    // place until the browser fires 'load' (or 'error') on it.
+    const showSpinner = () => { imgEl.classList.add('loading'); if (spinnerEl) spinnerEl.classList.remove('hidden'); };
+    const hideSpinner = () => { imgEl.classList.remove('loading'); if (spinnerEl) spinnerEl.classList.add('hidden'); };
+    imgEl.addEventListener('load', hideSpinner);
+    // FIX: a broken/unreachable image URL used to just leave the browser's tiny
+    // native "broken image" glyph sitting in the top-left corner of the
+    // flex box instead of the actual photo — which, against this large
+    // full-screen dark backdrop, looks exactly like "the media isn't
+    // centered" rather than "this file failed to load". Show an explicit,
+    // still-centered fallback message instead.
+    imgEl.addEventListener('error', () => {
+      hideSpinner();
+      imgEl.classList.add('hidden');
+      let brokenEl = overlay.querySelector('.lightbox-broken');
+      if (!brokenEl) {
+        brokenEl = document.createElement('div');
+        brokenEl.className = 'lightbox-broken';
+        brokenEl.innerHTML = '<i class="fas fa-image"></i><span>Couldn\'t load this media</span>';
+        overlay.appendChild(brokenEl);
+      }
+      brokenEl.classList.remove('hidden');
+    });
+    if (imgEl.complete && imgEl.naturalWidth > 0) hideSpinner(); else showSpinner();
 
     const showAt = (newIndex) => {
       if (!hasGallery) return;
       index = ((newIndex % gallery.length) + gallery.length) % gallery.length;
+      const brokenEl = overlay.querySelector('.lightbox-broken');
+      if (brokenEl) brokenEl.classList.add('hidden');
+      imgEl.classList.remove('hidden');
+      showSpinner();
       imgEl.src = gallery[index];
     };
     const showNext = () => showAt(index + 1);
@@ -5177,39 +5218,55 @@
   // ============================================================
   // 8a. CHANNEL DESCRIPTION
   // ============================================================
-  async function loadChannelDescription(channelId) {
-    if (!channelId) return;
-    
-    const { data, error } = await supabase
-      .from(CONFIG.SUPABASE.TABLES.CHANNELS)
-      .select('description')
-      .eq('id', channelId)
-      .single();
-    
-    if (error || !data) {
-      DOM.profileChannelDesc.textContent = `Group workspace for ${state.currentChannel?.name || 'this group'}. Share updates, chat with the group, and join live sessions together.`;
-      return;
-    }
-    
-    const desc = data.description || `Group workspace for ${state.currentChannel?.name || 'this group'}. Share updates, chat with the group, and join live sessions together.`;
+  // FIX: root cause of "opening profile takes time instead of being smooth
+  // and fast" — this used to be `async`, and unconditionally hit the
+  // network with its own `.select('description')` round trip *every single
+  // time* the Profile screen opened, even though channels are always loaded
+  // with `.select('*')` (see loadMyChannels()/loadChannels() above) — the
+  // description is already sitting in `state.currentChannel.description`,
+  // in memory, before this function is ever called. Because
+  // DOM.profileChannelDesc was only ever written inside that network
+  // callback, opening Profile meant: screen appears instantly (goToScreen()
+  // already fires immediately — see chatDetailTitleBtn's click handler
+  // below), but the description area shows nothing (or the PREVIOUS
+  // group's description, still left over in the DOM) for a beat until this
+  // request resolves, then pops in/changes — that flash-then-update is what
+  // reads as "slow"/janky rather than an instant open. Now this just reads
+  // the value already in memory and paints synchronously — no network wait,
+  // no flash. updateChannelDescription() below is the only place that still
+  // writes to Supabase (when an admin actually edits the description); it
+  // updates state.currentChannel.description directly afterward instead of
+  // re-fetching it.
+  function loadChannelDescription(channelId) {
+    if (!channelId || !state.currentChannel || state.currentChannel.id !== channelId) return;
+
+    const fallback = `Group workspace for ${state.currentChannel?.name || 'this group'}. Share updates, chat with the group, and join live sessions together.`;
+    const desc = state.currentChannel.description || fallback;
     DOM.profileChannelDesc.textContent = desc;
-    DOM.channelDescInput.value = desc || '';
-    
+    DOM.channelDescInput.value = state.currentChannel.description || '';
+
     DOM.adminDescEdit.classList.toggle('hidden', !state.isAdmin);
   }
 
   async function updateChannelDescription(channelId, description) {
     if (!channelId) { alert('Select a channel first.'); return; }
     if (!description) { alert('Enter a description.'); return; }
-    
+
     const { error } = await supabase
       .from(CONFIG.SUPABASE.TABLES.CHANNELS)
       .update({ description: description })
       .eq('id', channelId);
-    
+
     if (error) { alert('Could not update description: ' + error.message); return; }
-    
-    await loadChannelDescription(channelId);
+
+    // FIX: update the in-memory copy directly instead of re-fetching it —
+    // we already know exactly what we just wrote. Keeps
+    // loadChannelDescription() (and anything else reading
+    // state.currentChannel.description) in sync without another round trip.
+    if (state.currentChannel && state.currentChannel.id === channelId) {
+      state.currentChannel.description = description;
+    }
+    loadChannelDescription(channelId);
     alert('Description updated successfully!');
   }
 
@@ -5718,6 +5775,11 @@
 
   let statusProgressValue = 0;
   let statusPaused = false;
+  // FIX: see the big comment inside showStatusModal() below — gates the
+  // auto-advance progress timer so a status's photo/video can't get cut
+  // off (or hidden) before it's actually finished loading.
+  let statusMediaLoading = false;
+  let statusMediaLoadingSafetyTimer = null;
 
   function showStatusModal(status) {
     // FIX: see the `pointerup` handler on the status row and the matching
@@ -5755,12 +5817,64 @@
       }
     }
 
+    // FIX: root cause of "media in status takes time to open"/"isn't shown
+    // in the center" — two compounding bugs, both here:
+    //
+    // 1) The ~4.2s auto-advance timer below (statusProgressValue +=1.2
+    //    every 50ms) used to start counting the instant this function ran,
+    //    completely independent of whether the photo/video had actually
+    //    finished downloading. On anything slower than a fast connection —
+    //    or for any video, which is rarely fully fetched in 4 seconds — the
+    //    story would hit 100% and auto-close itself (DOM.statusModal gets
+    //    `.hidden` added) before the media ever finished loading, so it
+    //    could look like it "never opened" or only flashed for a moment.
+    // 2) A broken/undownloadable URL rendered as a bare native `<img>`
+    //    fails silently: the browser draws its own tiny broken-image glyph
+    //    pinned to the element's top-left corner instead of a centered
+    //    photo, which reads exactly like "the media isn't centered" rather
+    //    than "this file failed to load".
+    //
+    // statusMediaLoading now gates the timer (see the interval below, which
+    // no longer advances while it's true) until a `load`/`loadeddata` event
+    // confirms the media is actually ready — mirroring how Instagram/
+    // WhatsApp stories hold the progress bar for slow media. A `error`
+    // handler (and a hard 8s safety cap, in case a load event never fires)
+    // stops it from waiting forever and shows an explicit, still-centered
+    // "couldn't load" state instead of the browser's native broken glyph.
+    statusMediaLoading = !!status.media_url;
+    if (statusMediaLoadingSafetyTimer) { clearTimeout(statusMediaLoadingSafetyTimer); statusMediaLoadingSafetyTimer = null; }
+
+    const removeMediaSpinner = () => {
+      const spinnerEl = DOM.statusModalMedia.querySelector('.status-media-spinner');
+      if (spinnerEl) spinnerEl.remove();
+    };
+    const markMediaReady = () => { statusMediaLoading = false; removeMediaSpinner(); };
+    const markMediaBroken = () => {
+      statusMediaLoading = false;
+      DOM.statusModalMedia.innerHTML = '<div class="status-media-broken"><i class="fas fa-image"></i><span>Couldn\'t load this media</span></div>';
+    };
+
     if (status.media_url && isVideoFile(status.media_url)) {
       DOM.statusModalMedia.innerHTML = `<video src="${escapeHtml(status.media_url)}" controls autoplay muted playsinline></video>`;
+      const videoEl = DOM.statusModalMedia.querySelector('video');
+      videoEl.addEventListener('loadeddata', markMediaReady, { once: true });
+      videoEl.addEventListener('error', markMediaBroken, { once: true });
+      DOM.statusModalMedia.insertAdjacentHTML('beforeend', '<div class="status-media-spinner" aria-hidden="true"></div>');
     } else if (status.media_url) {
       DOM.statusModalMedia.innerHTML = `<img src="${escapeHtml(status.media_url)}" alt="Status media">`;
+      const imgEl = DOM.statusModalMedia.querySelector('img');
+      if (imgEl.complete && imgEl.naturalWidth > 0) {
+        markMediaReady();
+      } else {
+        imgEl.addEventListener('load', markMediaReady, { once: true });
+        imgEl.addEventListener('error', markMediaBroken, { once: true });
+        DOM.statusModalMedia.insertAdjacentHTML('beforeend', '<div class="status-media-spinner" aria-hidden="true"></div>');
+      }
     } else {
       DOM.statusModalMedia.innerHTML = '';
+    }
+    if (statusMediaLoading) {
+      statusMediaLoadingSafetyTimer = setTimeout(() => { statusMediaLoading = false; removeMediaSpinner(); }, 8000);
     }
 
     // FIX: "display media in full screen not in small screen" — previously
@@ -5777,7 +5891,7 @@
 
     DOM.statusProgress.style.width = '0%';
     DOM.statusModal.classList.remove('hidden');
-    
+
     if (window.innerWidth < 560) {
       const inner = document.querySelector('.status-viewer-inner');
       if (inner) {
@@ -5792,7 +5906,7 @@
     if (state.progressInterval) clearInterval(state.progressInterval);
 
     state.progressInterval = setInterval(() => {
-      if (statusPaused) return;
+      if (statusPaused || statusMediaLoading) return;
       statusProgressValue += 1.2;
       if (statusProgressValue >= 100) {
         clearInterval(state.progressInterval);
@@ -5818,6 +5932,8 @@
   function closeStatusViewer() {
     DOM.statusModal.classList.add('hidden');
     if (state.progressInterval) { clearInterval(state.progressInterval); state.progressInterval = null; }
+    if (statusMediaLoadingSafetyTimer) { clearTimeout(statusMediaLoadingSafetyTimer); statusMediaLoadingSafetyTimer = null; }
+    statusMediaLoading = false;
     statusPaused = false;
     DOM.statusModalMedia.innerHTML = '';
     // Clear the URL fragment after closing status so back button works correctly
