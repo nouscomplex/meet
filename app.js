@@ -200,6 +200,7 @@
     screenProfile: $('screenProfile'),
     bottomNav: $('bottomNav'),
     navChatsBadge: $('navChatsBadge'),
+    navUpdatesBadge: $('navUpdatesBadge'),
 
     chatSearchInput: $('chatSearchInput'),
     channelList: $('channelList'),
@@ -5434,6 +5435,28 @@
     await loadStatusViews(state.statuses.map((s) => s.id));
     subscribeToStatusViews();
     renderStatuses();
+    updateStatusNavBadge();
+  }
+
+  // FIX: root cause of "can't see the notification dot for unseen status in
+  // nav bar" — no code anywhere ever computed this. state.statusViews (see
+  // loadStatusViews()/recordStatusView() below) already tracks, per status,
+  // every username that has opened it — including the current user's own
+  // view, since recordStatusView() only skips recording a poster viewing
+  // their own post (line ~5497), not a viewer's own history. That's
+  // everything needed to derive "do I have anything unseen": a status
+  // counts as unseen if I didn't post it myself AND my username isn't in
+  // its viewer list yet. Shows/hides #navUpdatesBadge (a plain dot, not a
+  // count — see .nav-dot in styles.css) accordingly.
+  function updateStatusNavBadge() {
+    if (!DOM.navUpdatesBadge || !state.currentUser) return;
+    const me = state.currentUser.username;
+    const hasUnseen = state.statuses.some((st) => {
+      if (normalizeUsername(st.username) === me) return false; // don't count my own posts
+      const viewers = state.statusViews.get(st.id) || [];
+      return !viewers.some((v) => v.username === me);
+    });
+    DOM.navUpdatesBadge.classList.toggle('hidden', !hasUnseen);
   }
 
   // ============================================================
@@ -5511,6 +5534,10 @@
       list.push({ username: row.username, viewed_at: row.viewed_at });
       state.statusViews.set(status.id, list);
       if (state.isAdmin) renderStatuses();
+      // FIX: clear the Updates nav dot the moment the viewer has actually
+      // seen everything, not just on the next full loadStatuses() (login /
+      // posting an update) — see updateStatusNavBadge() above.
+      updateStatusNavBadge();
     }
   }
 
@@ -7378,6 +7405,11 @@
     state.myUserRoleId = null;
     DOM.navChatsBadge.textContent = '0';
     DOM.navChatsBadge.classList.add('hidden');
+    // FIX: same shared-device stale-badge bug as #navChatsBadge just above,
+    // now that the Updates tab has its own nav dot — without this, signing
+    // out of an account with unseen updates and into another on the same
+    // tab could leave the previous user's dot showing.
+    if (DOM.navUpdatesBadge) DOM.navUpdatesBadge.classList.add('hidden');
 
     try {
       const keys = Object.keys(localStorage);
