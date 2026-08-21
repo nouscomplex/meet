@@ -696,7 +696,25 @@
         if (!raw) { html += escapeHtml(parts[i]); continue; }
         const safeHref = escapeHtml(normalizeUrlHref(raw));
         const safeText = escapeHtml(raw);
-        html += `<a href="${safeHref}" target="_blank" rel="noopener" class="msg-link">${safeText}</a>${escapeHtml(trail)}`;
+        // FIX: root cause of "shared link opens twice, in different
+        // browsers" — see the big comment on openExternalLink() below.
+        // target="_blank" here used to make this a browser-native
+        // "open in a new browsing context" link; combined with every click
+        // handler below ALSO calling window.open() on it manually, some
+        // Android/WebView/installed-PWA combinations end up running BOTH:
+        // the platform's own link-handling for the target="_blank" tap
+        // (which can get routed by the OS to whatever app/browser is
+        // registered for that domain) *and* the script-initiated
+        // window.open() (which the OS treats as a plain "open a new tab"
+        // request and hands to a possibly different browser) — two tabs,
+        // two different apps, from one tap. Every click on a.msg-link is
+        // already intercepted in JS (preventDefault() + openExternalLink())
+        // everywhere this class is used, so target="_blank" was never
+        // doing anything except opening this second, competing path.
+        // href is kept (so right-click/long-press "open/copy link" still
+        // works and the element stays a real, accessible anchor either
+        // way) — only the redundant target attribute is gone.
+        html += `<a href="${safeHref}" rel="noopener" class="msg-link">${safeText}</a>${escapeHtml(trail)}`;
       } else {
         html += escapeHtml(parts[i]);
       }
@@ -739,8 +757,26 @@
   // every .msg-link/.msg-link-preview click is routed through below/in
   // showStatusModal's click wiring, instead of relying on the anchor's
   // native target="_blank" alone.
+  // FIX: root cause of "shared link opens twice, in different browsers" —
+  // every a.msg-link/a.msg-link-preview click handler in this file does
+  // preventDefault() then calls this, and the markup for those anchors no
+  // longer carries target="_blank" (see linkifyText() and the other spots
+  // that build these tags), so there's only ever meant to be exactly one
+  // opener per tap. This debounce is the last line of defense in case a
+  // single physical tap still ends up dispatching more than one 'click' at
+  // this handler anyway — some touch browsers/PWA shells fire a
+  // synthetic compatibility click alongside a real one, and each would
+  // otherwise call window.open() separately, which is exactly what let a
+  // second, independently-routed browsing context (sometimes a different
+  // browser/app entirely) open behind the first.
+  let lastOpenedExternalUrl = null;
+  let lastOpenedExternalAt = 0;
   function openExternalLink(url) {
     if (!url) return;
+    const now = Date.now();
+    if (url === lastOpenedExternalUrl && (now - lastOpenedExternalAt) < 800) return;
+    lastOpenedExternalUrl = url;
+    lastOpenedExternalAt = now;
     const win = window.open(url, '_blank', 'noopener');
     // If window.open() itself was blocked (e.g. a popup blocker that
     // doesn't recognize this as a user gesture) or returned nothing, still
@@ -1393,7 +1429,10 @@
       const previewText = preview
         ? (preview.content
             ? (previewLinkUrl
-                ? `<a href="${escapeHtml(previewLinkUrl)}" target="_blank" rel="noopener" class="msg-link">${escapeHtml(truncate(preview.content, 42))}</a>`
+                // FIX: see the matching comment in linkifyText() — dropping
+                // target="_blank" here too, for the same "opens twice, in
+                // different browsers" reason.
+                ? `<a href="${escapeHtml(previewLinkUrl)}" rel="noopener" class="msg-link">${escapeHtml(truncate(preview.content, 42))}</a>`
                 : escapeHtml(truncate(preview.content, 42)))
             : (preview.file_url ? '📎 Attachment' : ''))
         : 'No messages yet';
@@ -2359,11 +2398,27 @@
         }
         
         if (newMessage.client_id) {
-          const optimisticIndex = state.messages.findIndex(m => 
-            m.client_id === newMessage.client_id || 
-            (m.isPending && m.id && m.id.includes('temp_'))
+          // FIX: root cause of "a message disappears/gets swapped for the
+          // wrong content while it's still unconfirmed" — this used to also
+          // match `(m.isPending && m.id.includes('temp_'))` on its own, with
+          // no client_id comparison. findIndex() returns the FIRST match, so
+          // whenever more than one of your own messages was still pending at
+          // once (e.g. you send a message, then send a second — with a link
+          // or not — before the first one's INSERT confirmation comes back),
+          // this confirmation for message B could match message A's still-
+          // pending placeholder purely because it was pending and looked
+          // like a temp_ id, with no check that it was actually THE SAME
+          // message. That overwrote A's placeholder with B's real row —
+          // A's own confirmation then had nothing left to match (its temp_
+          // slot was already gone), so A silently vanished/never confirmed
+          // while B effectively got duplicated. Every optimistic placeholder
+          // and its real row always share the same client_id (stamped by
+          // sendMessage()), so that alone is the only correct, unambiguous
+          // match — the extra fallback clause never needed to exist.
+          const optimisticIndex = state.messages.findIndex(m =>
+            m.client_id === newMessage.client_id
           );
-          
+
           if (optimisticIndex !== -1) {
             console.log(`✅ Replacing optimistic message (clientId: ${newMessage.client_id})`);
             state.messages[optimisticIndex] = newMessage;
@@ -2965,7 +3020,11 @@
       if (!preview || !slotEl.isConnected) return;
       slotEl.classList.remove('hidden');
       slotEl.innerHTML = `
-        <a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="msg-link-preview">
+        <!-- FIX: see linkifyText()'s matching comment — target="_blank"
+             dropped here too so this card's tap doesn't race the
+             window.open() call in the delegated click handlers below and
+             open twice, in two different browsers/apps. -->
+        <a href="${escapeHtml(url)}" rel="noopener" class="msg-link-preview">
           ${preview.image ? `<img class="msg-link-preview-img" src="${escapeHtml(preview.image)}" alt="" loading="lazy">` : ''}
           <span class="msg-link-preview-body">
             ${preview.title ? `<span class="msg-link-preview-title">${escapeHtml(truncate(preview.title, 90))}</span>` : ''}
@@ -3740,10 +3799,13 @@
     // FIX: see openExternalLink() above — "website link is not directly
     // being open from chat ... on clicking". Explicit window.open() instead
     // of trusting the anchor's own target="_blank" to fire, which is
-    // unreliable inside this app's standalone-PWA mode.
+    // unreliable inside this app's standalone-PWA mode. stopPropagation()
+    // added alongside the "opens twice" fix so this click can't also reach
+    // some other ancestor listener once a shared link is found here.
     const sharedLink = e.target.closest('a.msg-link, a.msg-link-preview');
     if (sharedLink) {
       e.preventDefault();
+      e.stopPropagation();
       openExternalLink(sharedLink.getAttribute('href'));
       return;
     }
@@ -4006,6 +4068,11 @@
 
     isSendingMessage = true;
     if (DOM.sendMsgBtn) DOM.sendMsgBtn.disabled = true;
+    // FIX: declared out here (not `const` inside the try block below) so
+    // the catch block added further down can still reach it to roll back
+    // the right optimistic placeholder — a `const`/`let` declared inside
+    // `try { }` isn't visible inside the paired `catch { }` block.
+    let tempId = null;
 
     try {
       // FIX: see verifyChannelMembership() above — this is what actually stops
@@ -4073,7 +4140,7 @@
         ...replyPayload,
       };
 
-      const tempId = `temp_${clientId}`;
+      tempId = `temp_${clientId}`;
       // FIX: root cause of "sent message flashes into the second-last spot,
       // then jumps down to the actual last spot a moment later" — this used
       // to stamp the optimistic placeholder with new Date().toISOString(),
@@ -4167,6 +4234,32 @@
       state.replyingTo = null;
       DOM.replyPreview.classList.add('hidden');
       return true;
+    } catch (err) {
+      // FIX: root cause of a message getting stuck on screen forever, still
+      // showing its "sending" tick and never confirmed or rolled back —
+      // the .insert().select() call a few lines up returns a normal
+      // `{error, data}` result for a server-side failure (handled above),
+      // but a client-side network failure (offline, dropped connection
+      // mid-request) makes the underlying fetch call throw instead. There
+      // was no catch here, so that exception skipped straight past the
+      // `if (error)` rollback block entirely and out of sendMessage() as an
+      // unhandled rejection — leaving the optimistic placeholder (added by
+      // mergeMessagesSafely() above) sitting in state.messages forever,
+      // with no error shown and nothing to retry. Same rollback as the
+      // `if (error)` branch above, just reached from the other failure path.
+      console.error('Send error (network/exception):', err);
+      alert('Failed to send message.');
+      // tempId is only set once the optimistic placeholder actually got
+      // added (partway through the try block) — if the exception happened
+      // before that (e.g. during the membership check or file upload),
+      // there's nothing to roll back, and filtering on a null id is a
+      // harmless no-op.
+      if (tempId) {
+        state.messages = state.messages.filter((m) => m.id !== tempId);
+        renderMessages();
+        console.log('❌ Message rolled back (exception)');
+      }
+      return false;
     } finally {
       isSendingMessage = false;
       if (DOM.sendMsgBtn) DOM.sendMsgBtn.disabled = false;
@@ -5616,7 +5709,10 @@
         const statusPreviewLinkUrl = st.content ? firstUrlIn(st.content) : null;
         const preview = st.content
           ? (statusPreviewLinkUrl
-              ? `<a href="${escapeHtml(statusPreviewLinkUrl)}" target="_blank" rel="noopener" class="msg-link">${escapeHtml(truncate(st.content, 46))}</a>`
+              // FIX: see linkifyText()'s matching comment — target="_blank"
+              // dropped here too, for the same "opens twice, in different
+              // browsers" reason.
+              ? `<a href="${escapeHtml(statusPreviewLinkUrl)}" rel="noopener" class="msg-link">${escapeHtml(truncate(st.content, 46))}</a>`
               : escapeHtml(truncate(st.content, 46)))
           : (st.media_url ? '<i class="fas fa-camera"></i> Photo/video' : '');
         // FIX: admin-visible "seen by N" count so it's clear at a glance who
