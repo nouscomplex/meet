@@ -1332,6 +1332,21 @@
   // groups and pre-select each one's role).
   let registeredUserMemberships = new Map();
 
+  // FIX: root cause of "Settings feels slow to open/close, unlike Members/
+  // Profile/Shared Media" — see the FIX comment inside loadRegisteredUsersList()
+  // below. registeredUsersListHasData tracks whether we've ever painted a
+  // real list, so a later open can repaint instantly from what's already in
+  // memory instead of blanking to "Loading users…" again. registeredUsersListLoading
+  // guards against a second fetch piling on top of one still in flight —
+  // without it, quickly tapping into and out of Settings a few times (which
+  // is exactly what "closing" it while it's still loading looks like) fires
+  // a fresh loadRoleCache() + members/channels round trip on every tap,
+  // and each one resolves later and re-renders on top of the others,
+  // which is what actually reads as things getting slower and jankier the
+  // more you open/close the screen.
+  let registeredUsersListHasData = false;
+  let registeredUsersListLoading = false;
+
   async function renderChannels() {
     const channels = await loadChannels();
     allChannels = channels;
@@ -4586,30 +4601,67 @@
   // groupScheduleItemHtml() / groupScheduleEditRowHtml() below.
   let groupScheduleEditingId = null;
 
+  // FIX: root cause of "opening Profile — and going back to it — feels
+  // slow", the same complaint as Settings/Calendar above (see the FIX
+  // comment on loadRegisteredUsersList()). updateProfileScreen() calls
+  // loadGroupScheduleList() every single time Profile is opened — including
+  // switching back and forth between a chat and its own Profile — and this
+  // used to unconditionally blank #groupScheduleList to "Loading…" and
+  // refetch from the network every time, even for a group you'd just
+  // looked at a second ago. groupScheduleCache lets a repeat visit repaint
+  // instantly from the last known rows instead of flashing blank;
+  // groupScheduleLoading (per channel) stops a second fetch for the same
+  // channel piling on top of one already in flight — which is exactly what
+  // "open Profile, go back, open it again" does without this guard.
+  let groupScheduleCache = new Map(); // channelId -> raw rows from Supabase
+  let groupScheduleLoading = new Set(); // channelIds with a fetch in flight
+
   async function loadGroupScheduleList(channelId) {
     if (!DOM.groupScheduleList) return;
-    DOM.groupScheduleList.innerHTML = '<div class="empty-note">Loading…</div>';
+    if (groupScheduleLoading.has(channelId)) return;
+    groupScheduleLoading.add(channelId);
 
-    const { data, error } = await supabase
-      .from('class_schedule')
-      .select('*')
-      .eq('channel_id', channelId)
-      .gte('scheduled_time', new Date(Date.now() - MAX_SESSION_DURATION_MINUTES * 60000).toISOString())
-      .order('scheduled_time', { ascending: true })
-      .limit(30);
-
-    // The admin may have switched groups while this was in flight — don't
-    // stomp the list with a now-stale channel's data.
-    if (!state.currentChannel || String(state.currentChannel.id) !== String(channelId)) return;
-
-    if (error) {
-      console.warn('loadGroupScheduleList failed:', error);
-      DOM.groupScheduleList.innerHTML = '<div class="empty-note">Could not load the schedule.</div>';
-      return;
+    const cachedRows = groupScheduleCache.get(channelId);
+    if (cachedRows) {
+      renderGroupScheduleRows(channelId, cachedRows);
+    } else {
+      DOM.groupScheduleList.innerHTML = '<div class="empty-note">Loading…</div>';
     }
 
+    try {
+      const { data, error } = await supabase
+        .from('class_schedule')
+        .select('*')
+        .eq('channel_id', channelId)
+        .gte('scheduled_time', new Date(Date.now() - MAX_SESSION_DURATION_MINUTES * 60000).toISOString())
+        .order('scheduled_time', { ascending: true })
+        .limit(30);
+
+      // The admin may have switched groups while this was in flight — don't
+      // stomp the list with a now-stale channel's data.
+      if (!state.currentChannel || String(state.currentChannel.id) !== String(channelId)) return;
+
+      if (error) {
+        console.warn('loadGroupScheduleList failed:', error);
+        if (!cachedRows) DOM.groupScheduleList.innerHTML = '<div class="empty-note">Could not load the schedule.</div>';
+        return;
+      }
+
+      groupScheduleCache.set(channelId, data || []);
+      renderGroupScheduleRows(channelId, data || []);
+    } finally {
+      groupScheduleLoading.delete(channelId);
+    }
+  }
+
+  function renderGroupScheduleRows(channelId, rows) {
+    if (!DOM.groupScheduleList) return;
+    // Guard against a slow background refresh landing after the admin has
+    // already navigated away to a different group's Profile.
+    if (!state.currentChannel || String(state.currentChannel.id) !== String(channelId)) return;
+
     const now = Date.now();
-    const upcoming = (data || []).filter((row) => {
+    const upcoming = (rows || []).filter((row) => {
       const endsAt = new Date(row.scheduled_time).getTime() + (row.duration_minutes || 45) * 60000;
       return endsAt > now;
     });
@@ -4633,13 +4685,13 @@
     DOM.groupScheduleList.querySelectorAll('.gs-edit-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         groupScheduleEditingId = btn.dataset.id;
-        loadGroupScheduleList(channelId);
+        renderGroupScheduleRows(channelId, groupScheduleCache.get(channelId) || []);
       });
     });
     DOM.groupScheduleList.querySelectorAll('.gs-edit-cancel').forEach((btn) => {
       btn.addEventListener('click', () => {
         groupScheduleEditingId = null;
-        loadGroupScheduleList(channelId);
+        renderGroupScheduleRows(channelId, groupScheduleCache.get(channelId) || []);
       });
     });
     DOM.groupScheduleList.querySelectorAll('.gs-edit-save').forEach((btn) => {
@@ -5067,21 +5119,45 @@
   // reschedule it right there.
   let calendarSubscription = null;
 
+  // FIX: same root cause as loadRegisteredUsersList() above (see its FIX
+  // comment) applied to the admin Calendar screen — it used to blank
+  // #calendarList to "Loading schedule…" and refetch every single time the
+  // screen opened (and again on every realtime change + every 30s poll —
+  // see subscribeToAllSchedules()), with nothing stopping those refetches
+  // from overlapping if the admin tapped in/out quickly. calendarHasData
+  // lets a repeat open repaint instantly from what's already in memory
+  // instead of flashing blank again; calendarLoadInFlight stops a new
+  // fetch from starting while one is still resolving.
+  let calendarHasData = false;
+  let calendarLoadInFlight = false;
+
   async function loadAllSchedules() {
-    if (DOM.calendarList) DOM.calendarList.innerHTML = '<div class="empty-note">Loading schedule…</div>';
+    if (calendarLoadInFlight) return;
+    calendarLoadInFlight = true;
 
-    const { data, error } = await supabase
-      .from('class_schedule')
-      .select('*')
-      .gte('scheduled_time', new Date(Date.now() - 60 * 60 * 1000).toISOString())
-      .order('scheduled_time', { ascending: true });
-
-    if (error) {
-      console.warn('loadAllSchedules failed:', error);
-      if (DOM.calendarList) DOM.calendarList.innerHTML = '<div class="empty-note">Could not load the schedule.</div>';
-      return;
+    if (DOM.calendarList && !calendarHasData) {
+      DOM.calendarList.innerHTML = '<div class="empty-note">Loading schedule…</div>';
     }
-    renderCalendarList(data || []);
+
+    try {
+      const { data, error } = await supabase
+        .from('class_schedule')
+        .select('*')
+        .gte('scheduled_time', new Date(Date.now() - 60 * 60 * 1000).toISOString())
+        .order('scheduled_time', { ascending: true });
+
+      if (error) {
+        console.warn('loadAllSchedules failed:', error);
+        if (DOM.calendarList && !calendarHasData) {
+          DOM.calendarList.innerHTML = '<div class="empty-note">Could not load the schedule.</div>';
+        }
+        return;
+      }
+      calendarHasData = true;
+      renderCalendarList(data || []);
+    } finally {
+      calendarLoadInFlight = false;
+    }
   }
 
   function renderCalendarList(rows) {
@@ -6160,43 +6236,81 @@
   async function loadRegisteredUsersList() {
     if (!DOM.registeredUsersListView || !state.isAdmin) return;
 
-    DOM.registeredUsersListView.innerHTML = '<div class="empty-note">Loading users…</div>';
+    // FIX: root cause of "opening Settings feels slow, unlike Members/
+    // Profile/Shared Media" — this used to unconditionally wipe the list to
+    // "Loading users…" and then run a full user_roles table read plus a
+    // members+channels round trip in parallel — THREE separate network
+    // round trips — every single time an admin opened Settings, even if
+    // they'd opened it a minute ago and nothing had changed. Members and
+    // Profile/Shared Media feel instant because they only ever paint from
+    // data already sitting in memory (state.currentMembers, state.messages);
+    // this was the one screen still doing the old "blank the screen, wait
+    // on the network, then pop in the real content" dance — see the
+    // matching FIX comment on loadChannelDescription() above, which is the
+    // exact bug this mirrors. If we already have a rendered list from
+    // earlier this session, repaint that instantly instead of blanking it,
+    // then refresh it in the background — the list only ever gets fresher,
+    // it's never yanked away while good data is already on screen.
+    //
+    // FIX: also guard against overlapping fetches. Without
+    // registeredUsersListLoading, tapping into Settings, back out, and back
+    // in again a couple of times (i.e. opening/closing it quickly) fired a
+    // fresh 3-request fetch on every tap; those all resolve later, in
+    // whatever order the network returns them, each one re-rendering the
+    // list on top of the last. That pile-up of redundant, out-of-order
+    // work — not any single request being slow — is what actually reads as
+    // Settings getting slower and jankier the more you open/close it.
+    if (registeredUsersListLoading) return;
+    registeredUsersListLoading = true;
 
-    // state.roleCache is otherwise filled in lazily (one user at a time,
-    // see getRoleFromUsername()) — loadRoleCache() does a full table read
-    // so the list below is complete, not just whoever's been looked up
-    // so far this session.
-    await loadRoleCache();
-
-    const [membersRes, channelsRes] = await Promise.all([
-      supabase.from(CONFIG.SUPABASE.TABLES.MEMBERS).select('username, channel_id, role'),
-      supabase.from(CONFIG.SUPABASE.TABLES.CHANNELS).select('id, name').order('name'),
-    ]);
-
-    if (membersRes.error || channelsRes.error) {
-      console.warn('Could not load user assignments:', membersRes.error || channelsRes.error);
-      DOM.registeredUsersListView.innerHTML = '<div class="empty-note">Could not load users</div>';
-      return;
+    if (registeredUsersListHasData) {
+      renderRegisteredUsersList();
+    } else {
+      DOM.registeredUsersListView.innerHTML = '<div class="empty-note">Loading users…</div>';
     }
 
-    allGroupsCache = channelsRes.data || [];
-    const channelNameById = new Map(allGroupsCache.map((c) => [String(c.id), c.name]));
+    try {
+      // state.roleCache is otherwise filled in lazily (one user at a time,
+      // see getRoleFromUsername()) — loadRoleCache() does a full table read
+      // so the list below is complete, not just whoever's been looked up
+      // so far this session.
+      await loadRoleCache();
 
-    const memberships = new Map();
-    (membersRes.data || []).forEach((m) => {
-      const key = (m.username || '').toLowerCase();
-      if (!key) return;
-      const entry = {
-        channelId: String(m.channel_id),
-        channelName: channelNameById.get(String(m.channel_id)) || 'Unknown session',
-        role: m.role || 'student',
-      };
-      if (!memberships.has(key)) memberships.set(key, []);
-      memberships.get(key).push(entry);
-    });
+      const [membersRes, channelsRes] = await Promise.all([
+        supabase.from(CONFIG.SUPABASE.TABLES.MEMBERS).select('username, channel_id, role'),
+        supabase.from(CONFIG.SUPABASE.TABLES.CHANNELS).select('id, name').order('name'),
+      ]);
 
-    registeredUserMemberships = memberships;
-    renderRegisteredUsersList();
+      if (membersRes.error || channelsRes.error) {
+        console.warn('Could not load user assignments:', membersRes.error || channelsRes.error);
+        if (!registeredUsersListHasData) {
+          DOM.registeredUsersListView.innerHTML = '<div class="empty-note">Could not load users</div>';
+        }
+        return;
+      }
+
+      allGroupsCache = channelsRes.data || [];
+      const channelNameById = new Map(allGroupsCache.map((c) => [String(c.id), c.name]));
+
+      const memberships = new Map();
+      (membersRes.data || []).forEach((m) => {
+        const key = (m.username || '').toLowerCase();
+        if (!key) return;
+        const entry = {
+          channelId: String(m.channel_id),
+          channelName: channelNameById.get(String(m.channel_id)) || 'Unknown session',
+          role: m.role || 'student',
+        };
+        if (!memberships.has(key)) memberships.set(key, []);
+        memberships.get(key).push(entry);
+      });
+
+      registeredUserMemberships = memberships;
+      registeredUsersListHasData = true;
+      renderRegisteredUsersList();
+    } finally {
+      registeredUsersListLoading = false;
+    }
   }
 
   function renderRegisteredUsersList() {
