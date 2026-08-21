@@ -5883,6 +5883,12 @@
   // off (or hidden) before it's actually finished loading.
   let statusMediaLoading = false;
   let statusMediaLoadingSafetyTimer = null;
+  // FIX: tracks the <video> element for the status currently open (null for
+  // a photo/text status). Lets toggleStatusPause() pause/resume the actual
+  // clip instead of a generic timer, and lets closeStatusViewer() stop
+  // playback immediately instead of leaving it playing (silently, off-
+  // screen) after the viewer navigates away.
+  let currentStatusVideoEl = null;
 
   function showStatusModal(status) {
     // FIX: see the `pointerup` handler on the status row and the matching
@@ -5946,6 +5952,7 @@
     // "couldn't load" state instead of the browser's native broken glyph.
     statusMediaLoading = !!status.media_url;
     if (statusMediaLoadingSafetyTimer) { clearTimeout(statusMediaLoadingSafetyTimer); statusMediaLoadingSafetyTimer = null; }
+    currentStatusVideoEl = null;
 
     const removeMediaSpinner = () => {
       const spinnerEl = DOM.statusModalMedia.querySelector('.status-media-spinner');
@@ -5958,11 +5965,54 @@
     };
 
     if (status.media_url && isVideoFile(status.media_url)) {
-      DOM.statusModalMedia.innerHTML = `<video src="${escapeHtml(status.media_url)}" controls autoplay muted playsinline></video>`;
+      // FIX: "hide the video control on status and play the video on start
+      // with volume unmuted" — this used to render with `controls` (a
+      // visible native scrubber/volume bar sitting on top of the story,
+      // which no story-style viewer — WhatsApp/Instagram included — shows)
+      // and `muted` (so autoplay was silent until the viewer manually
+      // tapped unmute). Dropping `controls` hides that bar entirely, and
+      // dropping the `muted` attribute means the <video> asks to autoplay
+      // WITH sound from the first frame. Browsers only honor unmuted
+      // autoplay when it follows a real user gesture — opening this modal
+      // is itself triggered by the viewer tapping the status row, so that
+      // gesture is almost always still "fresh" enough for the browser to
+      // allow it. On the rare case a browser blocks it anyway, .play()
+      // below rejects; the .catch() falls back to a muted autoplay instead
+      // of the video just sitting there paused with no explanation.
+      DOM.statusModalMedia.innerHTML = `<video src="${escapeHtml(status.media_url)}" autoplay playsinline></video>`;
       const videoEl = DOM.statusModalMedia.querySelector('video');
+      videoEl.muted = false;
+      videoEl.volume = 1;
       videoEl.addEventListener('loadeddata', markMediaReady, { once: true });
       videoEl.addEventListener('error', markMediaBroken, { once: true });
+      const statusVideoPlayPromise = videoEl.play();
+      if (statusVideoPlayPromise && typeof statusVideoPlayPromise.catch === 'function') {
+        statusVideoPlayPromise.catch(() => {
+          videoEl.muted = true;
+          videoEl.play().catch(() => {});
+        });
+      }
       DOM.statusModalMedia.insertAdjacentHTML('beforeend', '<div class="status-media-spinner" aria-hidden="true"></div>');
+
+      // FIX: "the status [progress bar/timer] should track the video's own
+      // time — when the video ends, the status closes" — for a video
+      // status this used to just be another photo sitting behind the same
+      // fixed ~4.2s generic timer below (statusProgressValue += 1.2 every
+      // 50ms), completely disconnected from the actual clip: a 20s video
+      // got cut off after ~4s, and a 2s video left the viewer staring at a
+      // stalled progress bar for another ~2s after it already finished.
+      // currentStatusVideoEl marks this as a video status so the generic
+      // timer setup below skips itself entirely; instead the progress bar
+      // is redrawn on every real 'timeupdate' tick straight from the
+      // video's own currentTime/duration, and 'ended' is what actually
+      // closes the story — so the story's lifetime IS the video's runtime.
+      currentStatusVideoEl = videoEl;
+      videoEl.addEventListener('timeupdate', () => {
+        if (videoEl.duration) {
+          DOM.statusProgress.style.width = Math.min((videoEl.currentTime / videoEl.duration) * 100, 100) + '%';
+        }
+      });
+      videoEl.addEventListener('ended', closeStatusViewer);
     } else if (status.media_url) {
       DOM.statusModalMedia.innerHTML = `<img src="${escapeHtml(status.media_url)}" alt="Status media">`;
       const imgEl = DOM.statusModalMedia.querySelector('img');
@@ -6015,20 +6065,40 @@
     updateStatusPauseIcon();
     if (state.progressInterval) clearInterval(state.progressInterval);
 
-    state.progressInterval = setInterval(() => {
-      if (statusPaused || statusMediaLoading) return;
-      statusProgressValue += 1.2;
-      if (statusProgressValue >= 100) {
-        clearInterval(state.progressInterval);
-        state.progressInterval = null;
-        DOM.statusModal.classList.add('hidden');
-      }
-      DOM.statusProgress.style.width = Math.min(statusProgressValue, 100) + '%';
-    }, 50);
+    // FIX: a video status's progress/close is now driven entirely by the
+    // <video> element itself (see the 'timeupdate'/'ended' listeners set up
+    // above in the video branch) — currentStatusVideoEl being set here
+    // means this IS a video status, so this generic fixed-length timer
+    // (originally sized for a photo, not any given video's real length)
+    // must not also run and race it to close the story early/late.
+    if (!currentStatusVideoEl) {
+      state.progressInterval = setInterval(() => {
+        if (statusPaused || statusMediaLoading) return;
+        statusProgressValue += 1.2;
+        if (statusProgressValue >= 100) {
+          clearInterval(state.progressInterval);
+          state.progressInterval = null;
+          DOM.statusModal.classList.add('hidden');
+        }
+        DOM.statusProgress.style.width = Math.min(statusProgressValue, 100) + '%';
+      }, 50);
+    }
   }
 
   function toggleStatusPause() {
     statusPaused = !statusPaused;
+    // FIX: for a video status, "pause" needs to pause the actual clip (and
+    // resume needs to resume it) — the generic timer this button used to
+    // just gate isn't running for video statuses anymore (see above), so
+    // without this the pause button would stop doing anything at all once
+    // a video was involved.
+    if (currentStatusVideoEl) {
+      if (statusPaused) {
+        currentStatusVideoEl.pause();
+      } else {
+        currentStatusVideoEl.play().catch(() => {});
+      }
+    }
     updateStatusPauseIcon();
   }
 
@@ -6045,6 +6115,16 @@
     if (statusMediaLoadingSafetyTimer) { clearTimeout(statusMediaLoadingSafetyTimer); statusMediaLoadingSafetyTimer = null; }
     statusMediaLoading = false;
     statusPaused = false;
+    // FIX: stop the clip explicitly before tearing down its element —
+    // otherwise (this also runs when the video's own 'ended' event fires
+    // this same function to close the story) removing it from the DOM via
+    // innerHTML below isn't guaranteed to stop playback instantly in every
+    // browser, which could leave audio briefly playing after the story is
+    // already gone from the screen.
+    if (currentStatusVideoEl) {
+      currentStatusVideoEl.pause();
+      currentStatusVideoEl = null;
+    }
     DOM.statusModalMedia.innerHTML = '';
     // Clear the URL fragment after closing status so back button works correctly
     if (state.currentScreen && history.replaceState) {
