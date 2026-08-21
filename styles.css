@@ -2820,7 +2820,26 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
 .status-viewer-inner {
   width: 100%;
   max-width: 430px;
-  height: 100%;
+  /* FIX: root cause of "video/image on a status doesn't appear centered
+     from up and down side" on real phones — this used to be a plain
+     `height: 100%` of `.status-viewer` (position:fixed; inset:0), which
+     mobile browsers size to the *layout* viewport, not the visible one.
+     With the address bar on screen, that's taller than what's actually
+     visible, so this card (and the media centered inside it via
+     .status-viewer-body.has-media below) rendered partly below the fold —
+     reading as "not centered", since the hidden slice came off one side
+     only. Every other full-height container in this app (body,
+     .app-shell, .phone-frame) already avoids this with the same
+     100vh → 100dvh → var(--app-height) fallback chain, where
+     --app-height is kept in sync with window.visualViewport by
+     setAppHeight() in app.js; this was the one container that still used
+     the plain, unsafe unit. This also replaces the old per-open
+     `inner.style.height = '100vh'` hack in showStatusModal() (app.js),
+     which forced the exact same broken value in JS — removed there now
+     that CSS handles it correctly on its own. */
+  height: 100vh;
+  height: 100dvh;
+  height: var(--app-height);
   max-height: 860px;
   background: var(--navy);
   display: flex;
