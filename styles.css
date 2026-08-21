@@ -2850,7 +2850,25 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
   height: 100vh;
   height: 100dvh;
   height: var(--app-height);
-  max-height: 860px;
+  /* FIX: root cause of "status screen is not fit to the screen in mobile —
+     it shows up and down empty space, should fill the screen" — this used
+     to be a flat `max-height: 860px` right here in the base (mobile,
+     <560px width) rule, so it applied on every phone, not just the
+     tablet/desktop "phone mockup" card further down. Any real phone taller
+     than 860 CSS px (common on today's tall-aspect-ratio phones — e.g.
+     iPhone 14/15 Pro Max is 932px, many 20:9/21:9 Android phones run
+     880-930px) got capped short of the actual screen height, and since
+     .status-viewer (the fixed, dark backdrop behind this card) centers it
+     with align-items/justify-content: center, the leftover space split
+     evenly above and below — the backdrop showing through top and bottom
+     instead of the card filling edge to edge. .phone-frame (the main app
+     shell) never had this problem because its own default/mobile rule
+     carries no max-height at all — only ITS `@media (min-width: 560px)`
+     tablet block adds a fixed/bounded height for the "card on a bigger
+     screen" look. Moving the 860px cap down into this same media query
+     (next rule) makes the status viewer follow that exact pattern: no cap
+     on real phones (fills whatever var(--app-height) actually is), capped
+     only once the viewport is wide enough to be tablet/desktop. */
   background: var(--navy);
   display: flex;
   flex-direction: column;
@@ -2862,7 +2880,7 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
   touch-action: manipulation;
 }
 @media (min-width: 560px) {
-  .status-viewer-inner { border-radius: 26px; height: 860px; }
+  .status-viewer-inner { border-radius: 26px; height: 860px; max-height: 860px; }
 }
 
 .status-segments { display: flex; gap: 4px; padding: 14px 14px 0; flex-shrink: 0; }
