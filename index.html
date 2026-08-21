@@ -669,7 +669,17 @@
           <span style="font-weight: 600;">Sessions</span> 
         </button>
         <button class="nav-btn" data-tab="updates">
-          <span class="nav-icon-wrap"><svg class="nav-icon-svg" viewBox="0 0 512 512" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M63,354 L64,362 L81,390 L108,419 L126,433 L175,459 L223,472 L278,474 L320,466 L349,455 L369,444 L395,425 L400,417 L400,406 L397,401 L389,395 L379,394 L342,419 L304,434 L273,439 L225,436 L184,424 L149,405 L117,376 L91,340 L74,339 L66,346 Z M245,128 L218,133 L200,140 L176,155 L159,171 L143,194 L133,218 L128,245 L128,266 L133,293 L140,311 L149,327 L170,351 L194,368 L212,376 L236,382 L266,383 L293,378 L311,371 L335,356 L352,340 L368,317 L378,293 L383,266 L383,245 L378,218 L371,200 L356,176 L340,159 L317,143 L293,133 L266,128 Z M243,164 L268,164 L282,167 L313,183 L336,210 L347,243 L347,268 L344,282 L328,313 L301,336 L268,347 L243,347 L229,344 L198,328 L175,301 L164,268 L164,243 L167,229 L183,198 L208,176 Z M322,51 L315,55 L310,63 L310,72 L314,80 L352,100 L377,119 L401,146 L425,191 L436,235 L437,277 L431,308 L411,351 L411,360 L419,371 L426,374 L436,373 L443,367 L459,335 L472,283 L472,234 L467,205 L459,179 L438,136 L420,111 L402,92 L362,63 L331,50 Z M261,37 L227,38 L198,44 L170,54 L121,83 L85,118 L69,140 L53,170 L40,209 L35,263 L38,290 L46,302 L62,304 L73,294 L71,254 L78,207 L91,174 L113,140 L141,112 L184,86 L214,76 L264,70 L273,59 L272,47 Z"/></svg></span>
+          <!-- FIX: root cause of "can't see the notification dot for unseen
+               status in nav bar" — this dot never existed. The Chats tab's
+               #navChatsBadge (above) is the only nav badge that was ever
+               built; this button had no badge element at all, so there was
+               nothing for app.js to show no matter how many unseen updates
+               existed. class="nav-dot" (styles.css) turns the shared
+               .nav-badge pill into a small plain WhatsApp-style dot — no
+               unread count, just presence/absence — since updates don't
+               have a meaningful "how many" the way unread messages do.
+               Shown/hidden by updateStatusNavBadge() in app.js. -->
+          <span class="nav-icon-wrap"><svg class="nav-icon-svg" viewBox="0 0 512 512" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M63,354 L64,362 L81,390 L108,419 L126,433 L175,459 L223,472 L278,474 L320,466 L349,455 L369,444 L395,425 L400,417 L400,406 L397,401 L389,395 L379,394 L342,419 L304,434 L273,439 L225,436 L184,424 L149,405 L117,376 L91,340 L74,339 L66,346 Z M245,128 L218,133 L200,140 L176,155 L159,171 L143,194 L133,218 L128,245 L128,266 L133,293 L140,311 L149,327 L170,351 L194,368 L212,376 L236,382 L266,383 L293,378 L311,371 L335,356 L352,340 L368,317 L378,293 L383,266 L383,245 L378,218 L371,200 L356,176 L340,159 L317,143 L293,133 L266,128 Z M243,164 L268,164 L282,167 L313,183 L336,210 L347,243 L347,268 L344,282 L328,313 L301,336 L268,347 L243,347 L229,344 L198,328 L175,301 L164,268 L164,243 L167,229 L183,198 L208,176 Z M322,51 L315,55 L310,63 L310,72 L314,80 L352,100 L377,119 L401,146 L425,191 L436,235 L437,277 L431,308 L411,351 L411,360 L419,371 L426,374 L436,373 L443,367 L459,335 L472,283 L472,234 L467,205 L459,179 L438,136 L420,111 L402,92 L362,63 L331,50 Z M261,37 L227,38 L198,44 L170,54 L121,83 L85,118 L69,140 L53,170 L40,209 L35,263 L38,290 L46,302 L62,304 L73,294 L71,254 L78,207 L91,174 L113,140 L141,112 L184,86 L214,76 L264,70 L273,59 L272,47 Z"/></svg><span id="navUpdatesBadge" class="nav-badge nav-dot hidden" aria-hidden="true"></span></span>
           <span style="font-weight: 600;">Updates</span>
         </button>
         <button class="nav-btn" data-tab="settings">
