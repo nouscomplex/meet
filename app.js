@@ -5968,13 +5968,20 @@
     DOM.statusProgress.style.width = '0%';
     DOM.statusModal.classList.remove('hidden');
 
-    if (window.innerWidth < 560) {
-      const inner = document.querySelector('.status-viewer-inner');
-      if (inner) {
-        inner.style.maxHeight = '100vh';
-        inner.style.height = '100vh';
-      }
-    }
+    // FIX: root cause of "video/image on a status doesn't appear centered
+    // from up and down side" on real phones — this used to force
+    // `inner.style.height = '100vh'` here. Raw 100vh on mobile measures
+    // the browser's full layout viewport, which is taller than what's
+    // actually visible whenever the address bar is on screen, so the
+    // status card (and the media centered inside it) rendered partly
+    // below the fold — the hidden slice came off only one side, which
+    // looked like off-center media rather than a clipped card. styles.css
+    // now sizes .status-viewer-inner with the same
+    // 100vh → 100dvh → var(--app-height) chain every other full-height
+    // container in this app already uses (var(--app-height) is kept in
+    // sync with the real, visible window.visualViewport by setAppHeight()
+    // above), so this per-open override is no longer needed — deleting it
+    // rather than leaving a redundant, and wrong, duplicate of that logic.
 
     statusProgressValue = 0;
     statusPaused = false;
