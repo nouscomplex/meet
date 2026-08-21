@@ -777,11 +777,36 @@
     if (url === lastOpenedExternalUrl && (now - lastOpenedExternalAt) < 800) return;
     lastOpenedExternalUrl = url;
     lastOpenedExternalAt = now;
-    const win = window.open(url, '_blank', 'noopener');
-    // If window.open() itself was blocked (e.g. a popup blocker that
-    // doesn't recognize this as a user gesture) or returned nothing, still
-    // get the user to the link rather than doing nothing.
-    if (!win) window.location.href = url;
+    // FIX: root cause of "still opens twice, in two different browsers"
+    // surviving the previous fix — that fix removed the redundant
+    // target="_blank" markup, but missed that THIS function itself already
+    // had a second opener built in: `window.open(url, '_blank', 'noopener')`
+    // returning a falsy `win` was always treated as "the open failed,  fall
+    // back to `window.location.href = url`". That assumption doesn't hold
+    // on some Android WebView/installed-PWA setups — window.open() with a
+    // windowFeatures string (that 'noopener' third argument) can get routed
+    // by the OS straight out to an external browser/app as a real, working
+    // open, while STILL handing JS back `null` for `win` (there's no
+    // in-page window object to reference once it's left the app). This
+    // code then treated that null as "it failed" and ran the
+    // window.location.href fallback too — which the WebView can ALSO
+    // intercept and hand off to an external app, often a different one
+    // than the first. Two real opens, two different browsers, from a
+    // `win` value that only ever looked like a failure.
+    //
+    // Fix: stop asking "did window.open() return something?" at all —
+    // build a plain <a href target="_blank"> and .click() it. This is a
+    // single, well-defined browser action (not a "windowFeatures" popup
+    // request), it's what a real tap on a target="_blank" link does, and
+    // there's no ambiguous return value to react to — so there's nothing
+    // left here that can trigger a second, independent open.
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   }
 
   function isImageFile(url) {
