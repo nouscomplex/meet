@@ -38,16 +38,35 @@ const CONFIG = {
   },
 
   // ============================================================
-  // LIVEKIT / PLUG-N-MEET - UPDATE THIS!
+  // LIVEKIT / PLUG-N-MEET
   // ============================================================
-  LIVEKIT: {
-    URL: 'https://your-livekit-instance.com',    // <-- CHANGE THIS
+  // PLUGNMEET.SERVER_URL is only used to detect misconfiguration
+  // (see validateConfig() below) and to build the visible iframe host —
+  // the actual room creation + per-user join token now happens
+  // server-side in the "plugnmeet-token" Supabase Edge Function, which
+  // holds the real PlugNmeet API key/secret. The browser never sees
+  // those credentials and never sees a plain, reusable room link —
+  // every join fetches a fresh, single-use token (see getLiveJoinUrl()
+  // in app.js). EDGE_FUNCTION must match the folder name under
+  // supabase/functions/.
+  PLUGNMEET: {
+    SERVER_URL: 'https://nouscomplex-meet.duckdns.org',
+    EDGE_FUNCTION: 'plugnmeet-token',
     ROOM_SETTINGS: {
       lock_webcam: true,
       lock_microphone: true,
       lock_screen_sharing: true,
-      hide_host_management_controls: false,
-    }
+      lock_chat: false,
+      lock_chat_send_message: false,
+      lock_chat_file_share: true,
+      // Extra layer beyond the app's own start/join gating: if enabled,
+      // anyone whose token somehow reached PlugNmeet without going
+      // through the app's normal flow would still sit in a waiting room
+      // until the teacher/admin (who is a room moderator) admits them.
+      // Off by default so students really do "just jump in" with zero
+      // extra taps, per the no-friction requirement.
+      waiting_room: false,
+    },
   },
 
   // ============================================================
@@ -143,8 +162,8 @@ function validateConfig() {
     errors.push('⚠️ Supabase anon key not configured');
   }
   
-  if (!CONFIG.LIVEKIT.URL || CONFIG.LIVEKIT.URL.includes('your-livekit')) {
-    errors.push('⚠️ LiveKit URL not configured');
+  if (!CONFIG.PLUGNMEET.SERVER_URL || CONFIG.PLUGNMEET.SERVER_URL.includes('your-livekit') || CONFIG.PLUGNMEET.SERVER_URL.includes('your-plugnmeet')) {
+    errors.push('⚠️ PlugNmeet server URL not configured');
   }
   
   if (errors.length > 0) {
