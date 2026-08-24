@@ -20,3 +20,25 @@ body:not(.dark) .side-panel-bg-color,
 body:not(.dark) .side-panel-bg-color *:not(input):not(textarea) {
   color: #ffffff !important;
 }
+
+/* Disable chat completely, for every role including teachers/admins.
+   PlugNmeet's server ignores a "turn chat off" request (a known quirk —
+   it can never override its own built-in "on" default), and even its
+   per-user lock setting always lets admins bypass it. So the only
+   reliable way to remove chat for absolutely everyone is to hide it
+   here: the chat icon in the footer that opens the panel, and the
+   panel's message list + message box themselves as a backup in case
+   chat gets opened another way (e.g. "Private chat" from a
+   participant's menu). */
+
+footer#main-footer .message {
+  display: none !important;
+}
+
+.all-MessageModule-wrap {
+  display: none !important;
+}
+
+.flex-1:has(> .all-MessageModule-wrap) + .message-form {
+  display: none !important;
+}
