@@ -6254,16 +6254,38 @@
   }
 
   // ============================================================
-  // 11. VIDEO / LIVEKIT
+  // 11. VIDEO / PLUGNMEET
   // ============================================================
-  function buildLiveUrl() {
-    const settings = { ...CONFIG.LIVEKIT.ROOM_SETTINGS };
-    if (state.isTeacher) {
-      settings.lock_webcam = false;
-      settings.hide_host_management_controls = false;
+  // FIX: root cause of "the video call never actually connects to
+  // anything" — this used to just glue CONFIG.LIVEKIT.ROOM_SETTINGS onto
+  // CONFIG.LIVEKIT.URL as query-string params and hand that straight to
+  // the iframe. PlugNmeet doesn't work that way: a room has to be
+  // created and a signed, per-user join token requested from its REST
+  // API (which needs the server's API secret — something that must
+  // never live in browser code), and only THAT token URL
+  // (`${server}/?access_token=...`) is a real, working join link. This
+  // now calls the "plugnmeet-token" Supabase Edge Function (see
+  // supabase/functions/plugnmeet-token/index.ts), which holds that
+  // secret, re-checks server-side that this user is actually allowed
+  // into this specific session (group membership, scheduled window,
+  // whether the teacher has started it yet) regardless of what the
+  // client claims, and hands back a fresh, single-use join URL. Nobody
+  // ever sees or can share a durable "public" room link — every join
+  // is minted individually, which is what actually enforces "no one can
+  // join without admin/teacher permission" rather than just hiding a
+  // button in the UI.
+  async function getLiveJoinUrl() {
+    const { data, error } = await supabase.functions.invoke(CONFIG.PLUGNMEET.EDGE_FUNCTION, {
+      body: {
+        schedule_id: state.currentSchedule ? state.currentSchedule.id : null,
+        channel_id: state.currentChannel ? state.currentChannel.id : null,
+      },
+    });
+    if (error || !data?.join_url) {
+      const serverMessage = data?.error || error?.message || 'Unknown error';
+      throw new Error(serverMessage);
     }
-    const params = new URLSearchParams(settings);
-    return `${CONFIG.LIVEKIT.URL}?${params.toString()}`;
+    return data.join_url;
   }
 
   // FIX: root cause of "meeting doesn't automatically close" — there was
@@ -6381,8 +6403,25 @@
       }
     }
 
+    // FIX: fetching the real join token is a network round trip that can
+    // fail (server hiccup, the edge function's own access check
+    // rejecting this specific user/session, etc) — disable the button
+    // for the duration so a slow tap doesn't fire twice, and bail out
+    // cleanly (button state restored, nothing else touched) instead of
+    // opening a video panel with a blank/broken iframe if it fails.
+    let liveUrl;
+    DOM.joinLiveBtn.disabled = true;
+    try {
+      liveUrl = await getLiveJoinUrl();
+    } catch (e) {
+      console.error('Could not get PlugNmeet join URL:', e);
+      alert('Could not start the video call: ' + e.message);
+      updateLiveButtonState();
+      return;
+    }
+
     DOM.videoContainer.classList.remove('hidden');
-    DOM.videoIframe.src = buildLiveUrl();
+    DOM.videoIframe.src = liveUrl;
     state.videoActive = true;
     state.activeCallScheduleId = state.currentSchedule ? state.currentSchedule.id : null;
     // Button label now tracks the same start/join mode the header button
