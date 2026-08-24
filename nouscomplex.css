@@ -1,0 +1,22 @@
+/* Nous Complex Orbit — PlugNmeet text-color fix
+   header_bg_color / side_panel_bg_color (config.js) only paint the
+   background; PlugNmeet's own title/participant text stays dark by
+   default, which is unreadable against navy/sky-blue. This forces that
+   text (and icons, since most use currentColor) to white, while leaving
+   form inputs (search box, chat box) alone since those sit on their own
+   white background and need to stay dark-on-white. */
+
+body:not(.dark) header#main-header,
+body:not(.dark) header#main-header *:not(input):not(textarea) {
+  color: #ffffff !important;
+}
+
+body:not(.dark) footer#main-footer,
+body:not(.dark) footer#main-footer *:not(input):not(textarea) {
+  color: #ffffff !important;
+}
+
+body:not(.dark) .side-panel-bg-color,
+body:not(.dark) .side-panel-bg-color *:not(input):not(textarea) {
+  color: #ffffff !important;
+}
