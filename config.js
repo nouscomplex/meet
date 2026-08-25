@@ -17,7 +17,7 @@ const CONFIG = {
     },
     NAME: 'Nous Complex Orbit',
     SHORT_NAME: 'Orbit',
-    DESCRIPTION: 'Unified communication platform for schools',
+    DESCRIPTION: 'Unified communication platform for Educational Complexs',
     VERSION: '1.0.0',
   },
 
@@ -50,7 +50,7 @@ const CONFIG = {
   // in app.js). EDGE_FUNCTION must match the folder name under
   // supabase/functions/.
   PLUGNMEET: {
-    SERVER_URL: 'https://nouscomplex-meet.duckdns.org',
+    SERVER_URL: 'https://meet.nouscomplex.com',
     EDGE_FUNCTION: 'plugnmeet-token',
     ROOM_SETTINGS: {
       lock_webcam: true,
