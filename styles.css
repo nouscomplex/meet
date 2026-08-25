@@ -2092,24 +2092,50 @@ body.theme-dark .btn-send { color: #FFFFFF; }
 .video-panel {
   position: absolute; inset: 0; z-index: 20;
   background: #05061a;
+  /* FIX: was a plain positioning context for two position:absolute
+     buttons floated on top of the iframe (see .video-toolbar below for
+     why that overlapped PlugNmeet's own header). Now a column flex
+     layout: the toolbar takes its natural height first, the iframe
+     fills the rest — so the controls have their own space, separate
+     from the meeting room instead of layered over it. */
+  display: flex;
+  flex-direction: column;
 }
-.video-panel iframe { width: 100%; height: 100%; border: 0; display: block; }
+.video-panel iframe { width: 100%; flex: 1; min-height: 0; border: 0; display: block; }
+
+/* FIX: root cause of the close ("X") and "End for Everyone" buttons
+   overlapping the speaker name / connection-signal indicators inside
+   the live room — those buttons used to be position:absolute at
+   top:14px, floating directly on top of the iframe. PlugNmeet renders
+   its own header bar (active speaker, mic/network signal icons — see
+   header#main-header in nouscomplex.css) in that exact same top strip
+   of the iframe, so our controls sat right on top of theirs. This bar
+   sits ABOVE the iframe in normal flow instead (see .video-panel's
+   flex layout above), so the two sets of controls are fully separate
+   and never overlap. */
+.video-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #05061a;
+}
 .video-close {
-  position: absolute; top: 14px; right: 14px; width: 34px; height: 34px; border-radius: 50%;
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
   background: rgba(255,255,255,0.15); color: #fff; border: none; cursor: pointer;
   backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center;
 }
 .video-close:hover { background: rgba(255,255,255,0.28); }
 
 .video-end-session-btn {
-  position: absolute;
-  top: 14px;
-  right: 58px;
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 0 14px;
   height: 34px;
+  flex-shrink: 0;
   border-radius: var(--radius-pill);
   background: var(--danger);
   color: #fff;
@@ -2118,7 +2144,6 @@ body.theme-dark .btn-send { color: #FFFFFF; }
   font-size: 11.5px;
   font-weight: 700;
   white-space: nowrap;
-  backdrop-filter: blur(6px);
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
