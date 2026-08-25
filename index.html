@@ -467,20 +467,38 @@
           </button>
         </div>
 
-        <!-- Video -->
+        <!-- Video
+             FIX: root cause of "cross button and end-for-everyone overlap
+             the speaker name / connection-signal indicator in the room" —
+             #closeVideoBtn and #endLiveSessionBtn used to be position:
+             absolute, floated on TOP of the iframe at top:14px. PlugNmeet
+             renders its own header bar (active speaker name, mic/network
+             signal icons — see header#main-header in nouscomplex.css)
+             inside that same top strip of the iframe, so our floating
+             controls sat directly on top of it and visually collided.
+             They now live in #videoToolbar, a normal flex bar stacked
+             ABOVE the iframe (not overlapping it) — see the matching
+             .video-panel/.video-toolbar/.video-close/.video-end-session-btn
+             rules in styles.css, which switch .video-panel to a column
+             flex layout and these buttons from absolute to static
+             positioning. No id changed, so app.js's show/hide logic
+             (joinLiveClass()/leaveVideoCall()/endLiveSessionForEveryone())
+             needs no changes. -->
         <div id="videoContainer" class="hidden video-panel">
+          <div id="videoToolbar" class="video-toolbar">
+            <!-- FIX: root cause of "let admin end live session anytime, even
+                 during the session" — #closeVideoBtn below only ever closed
+                 THIS viewer's own window onto the call; there was no way to
+                 end it for everyone else still on it. Admin-only, shown by
+                 joinLiveClass() only when this call is tied to a scheduled
+                 session (state.activeCallScheduleId). See
+                 endLiveSessionForEveryone() in app.js. -->
+            <button id="endLiveSessionBtn" class="hidden video-end-session-btn" title="End this live session for everyone">
+              <i class="fas fa-ban"></i> End for Everyone
+            </button>
+            <button id="closeVideoBtn" class="video-close"><i class="fas fa-xmark"></i></button>
+          </div>
           <iframe id="videoIframe" src="" allow="camera; microphone; display-capture; autoplay; encrypted-media" allowfullscreen></iframe>
-          <!-- FIX: root cause of "let admin end live session anytime, even
-               during the session" — #closeVideoBtn below only ever closed
-               THIS viewer's own window onto the call; there was no way to
-               end it for everyone else still on it. Admin-only, shown by
-               joinLiveClass() only when this call is tied to a scheduled
-               session (state.activeCallScheduleId). See
-               endLiveSessionForEveryone() in app.js. -->
-          <button id="endLiveSessionBtn" class="hidden video-end-session-btn" title="End this live session for everyone">
-            <i class="fas fa-ban"></i> End for Everyone
-          </button>
-          <button id="closeVideoBtn" class="video-close"><i class="fas fa-xmark"></i></button>
         </div>
       </section>
 
