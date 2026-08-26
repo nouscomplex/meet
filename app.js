@@ -4575,27 +4575,10 @@
     // running until its stale, already-armed auto-close timer eventually
     // fires — that timer was set for the OLD end time and would otherwise
     // let the call run right through the early end.
-    //
-    // FIX: root cause of "it shows 'ended by an admin' even when the
-    // admin never touched the room" — this path fires for EVERY way a
-    // still-open call can get force-closed out from under a participant,
-    // and it used to hardcode "an admin" as the cause regardless of which
-    // one actually happened. That was already misleading before (an
-    // admin editing/rescheduling the class from Profile also lands here,
-    // not just "End for Everyone"), and became flatly wrong once the
-    // concerned teacher's own close button started ending the class too
-    // (see closeVideoBtn / state.activeCallIsHost) — a teacher ending
-    // their own class made every student see a message blaming "an
-    // admin" for something the admin had no part in. The client has no
-    // reliable way to know, from this row change alone, which of
-    // "teacher closed it" / "admin ended it for everyone" / "admin ended
-    // it from the schedule list" / "admin edited/removed the schedule"
-    // actually happened — so say only what's actually true in all of
-    // them, instead of guessing a specific actor.
     if (state.videoActive && state.activeCallScheduleId) {
       const stillCurrent = current && String(current.id) === String(state.activeCallScheduleId);
       if (!stillCurrent) {
-        closeLiveSession('This live session has ended.');
+        closeLiveSession('This live session was ended by an admin.');
       }
     }
 
@@ -4697,78 +4680,21 @@
     return 'hidden';
   }
 
-  // FIX: root cause of "for the teacher it shows a grey 'Join Live
-  // Session' instead of a grey 'Start Live Session'". getLiveButtonMode()
-  // returns 'hidden' any time `now` is outside the scheduled window —
-  // correct, that's what keeps the button greyed out/unclickable before
-  // class time. The bug was that updateLiveButtonState() used that same
-  // 'hidden' result to pick the LABEL too: anything that wasn't literally
-  // the string 'start' fell back to "Join Live Session" — including
-  // 'hidden' — so the concerned teacher's own button previewed the wrong
-  // verb right up until the window opened (at which point mode flips to
-  // 'start' and the text corrects itself, making it look like a timing
-  // glitch rather than a labeling bug).
-  //
-  // getLiveButtonLabel() answers a different question than
-  // getLiveButtonMode(): not "is this clickable right now" but "which
-  // verb does this user's role call for" — computed without the
-  // isWithinWindow gate, purely from who's logged in relative to
-  // schedule.teacher_username. That keeps getLiveButtonMode() itself
-  // untouched (joinLiveClass() and the scheduling-list code still rely
-  // on its exact 'hidden' behavior for click-gating).
-  //
-  // The concerned teacher (and an admin standing in for one) always see
-  // "Start Live Session" — whether or not the class is live yet — since
-  // "Start" is what they DO with this button (start it, or re-enter the
-  // room they started). Whether it's actually live is communicated by
-  // colour instead (see updateLiveButtonState()'s
-  // btn-live-pill-waiting/-live classes: grey before is_live, blue once
-  // it's true), not by swapping the word. Everyone else always sees
-  // "Join Live Session".
-  function getLiveButtonLabel() {
-    const schedule = state.currentSchedule;
-    if (!schedule || !state.currentUser) return 'join';
-
-    const isConcernedTeacher = normalizeUsername(state.currentUser.username) === normalizeUsername(schedule.teacher_username);
-
-    if (state.isAdmin || isConcernedTeacher) return 'start';
-    return 'join';
-  }
-
   // FIX: switched from fully removing the button (display:none) back to
   // keeping it always visible but greyed out/unclickable outside its
   // active state — same .btn-live-pill-dead "dead" look this button
   // already had before the start/join gating work, just now driven by
   // getLiveButtonMode() instead of a plain "does a schedule exist" check.
-  //
-  // FIX: added a colour state independent of click-gating. Previously
-  // "clickable" and "navy" were the same thing and "not clickable" was
-  // always grey — so the moment the window opened, the concerned
-  // teacher's button jumped straight to navy even though nobody had
-  // pressed Start yet, no different-looking from an actually-running
-  // class. Now colour tracks is_live specifically:
-  //   - hidden (hard-disabled, outside the window / no schedule): grey,
-  //     unclickable — .btn-live-pill-dead (existing).
-  //   - waiting (clickable, is_live still false): grey but clickable —
-  //     .btn-live-pill-waiting — so "Start Live Session" reads as "ready
-  //     to start" rather than looking identical to a live class.
-  //   - live (clickable, is_live true): blue — .btn-live-pill-live — an
-  //     unmistakable "this is happening right now" signal for both the
-  //     teacher rejoining and students joining.
   function updateLiveButtonState() {
     if (!DOM.joinLiveBtn) return;
     const mode = getLiveButtonMode();
     const isInactive = mode === 'hidden';
-    const isLive = !!(state.currentSchedule && state.currentSchedule.is_live);
 
     DOM.joinLiveBtn.disabled = isInactive;
-    DOM.joinLiveBtn.setAttribute('aria-disabled', String(isInactive));
     DOM.joinLiveBtn.classList.toggle('btn-live-pill-dead', isInactive);
-    DOM.joinLiveBtn.classList.toggle('btn-live-pill-waiting', !isInactive && !isLive);
-    DOM.joinLiveBtn.classList.toggle('btn-live-pill-live', !isInactive && isLive);
-
+    DOM.joinLiveBtn.setAttribute('aria-disabled', String(isInactive));
     if (DOM.liveBtnText) {
-      DOM.liveBtnText.textContent = getLiveButtonLabel() === 'start' ? 'Start Live Session' : 'Join Live Session';
+      DOM.liveBtnText.textContent = mode === 'start' ? 'Start Live Session' : 'Join Live Session';
     }
     DOM.joinLiveBtn.title = isInactive
       ? (state.currentSchedule ? 'This live session hasn\'t started yet.' : 'No live session is scheduled for this group yet')
