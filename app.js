@@ -4745,8 +4745,25 @@
     DOM.joinLiveBtn.disabled = isInactive;
     DOM.joinLiveBtn.classList.toggle('btn-live-pill-dead', isInactive);
     DOM.joinLiveBtn.setAttribute('aria-disabled', String(isInactive));
+    const label = getLiveButtonLabel();
+    // TEMP DEBUG — remove once confirmed working. If this line never
+    // appears in the console, the browser is still running a cached copy
+    // of app.js (see the cache-busting query param on the <script> tag in
+    // index.html) and none of the code below matters until that's fixed.
+    // If it DOES appear but label keeps coming back 'join' for the
+    // teacher, check isConcernedTeacher/isLive here against what's
+    // actually in class_schedule for this row.
+    console.log('[liveBtn]', {
+      mode,
+      label,
+      username: state.currentUser && state.currentUser.username,
+      isAdmin: state.isAdmin,
+      scheduleTeacher: state.currentSchedule && state.currentSchedule.teacher_username,
+      isLive: state.currentSchedule && state.currentSchedule.is_live,
+      scheduledTime: state.currentSchedule && state.currentSchedule.scheduled_time,
+    });
     if (DOM.liveBtnText) {
-      DOM.liveBtnText.textContent = getLiveButtonLabel() === 'start' ? 'Start Live Session' : 'Join Live Session';
+      DOM.liveBtnText.textContent = label === 'start' ? 'Start Live Session' : 'Join Live Session';
     }
     DOM.joinLiveBtn.title = isInactive
       ? (state.currentSchedule ? 'This live session hasn\'t started yet.' : 'No live session is scheduled for this group yet')
