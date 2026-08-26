@@ -4710,27 +4710,27 @@
   // glitch rather than a labeling bug).
   //
   // getLiveButtonLabel() answers a different question than
-  // getLiveButtonMode(): not "is this clickable right now" but "when it
-  // does become clickable, is this user going to Start or Join" —
-  // computed without the isWithinWindow gate, purely from who's logged
-  // in relative to schedule.teacher_username/is_live. That keeps
-  // getLiveButtonMode() itself untouched (joinLiveClass() and the
-  // scheduling-list code still rely on its exact 'hidden' behavior for
-  // click-gating), while giving the greyed pre-window button an accurate
-  // preview label: the concerned teacher (and an admin, before anyone's
-  // started it) see "Start Live Session"; everyone else sees "Join Live
-  // Session". Once the session is actually live (is_live true), EVERYONE
-  // sees "Join Live Session" — including the teacher who started it —
-  // since at that point they're rejoining a running class, not starting
-  // a new one.
+  // getLiveButtonMode(): not "is this clickable right now" but "which
+  // verb does this user's role call for" — computed without the
+  // isWithinWindow gate, purely from who's logged in relative to
+  // schedule.teacher_username. That keeps getLiveButtonMode() itself
+  // untouched (joinLiveClass() and the scheduling-list code still rely
+  // on its exact 'hidden' behavior for click-gating).
+  //
+  // The concerned teacher (and an admin standing in for one) always see
+  // "Start Live Session" — whether or not the class is live yet — since
+  // "Start" is what they DO with this button (start it, or re-enter the
+  // room they started). Whether it's actually live is communicated by
+  // colour instead (see updateLiveButtonState()'s
+  // btn-live-pill-waiting/-live classes: grey before is_live, blue once
+  // it's true), not by swapping the word. Everyone else always sees
+  // "Join Live Session".
   function getLiveButtonLabel() {
     const schedule = state.currentSchedule;
     if (!schedule || !state.currentUser) return 'join';
 
     const isConcernedTeacher = normalizeUsername(state.currentUser.username) === normalizeUsername(schedule.teacher_username);
-    const isLive = schedule.is_live === true;
 
-    if (isLive) return 'join';
     if (state.isAdmin || isConcernedTeacher) return 'start';
     return 'join';
   }
