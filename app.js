@@ -37,10 +37,6 @@
 
   if (!CONFIG) {
     console.error('❌ Config not loaded! Please include config.js');
-    // FIX: this used to bail out leaving #appLoading (the "checking
-    // session" spinner) on screen forever — indistinguishable from a hung
-    // app. Fall back to the login card so there's at least a visible,
-    // non-broken-looking screen before the alert.
     const loader = document.getElementById('appLoading');
     const authCardEl = document.getElementById('authCard');
     if (loader) loader.classList.add('hidden');
@@ -52,11 +48,6 @@
   console.log(`🏫 ${CONFIG.BRANDING.NAME} v${CONFIG.BRANDING.VERSION}`);
   console.log(`🔧 Environment: ${CONFIG.ENV}`);
 
-  // FIX: PDF.js needs its worker script pointed at explicitly (it doesn't
-  // infer it from the main <script> tag). Without this, getDocument() on
-  // every shared PDF was failing silently (console-only warning), which is
-  // why PDFs never got a page preview and fell straight back to a bare
-  // file-icon card — see getPdfThumbnail() below.
   if (window.pdfjsLib) {
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -85,14 +76,6 @@
     }
   );
 
-  // FIX: If this device's session becomes invalid — e.g. an admin deleted
-  // this account (auth.admin.deleteUser revokes the refresh token), the
-  // password/role was reset elsewhere, or the user signed out in another
-  // tab — supabase-js will fail its automatic token refresh and emit
-  // SIGNED_OUT internally. Previously nothing listened for that, so the
-  // deleted user's tab kept showing the dashboard with a dead session
-  // (every subsequent request just silently failed). Now we react to it
-  // immediately and force a clean logout with an explanation.
   supabase.auth.onAuthStateChange((event) => {
     if (event === 'SIGNED_OUT' && state.currentUser) {
       forceSignOut('Signed Out Successfully');
@@ -133,55 +116,16 @@
     isMerging: false,
     messageReads: new Map(),
     readsSubscription: null,
-    // FIX: "who has seen this update" tracking for the Updates/Status tray.
-    // Mirrors messageReads/readsSubscription above but keyed by status id —
-    // see loadStatusViews()/recordStatusView()/subscribeToStatusViews() and
-    // openStatusInfoModal() further down. This never existed before, which
-    // is why admins had no way to see who had viewed a posted update.
     statusViews: new Map(),
     statusViewsSubscription: null,
-    // FIX: Track active lightbox overlay for back button handling
     activeLightbox: null,
-    // FIX: Track the ordered list of shared-media URLs currently rendered in
-    // the profile screen's grid, so the lightbox can swipe next/prev through
-    // them (see updateProfileScreen() / openImageLightbox() below).
     sharedMediaUrls: [],
-    // FIX: Track this user's own membership row ids (channel_id -> members.id)
-    // so we can detect exactly when THEY are removed from a group via realtime,
-    // and a periodic watchdog handle to detect the account itself being deleted.
     myMemberships: new Map(),
     sessionWatchdog: null,
-    // FIX: this user's own `user_roles` row id, captured at login — see
-    // handleAccountDeleted() below for why this is needed.
     myUserRoleId: null,
-    // FIX: the currently-open channel's next/live class_schedule row (or
-    // null if none is set). Drives whether the "Join/Start Live Session"
-    // button is clickable — see updateLiveButtonState() below. Previously
-    // there was no equivalent of this, which is why the button was always
-    // active even for channels with no session scheduled at all.
     currentSchedule: null,
-    // FIX: which class_schedule row (by id) the CURRENTLY OPEN video call
-    // belongs to, if any. Lets loadSchedule() recognize when that specific
-    // row has been edited/deleted/force-ended and close this client's call
-    // immediately rather than waiting on its original auto-close timer —
-    // see the FIX note inside loadSchedule() and endLiveSessionForEveryone().
     activeCallScheduleId: null,
-    // FIX: root cause of "join live session button stays active for
-    // students, and they can join, after the teacher ends the meeting" —
-    // true only when THIS client is the one who actually pressed "Start"
-    // for the currently-open call (concerned teacher, or an admin
-    // covering for one — see getLiveButtonMode()'s 'start' mode). Lets
-    // the close button below tell "the host is leaving, so the class is
-    // over" apart from "a student/other participant is just leaving,
-    // the class carries on for everyone else". See the closeVideoBtn
-    // handler and joinLiveClass() further down.
     activeCallIsHost: false,
-    // FIX: root cause of "why can't I see the user is typing in real-time"
-    // — nothing in the app tracked this before. See broadcastTyping()/
-    // handleIncomingTyping()/renderTypingIndicator() below (search "8c.
-    // REAL-TIME TYPING INDICATOR"). lastTypingBroadcastAt throttles this
-    // user's own outgoing broadcasts; typingTimers (module-level, not on
-    // `state`) tracks everyone else's incoming ones per channel.
     lastTypingBroadcastAt: 0,
   };
 
@@ -615,73 +559,21 @@
   // ============================================================
   // LINK DETECTION (chat messages + updates)
   // ============================================================
-  // FIX: root cause of "shared link in chat or in updates not clickable
-  // with thumbnail" — there was no URL-detection code anywhere in this
-  // file. Chat message text went straight through escapeHtml() and status
-  // text went through .textContent (see buildMessageEl() / showStatusModal()
-  // below) — both render a shared link as completely inert plain text.
-  // linkifyText() below wraps any http(s) URL in a real, clickable <a>
-  // tag; getLinkPreview()/hydrateLinkPreview() further down (mirroring the
-  // getPdfThumbnail()/hydratePdfThumb() pattern already used for shared
-  // PDFs) fetch an actual title/thumbnail card for it.
-  //
-  // FIX: root cause of "the URL of any website is not being shown as a
-  // hyperlink with preview card" even after the fix above — the old
-  // URL_REGEX only ever matched text that started with an explicit
-  // "http://" or "https://" scheme. Almost nobody actually types that: a
-  // person sharing a site normally just pastes/types "www.example.com" or
-  // even just "example.com" — neither of those has a scheme, so the old
-  // regex silently ignored them completely (no <a> tag, no preview fetch,
-  // nothing) no matter how many times it was tried. This new pattern still
-  // matches explicit http(s) links, and now ALSO matches "www.…" links and
-  // bare "domain.tld" text (restricted to a curated list of common TLDs so
-  // ordinary prose like "Mr. Smith" or "e.g." can't be mistaken for a
-  // link). The domain half of an email address ("user@example.com") is
-  // excluded via a plain preceding-character check in linkifyText()/
-  // firstUrlIn() below rather than a regex lookbehind — this app is a
-  // standalone PWA that has to run on older iOS/Safari (pre-16.4) too,
-  // where a lookbehind group throws a SyntaxError the instant this file is
-  // parsed and would take down the entire script (a blank app for those
-  // users), which is worse than the bug being fixed here.
-  // NOTE: the outer group below MUST be a capturing group "(...)", not a
-  // non-capturing "(?:...)" one — String.prototype.split() only keeps a
-  // regex's matched text in its output when the regex has a capturing
-  // group; with a non-capturing group split() just deletes the match
-  // entirely instead of returning it as a piece of the array. (This is
-  // exactly what the original regex's outer parentheses were already
-  // doing — easy to lose when rewriting it into an alternation like this.)
-  // Getting this wrong doesn't throw or show up in firstUrlIn() (which
-  // uses exec(), unaffected by capturing groups either way) — only in
-  // linkifyText()'s split()-based rendering, where it silently turns any
-  // message that's ONLY a URL into an empty bubble: the exact "empty chat
-  // bubble but the preview card still shows" symptom.
   const COMMON_TLDS = 'com|net|org|io|co|dev|app|edu|gov|mil|info|biz|me|xyz|ai|tv|so|gg|pk|in|uk|us|ca|au|de|fr|jp|nl|ru|br|es|it|ch|se|no|dk|fi|pl|tech|online|store|site|shop|live|news|blog';
   const URL_REGEX = new RegExp(
     '\\b(' +
-      'https?://[^\\s<>"\']+' +                                                              // explicit http(s)://…
-      '|www\\.[a-z0-9-]+(?:\\.[a-z0-9-]+)*(?:/[^\\s<>"\']*)?' +                               // www.…
-      `|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.(?:${COMMON_TLDS})(?:/[^\\s<>"\']*)?` + // bare domain.tld
+      'https?://[^\\s<>"\']+' +
+      '|www\\.[a-z0-9-]+(?:\\.[a-z0-9-]+)*(?:/[^\\s<>"\']*)?' +
+      `|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.(?:${COMMON_TLDS})(?:/[^\\s<>"\']*)?` +
     ')\\b',
     'gi'
   );
   const TRAILING_PUNCT = /[.,:;!?'")\]]+$/;
 
-  // A match from URL_REGEX may have no scheme at all ("www.foo.com" /
-  // "foo.com") — browsers resolve a scheme-less href as a path relative to
-  // THIS app's own origin, which is why simply reusing the typed text as
-  // href would look "linkified" but silently do nothing (or 404 inside the
-  // app) when clicked. Anything that isn't already http(s) gets "https://"
-  // prepended for the actual href/fetch target; the text shown to the user
-  // is left exactly as they typed it.
   function normalizeUrlHref(raw) {
     return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
   }
 
-  // Splits `text` around any URLs, HTML-escapes every piece (URL included
-  // — so this stays exactly as safe against injection as escapeHtml()
-  // was), and wraps each URL in an <a> tag. Trailing punctuation right
-  // after a URL (a period ending the sentence, a closing bracket, etc.) is
-  // kept out of the link itself, same as WhatsApp/Slack-style linkifying.
   function linkifyText(text) {
     if (!text) return '';
     const parts = String(text).split(URL_REGEX);
@@ -689,12 +581,6 @@
     for (let i = 0; i < parts.length; i++) {
       if (i % 2 === 1) {
         let raw = parts[i];
-        // The bare-domain alternative above has no way to see the
-        // character just before its own match, so "user@example.com"
-        // would otherwise match "example.com" and linkify half an email
-        // address. parts[i - 1] is exactly the text between the previous
-        // match (or the start) and this one, so checking its last
-        // character catches that case without needing a lookbehind.
         const precededByAt = i > 0 && /@$/.test(parts[i - 1]);
         if (precededByAt) { html += escapeHtml(raw); continue; }
         let trail = '';
@@ -706,24 +592,6 @@
         if (!raw) { html += escapeHtml(parts[i]); continue; }
         const safeHref = escapeHtml(normalizeUrlHref(raw));
         const safeText = escapeHtml(raw);
-        // FIX: root cause of "shared link opens twice, in different
-        // browsers" — see the big comment on openExternalLink() below.
-        // target="_blank" here used to make this a browser-native
-        // "open in a new browsing context" link; combined with every click
-        // handler below ALSO calling window.open() on it manually, some
-        // Android/WebView/installed-PWA combinations end up running BOTH:
-        // the platform's own link-handling for the target="_blank" tap
-        // (which can get routed by the OS to whatever app/browser is
-        // registered for that domain) *and* the script-initiated
-        // window.open() (which the OS treats as a plain "open a new tab"
-        // request and hands to a possibly different browser) — two tabs,
-        // two different apps, from one tap. Every click on a.msg-link is
-        // already intercepted in JS (preventDefault() + openExternalLink())
-        // everywhere this class is used, so target="_blank" was never
-        // doing anything except opening this second, competing path.
-        // href is kept (so right-click/long-press "open/copy link" still
-        // works and the element stays a real, accessible anchor either
-        // way) — only the redundant target attribute is gone.
         html += `<a href="${safeHref}" rel="noopener" class="msg-link">${safeText}</a>${escapeHtml(trail)}`;
       } else {
         html += escapeHtml(parts[i]);
@@ -732,11 +600,6 @@
     return html;
   }
 
-  // First URL in `text` (trailing punctuation stripped, scheme-less
-  // matches normalized to an absolute https:// href), or null. Used both
-  // to decide whether to fetch/show a link-preview card and as the actual
-  // fetch/href target for it. Skips a match that's really the domain half
-  // of an email address — see the matching comment in linkifyText().
   function firstUrlIn(text) {
     if (!text) return null;
     const str = String(text);
@@ -749,67 +612,16 @@
     return null;
   }
 
-  // FIX: root cause of "website link is not directly being open from chat
-  // or updates on clicking" — this app installs as a standalone home-screen
-  // PWA (see the manifest's "display":"standalone" and the
-  // apple-mobile-web-app-capable meta tag in index.html; the whole point of
-  // #appLoading/the splash screen is to look and behave like an installed
-  // app, not a browser tab). Verified with an automated click test: the <a
-  // target="_blank"> tags linkifyText() generates are correctly formed
-  // (right href, right target) and nothing in this file's click handlers
-  // was calling preventDefault() on them — the markup was never the
-  // problem. The actual cause is a well-known WebKit/iOS limitation: inside
-  // a standalone-mode installed PWA, tapping a plain <a target="_blank">
-  // frequently does nothing at all — no new tab, no Safari launch — instead
-  // of falling back to opening it in the browser like a normal webpage
-  // would. Explicitly calling window.open() from inside the click handler
-  // (a real user-gesture context) is the standard workaround and is what
-  // every .msg-link/.msg-link-preview click is routed through below/in
-  // showStatusModal's click wiring, instead of relying on the anchor's
-  // native target="_blank" alone.
-  // FIX: root cause of "shared link opens twice, in different browsers" —
-  // every a.msg-link/a.msg-link-preview click handler in this file does
-  // preventDefault() then calls this, and the markup for those anchors no
-  // longer carries target="_blank" (see linkifyText() and the other spots
-  // that build these tags), so there's only ever meant to be exactly one
-  // opener per tap. This debounce is the last line of defense in case a
-  // single physical tap still ends up dispatching more than one 'click' at
-  // this handler anyway — some touch browsers/PWA shells fire a
-  // synthetic compatibility click alongside a real one, and each would
-  // otherwise call window.open() separately, which is exactly what let a
-  // second, independently-routed browsing context (sometimes a different
-  // browser/app entirely) open behind the first.
   let lastOpenedExternalUrl = null;
   let lastOpenedExternalAt = 0;
+
   function openExternalLink(url) {
     if (!url) return;
     const now = Date.now();
     if (url === lastOpenedExternalUrl && (now - lastOpenedExternalAt) < 800) return;
     lastOpenedExternalUrl = url;
     lastOpenedExternalAt = now;
-    // FIX: root cause of "still opens twice, in two different browsers"
-    // surviving the previous fix — that fix removed the redundant
-    // target="_blank" markup, but missed that THIS function itself already
-    // had a second opener built in: `window.open(url, '_blank', 'noopener')`
-    // returning a falsy `win` was always treated as "the open failed,  fall
-    // back to `window.location.href = url`". That assumption doesn't hold
-    // on some Android WebView/installed-PWA setups — window.open() with a
-    // windowFeatures string (that 'noopener' third argument) can get routed
-    // by the OS straight out to an external browser/app as a real, working
-    // open, while STILL handing JS back `null` for `win` (there's no
-    // in-page window object to reference once it's left the app). This
-    // code then treated that null as "it failed" and ran the
-    // window.location.href fallback too — which the WebView can ALSO
-    // intercept and hand off to an external app, often a different one
-    // than the first. Two real opens, two different browsers, from a
-    // `win` value that only ever looked like a failure.
-    //
-    // Fix: stop asking "did window.open() return something?" at all —
-    // build a plain <a href target="_blank"> and .click() it. This is a
-    // single, well-defined browser action (not a "windowFeatures" popup
-    // request), it's what a real tap on a target="_blank" link does, and
-    // there's no ambiguous return value to react to — so there's nothing
-    // left here that can trigger a second, independent open.
+
     const a = document.createElement('a');
     a.href = url;
     a.target = '_blank';
@@ -833,36 +645,10 @@
 
   // ============================================================
   // CLIENT-SIDE IMAGE COMPRESSION (before upload)
-  // FIX: at scale (hundreds of students each sending phone photos daily),
-  // Supabase's free-tier 1GB storage / 5GB egress allowance gets eaten up
-  // fast — a single uncompressed phone photo is routinely 2-4MB. Shrinking
-  // to a sane max dimension and re-encoding as JPEG before upload cuts that
-  // to a few hundred KB with no visible quality loss in a chat bubble, which
-  // directly reduces both what's stored AND what's re-downloaded every time
-  // someone views it (egress is the bigger of the two costs). Applied at
-  // both upload sites — sendMessage()'s attachment and postStatus()'s
-  // photo/video — via compressImageFile() below.
-  //
-  // Deliberately skipped:
-  //  - Anything that isn't image/*  (PDFs, docs, videos — canvas can't
-  //    touch these; videos in particular need real transcoding, not a
-  //    client-side resize).
-  //  - image/gif — re-encoding through <canvas> would flatten an animated
-  //    GIF to a single static frame, visibly breaking what the user chose
-  //    to send.
-  //  - image/svg+xml — a vector format; rasterizing it through canvas would
-  //    only make it *worse* (fixed-resolution, usually larger) and it's
-  //    essentially never large enough to matter anyway.
-  //  - Anything already under IMAGE_COMPRESS_SKIP_UNDER_BYTES — small
-  //    images (icons, already-compressed screenshots) aren't worth the
-  //    CPU cost or the extra JPEG generation-loss.
-  // Any failure along the way (corrupt image, canvas/toBlob unsupported,
-  // etc.) falls back to sending the original file untouched rather than
-  // blocking the send — compression is a cost optimization, never a
-  // requirement for the message to go through.
-  const IMAGE_COMPRESS_MAX_DIMENSION = 1600; // px, longest edge
+  // ============================================================
+  const IMAGE_COMPRESS_MAX_DIMENSION = 1600;
   const IMAGE_COMPRESS_QUALITY = 0.82;
-  const IMAGE_COMPRESS_SKIP_UNDER_BYTES = 300 * 1024; // 300KB
+  const IMAGE_COMPRESS_SKIP_UNDER_BYTES = 300 * 1024;
 
   function isCompressibleImageType(file) {
     return !!file && !!file.type && file.type.startsWith('image/') &&
@@ -902,9 +688,6 @@
           ctx.drawImage(img, 0, 0, width, height);
 
           canvas.toBlob((blob) => {
-            // If re-encoding somehow didn't actually save space (rare —
-            // e.g. an already near-optimal JPEG at a similar resolution),
-            // keep the original rather than uploading a same-or-worse file.
             if (!blob || blob.size >= file.size) { cleanupAndResolve(file); return; }
             const newName = (file.name || 'photo').replace(/\.[a-z0-9]+$/i, '') + '.jpg';
             const compressed = new File([blob], newName, { type: 'image/jpeg', lastModified: Date.now() });
@@ -958,11 +741,6 @@
     DOM.authError.classList.add('hidden');
   }
 
-  // FIX: see #appLoading in index.html — this is the "checking session"
-  // splash that covers the gap between page load and the app knowing
-  // whether to show the login card or the dashboard. hideAppLoading() also
-  // cancels the inline fallback timer index.html sets up in case app.js
-  // never gets this far at all (script error, blocked CDN, etc.).
   function hideAppLoading() {
     if (DOM.appLoading) DOM.appLoading.classList.add('hidden');
     if (window.__orbitLoadingFallback) {
@@ -980,22 +758,8 @@
   }
 
   // ============================================================
-  // 6a. REALTIME CONNECTION STATUS BANNER (NEW)
+  // 6a. REALTIME CONNECTION STATUS BANNER
   // ============================================================
-  // FIX: "chat doesn't update live" / "unread numbers don't clear" almost
-  // always trace back to Realtime silently failing to deliver events — most
-  // commonly because Realtime replication isn't switched on for a table in
-  // the Supabase dashboard (Database → Replication), or a Row Level
-  // Security policy is quietly blocking the SELECT/INSERT Realtime needs.
-  // Previously the ONLY sign of this was a console.warn — completely
-  // invisible to the person actually using the app, who just sees "it
-  // doesn't work" with nothing to go on. This adds a small, auto-clearing
-  // banner that appears once a realtime channel has failed to (re)connect
-  // repeatedly, and disappears the moment it recovers. It is purely
-  // additive: it builds its own DOM node with inline styles at runtime, so
-  // it cannot depend on (or break) anything in index.html/styles.css, and
-  // it does not alter any existing reconnect/badge/message logic — it only
-  // observes the outcomes those already report.
   const connectionIssues = new Set();
   let connectionBannerEl = null;
 
@@ -1028,7 +792,7 @@
       document.body.appendChild(connectionBannerEl);
     }
     connectionBannerEl.innerHTML =
-      '<span style="flex:1;">⚠️ Live updates aren’t connecting — new messages and unread counts may be delayed. Try refreshing the page.</span>' +
+      '<span style="flex:1;">⚠️ Live updates aren\'t connecting — new messages and unread counts may be delayed. Try refreshing the page.</span>' +
       '<button type="button" aria-label="Dismiss" style="flex-shrink:0;background:rgba(255,255,255,0.18);border:none;color:#fff;width:22px;height:22px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1;">✕</button>';
     connectionBannerEl.querySelector('button').addEventListener('click', () => {
       connectionBannerEl.remove();
@@ -1053,16 +817,6 @@
   const CHAT_GROUP_SCREENS = ['chats', 'chatDetail', 'members', 'profile'];
   const isDesktopLayout = () => window.matchMedia('(min-width: 1024px)').matches;
 
-  // FIX: "is this channel actually being looked at right now" — used to
-  // decide whether an incoming/backlogged message is allowed to be marked
-  // delivered/seen (which clears its unread badge). Being `state.currentChannel`
-  // is NOT enough: that flag stays set after the user backs out to the chat
-  // list (or on the very first auto-selected channel on load), so relying on
-  // it alone silently marked chats "read" while nobody was looking at them —
-  // that's why unread numbers were disappearing for chats that were never
-  // opened. On mobile the chat is only visible while the chatDetail screen is
-  // showing; on desktop the chat pane stays visible alongside the list on any
-  // chat-group screen (see goToScreen above), so that counts as visible too.
   function isChatDetailVisible(channelId) {
     if (!state.currentChannel || String(state.currentChannel.id) !== String(channelId)) return false;
     if (isDesktopLayout()) {
@@ -1078,11 +832,6 @@
 
   function goToScreen(name) {
     if (name !== 'chatDetail' && typeof exitMessageSelection === 'function') exitMessageSelection();
-    // FIX: leaving the Updates screen (e.g. tapping another bottom-nav tab)
-    // previously left an update stuck "selected" with its header swapped
-    // out — renderStatuses() only cleared this on the next re-render, not
-    // on navigation. Clear it explicitly whenever Updates isn't the active
-    // screen, same safety net exitMessageSelection() gives chat selection.
     if (name !== 'updates' && typeof exitStatusSelection === 'function') exitStatusSelection();
     updateChatEmptyState();
     const isDesktop = isDesktopLayout();
@@ -1152,34 +901,6 @@
     }
   });
 
-  // FIX: root cause of "opening a chat sometimes opens a link/media file
-  // from the chat and the screen blinks" — a tap on a chat row (or an
-  // update row) is handled on `pointerup` so the screen switches the
-  // instant a finger/mouse lifts, without waiting the extra ~event-loop
-  // tick a plain `click` listener would add. But `pointerup` isn't the
-  // last event in a tap: browsers normally follow it with a compatibility
-  // `click` event a moment later, aimed at whatever element now sits at
-  // those same screen coordinates. Because #screenChats/#screenUpdates
-  // and #screenChatDetail/the status viewer occupy that exact same
-  // screen position (one is just hidden/shown in place of the other),
-  // that trailing click doesn't land on empty space — it lands on
-  // whichever message bubble, media thumbnail, or link happens to now be
-  // rendered where the row used to be, and fires that element's own
-  // click handler (openImageLightbox()/openExternalLink()/etc.). That's
-  // the "sometimes opens the link or media file" bug, and the abrupt
-  // lightbox/new-tab appearing a beat after the chat opens is the
-  // "blink".
-  //
-  // The real fix is on the row's own `pointerup` handler: calling
-  // preventDefault() there tells the browser to drop that trailing click
-  // instead of firing it at all (see the chat-row/status-row pointerup
-  // listeners below). These two timestamps are only an ~80ms backstop for
-  // browsers that don't honor that — just long enough to catch a
-  // same-tick ghost click, short enough that a real, deliberate tap on a
-  // pdf/link/media attachment made right after opening the chat/update
-  // still gets through instead of being swallowed (search
-  // suppressChatOpenClicksUntil / suppressStatusOpenClicksUntil for every
-  // spot that checks them).
   let suppressChatOpenClicksUntil = 0;
   let suppressStatusOpenClicksUntil = 0;
 
@@ -1198,19 +919,13 @@
     }
   }
 
-  // FIX: Close lightbox when back button is pressed
   function closeLightboxIfOpen() {
     if (state.activeLightbox) {
-      // FIX: run the lightbox's own cleanup (removes its keydown listener
-      // for gallery navigation) before tearing down the overlay, so a
-      // swipeable gallery closed via the back button doesn't leak a
-      // document-level keydown handler.
       if (typeof state.activeLightbox._lightboxCleanup === 'function') {
         state.activeLightbox._lightboxCleanup();
       }
       state.activeLightbox.remove();
       state.activeLightbox = null;
-      // Update history to current screen
       if (state.currentScreen && history.replaceState) {
         history.replaceState({ orbitScreen: state.currentScreen }, '', '#' + state.currentScreen);
       }
@@ -1220,24 +935,17 @@
   }
 
   function handleBackNavigation(event) {
-    // FIX: Check lightbox first
     if (closeLightboxIfOpen()) {
       return;
     }
     
-    // Existing status modal check
     if (DOM.statusModal && !DOM.statusModal.classList.contains('hidden')) {
       closeStatusViewer();
       if (state.currentScreen) pushScreenState(state.currentScreen);
       return;
     }
     
-    // Existing video container check
     if (DOM.videoContainer && !DOM.videoContainer.classList.contains('hidden')) {
-      // FIX: route through closeLiveSession() so the back button also
-      // cancels the auto-close timer armed in joinLiveClass() — otherwise
-      // it could still fire later and pop the "session is up" alert after
-      // the admin/student had already left the screen.
       closeLiveSession();
       if (state.currentScreen) pushScreenState(state.currentScreen);
       return;
@@ -1254,7 +962,6 @@
       return;
     }
 
-    // FIX: If no overlay and no screen state, go to chats (home)
     if (state.currentScreen && state.currentScreen !== 'chats') {
       isBackNavigation = true;
       goToScreen('chats');
@@ -1349,9 +1056,6 @@
       return [];
     }
 
-    // FIX: remember which members-row id corresponds to which channel for
-    // THIS user, so a realtime DELETE on the members table can be matched
-    // precisely to "was I the one removed?" rather than guessing.
     state.myMemberships = new Map((memberships || []).map((m) => [String(m.channel_id), m.id]));
 
     const channelIds = (memberships || []).map((m) => m.channel_id);
@@ -1391,31 +1095,8 @@
   }
 
   let allChannels = [];
-
-  // Every group/session that exists ([{id, name}, ...]), admin-only.
-  // Rebuilt by loadRegisteredUsersList(); read by openGroupAssignmentModal()
-  // so the "manage groups" checklist doesn't need its own round trip.
   let allGroupsCache = [];
-
-  // username (lowercase) -> array of {channelId, channelName, role} for
-  // every group that user belongs to. Rebuilt by loadRegisteredUsersList();
-  // read by renderRegisteredUsersList() (search re-filters instantly
-  // without refetching) and by openGroupAssignmentModal() (to pre-check
-  // groups and pre-select each one's role).
   let registeredUserMemberships = new Map();
-
-  // FIX: root cause of "Settings feels slow to open/close, unlike Members/
-  // Profile/Shared Media" — see the FIX comment inside loadRegisteredUsersList()
-  // below. registeredUsersListHasData tracks whether we've ever painted a
-  // real list, so a later open can repaint instantly from what's already in
-  // memory instead of blanking to "Loading users…" again. registeredUsersListLoading
-  // guards against a second fetch piling on top of one still in flight —
-  // without it, quickly tapping into and out of Settings a few times (which
-  // is exactly what "closing" it while it's still loading looks like) fires
-  // a fresh loadRoleCache() + members/channels round trip on every tap,
-  // and each one resolves later and re-renders on top of the others,
-  // which is what actually reads as things getting slower and jankier the
-  // more you open/close the screen.
   let registeredUsersListHasData = false;
   let registeredUsersListLoading = false;
 
@@ -1426,13 +1107,6 @@
     renderChatList(channels);
 
     if (!state.currentChannel && channels.length) {
-      // FIX: this auto-pick of the first channel is here so a desktop split
-      // view (chat list + chat pane side-by-side) has something to show in
-      // the pane on load — on desktop that pane really is visible, so
-      // marking it delivered/seen is correct. On mobile there is no chat
-      // pane on screen yet (the user is looking at the chat list), so this
-      // must NOT mark it as read — that was the cause of a chat's unread
-      // number disappearing before it was ever tapped open.
       selectChannel(channels[0], { markSeenNow: isDesktopLayout() });
     }
   }
@@ -1451,22 +1125,10 @@
     channels.forEach((ch) => {
       const preview = state.channelPreviews[ch.id];
       const unread = state.unreadByChannel[ch.id] || 0;
-      // FIX: "it should be a hyperlink" — a shared link in the last-message
-      // snippet shown here used to go through plain escapeHtml(), so it
-      // read as inert text even though the same link is a real clickable
-      // <a> once you open the chat. firstUrlIn() looks at the *untruncated*
-      // content so the href is always the complete, correct URL — never a
-      // URL cut off mid-string by truncate() below — and only the display
-      // text is truncated. The row's own pointerup/click handlers further
-      // down are taught to let a click on this link open the link instead
-      // of opening the chat.
       const previewLinkUrl = preview && preview.content ? firstUrlIn(preview.content) : null;
       const previewText = preview
         ? (preview.content
             ? (previewLinkUrl
-                // FIX: see the matching comment in linkifyText() — dropping
-                // target="_blank" here too, for the same "opens twice, in
-                // different browsers" reason.
                 ? `<a href="${escapeHtml(previewLinkUrl)}" rel="noopener" class="msg-link">${escapeHtml(truncate(preview.content, 42))}</a>`
                 : escapeHtml(truncate(preview.content, 42)))
             : (preview.file_url ? '📎 Attachment' : ''))
@@ -1504,29 +1166,10 @@
       row.addEventListener('pointerup', (e) => {
         if (e.button === 2) return;
         if (channelLongPressFired) { channelLongPressFired = false; return; }
-        if (e.target.closest('a.msg-link')) return; // let the click handler below handle it
-        // FIX: root cause of the ghost-click bug (see suppressChatOpenClicksUntil
-        // above) at its source, not just downstream — on a touch device the
-        // browser still owes this tap a trailing compatibility `click` event
-        // after this `pointerup` fires, aimed at whatever now sits at these
-        // same coordinates once openChannel() below swaps the chat list out
-        // for the chat screen. Per the Pointer Events spec, calling
-        // preventDefault() here tells the browser to drop that trailing
-        // click entirely instead of dispatching it against the new screen —
-        // so it can never reach a message bubble/link/media element there.
-        // suppressChatOpenClicksUntil stays as a short backstop for
-        // browsers that don't honor this, but with the click suppressed at
-        // the source it no longer needs a long window, so a real tap on a
-        // pdf/link/media attachment made just after opening the chat isn't
-        // swallowed too (which was itself causing that attachment to fall
-        // through to the browser's raw default open instead of the app's
-        // viewer — see the click-handler comments below).
+        if (e.target.closest('a.msg-link')) return;
         e.preventDefault();
         openChannel(ch);
       });
-      // FIX: see previewLinkUrl above — clicking the link inside the
-      // preview snippet should open the link, not open the chat the row
-      // otherwise navigates to on pointerup.
       row.addEventListener('click', (e) => {
         const link = e.target.closest('a.msg-link');
         if (!link) return;
@@ -1553,27 +1196,6 @@
   }
 
   async function openChannel(channel) {
-    // FIX (chat takes time to open, #2): previously this awaited the
-    // *entire* selectChannel() chain — 8+ sequential network round trips
-    // (messages, members, read receipts, delivered/seen writes, schedule,
-    // badge refresh) — before switching the screen to chatDetail. The
-    // messages a user actually needs to see are rendered from cache
-    // synchronously inside selectChannel() before any of those awaits, so
-    // there's no reason the screen transition should wait on the network
-    // too. Fire selectChannel() and flip the screen immediately; fresh
-    // data fills in a moment later once it arrives.
-    // FIX: see suppressChatOpenClicksUntil above and the `pointerup`
-    // handler on the chat row — that handler's preventDefault() is what
-    // actually stops the browser from firing a trailing ghost click
-    // against the chat screen that's about to appear here, so this is
-    // just a short backstop for browsers that don't honor it. It used to
-    // stay armed for 400ms, but that's long enough for a real, deliberate
-    // tap on a pdf/link/media attachment made right after opening the
-    // chat to land inside the window too — which made this guard swallow
-    // that tap's own preventDefault() and let the browser fall through to
-    // its raw default handling of the attachment (a bare new-tab open of
-    // the storage URL) instead of the app's viewer. 80ms only covers a
-    // same-tick ghost click, not a human's next tap.
     suppressChatOpenClicksUntil = Date.now() + 80;
     selectChannel(channel);
     goToScreen('chatDetail');
@@ -1657,20 +1279,12 @@
   }
 
   // ============================================================
-  // UNREAD BADGE REFRESH (FIXED)
+  // UNREAD BADGE REFRESH
   // ============================================================
   async function refreshUnreadBadges() {
     if (!state.currentUser) return;
 
     try {
-      // FIX: scope to channels the user can actually see/open.
-      // Previously this queried the messages table with no channel filter
-      // at all, so it counted messages from channels the user isn't even
-      // a member of (not in allChannels). Those messages can never be
-      // opened/marked seen, so part of the badge total was permanently
-      // stuck — the badge could never reach 0 no matter how many real
-      // messages the user read. allChannels already reflects exactly the
-      // channels this user has access to (see loadChannels/renderChannels).
       const channelIds = allChannels.map((c) => c.id);
 
       if (!channelIds.length) {
@@ -1681,8 +1295,6 @@
         return;
       }
 
-      // Get all messages from others that are not deleted, restricted to
-      // channels this user actually belongs to.
       const { data: fromOthers, error: msgError } = await supabase
         .from(CONFIG.SUPABASE.TABLES.MESSAGES)
         .select('id, channel_id')
@@ -1692,17 +1304,11 @@
 
       if (msgError) {
         console.warn('Failed to fetch messages for badge:', msgError);
-        // FIX: a failed query here (commonly an RLS SELECT policy blocking
-        // it) previously just bailed out silently, leaving the unread badge
-        // stuck wherever it last was — indistinguishable from "the badge
-        // never clears". Surface it instead of hiding it. See
-        // setConnectionIssue near the top of the file.
         setConnectionIssue('badges', true);
         return;
       }
       setConnectionIssue('badges', false);
 
-      // Get user's read receipts
       const { data: myReads, error: readsError } = await supabase
         .from('message_reads')
         .select('message_id')
@@ -1730,20 +1336,7 @@
       DOM.navChatsBadge.textContent = total > 99 ? '99+' : String(total);
       DOM.navChatsBadge.classList.toggle('hidden', total === 0);
 
-      // FIX: whenever the unread count changes there is, by definition, a
-      // channel whose "last message" may have changed too — but this
-      // function had no idea what that message actually was, so it just
-      // re-rendered the list with whatever state.channelPreviews already
-      // held. That silently decoupled the two: the badge (computed fresh
-      // from the DB right here, every time) always ended up correct, while
-      // the preview text stayed however-stale-it-was until some other,
-      // separate code path happened to refresh it. Since this function is
-      // the one thing proven to run reliably whenever a message arrives
-      // (it's what was updating the badge live), pull fresh previews here
-      // too so the two can never show inconsistent results again.
       state.channelPreviews = await loadChannelPreviews(channelIds);
-
-      // Update the chat list to show/hide unread badges
       renderChatList(allChannels);
 
       console.log(`🔔 Badge updated: ${total} unread messages`);
@@ -1769,12 +1362,6 @@
       state.channelPreviews[msg.channel_id] = msg;
     }
 
-    // FIX: was `state.currentChannel?.id === msg.channel_id`, which stays
-    // true after the user backs out of a chat back to the list (currentChannel
-    // is never cleared on "back"). That made this incoming-message counter
-    // skip incrementing the badge for a chat that was actually closed on
-    // screen, so its unread count silently stayed at 0. Use the same
-    // "genuinely on screen right now" check the per-channel handler uses.
     const isOpenChannel = isChatDetailVisible(msg.channel_id);
     if (!isOpenChannel && msg.username !== state.currentUser?.username) {
       state.unreadByChannel[msg.channel_id] = (state.unreadByChannel[msg.channel_id] || 0) + 1;
@@ -1786,16 +1373,6 @@
     renderChatList(allChannels);
   }
 
-  // FIX: When an admin removes this user from a group (members row delete),
-  // that channel must disappear from their chat list immediately — not just
-  // on next login/refresh — and if they currently have it open, they must
-  // be kicked out of it right away rather than staying on a screen for a
-  // group they no longer belong to.
-  //
-  // Pulled out of handleMembershipRemoved() so the same cleanup can also be
-  // triggered from sendMessage()'s pre-send membership check below — that
-  // path already knows the channel id, it doesn't need to reverse-lookup it
-  // from a realtime payload.
   async function expelFromChannel(removedChannelId, { showAlert = true } = {}) {
     if (!removedChannelId) return;
     removedChannelId = String(removedChannelId);
@@ -1829,10 +1406,6 @@
   async function handleMembershipRemoved(oldRow) {
     if (!oldRow || !state.currentUser) return;
 
-    // Match by the membership row id we recorded for this user (works
-    // regardless of the table's REPLICA IDENTITY setting, since the primary
-    // key is always present on delete payloads). Fall back to matching by
-    // username if the row happens to include it (REPLICA IDENTITY FULL).
     let removedChannelId = null;
     for (const [channelId, membershipId] of state.myMemberships.entries()) {
       if (String(membershipId) === String(oldRow.id)) {
@@ -1844,30 +1417,11 @@
         normalizeUsername(oldRow.username) === state.currentUser.username) {
       removedChannelId = String(oldRow.channel_id);
     }
-    if (!removedChannelId) return; // not this user's membership — ignore
+    if (!removedChannelId) return;
 
     await expelFromChannel(removedChannelId);
   }
 
-  // FIX: Root cause of "a removed user can still send messages" — sendMessage()
-  // previously trusted whatever state.currentChannel/state.currentUser already
-  // held, with zero re-check against the members table. The only thing that
-  // was supposed to stop a removed user from posting was the realtime DELETE
-  // listener above (handleMembershipRemoved), but that listener can miss the
-  // event entirely: the channel-list-updates subscription had no reconnect
-  // logic (see subscribeToChannelListUpdates below) and would just log a
-  // warning and stay dead after any CHANNEL_ERROR/TIMED_OUT/CLOSED, and even
-  // a healthy subscription drops events while the tab is backgrounded/offline.
-  // In both cases state.currentChannel silently stays set to a group the user
-  // is no longer in, and the composer keeps working. This does a fresh,
-  // authoritative membership check immediately before every send.
-  //
-  // Note: this is a UX safety net, not the real security boundary — that has
-  // to live in a Supabase Row Level Security policy on the messages table's
-  // INSERT rule (e.g. requiring EXISTS (SELECT 1 FROM members WHERE
-  // channel_id = messages.channel_id AND username = <auth user>)), since a
-  // client-side check can always be bypassed by calling the Supabase API
-  // directly. Verify that policy is in place server-side alongside this fix.
   async function verifyChannelMembership(channelId) {
     try {
       const { data, error } = await supabase
@@ -1878,10 +1432,6 @@
         .maybeSingle();
 
       if (error) {
-        // Fail open on a transient/network error so flaky connectivity
-        // doesn't block legitimate members from sending — the realtime
-        // listener and the next successful check will still catch an
-        // actual removal.
         console.warn('Membership verification failed, allowing send:', error);
         return true;
       }
@@ -1892,28 +1442,6 @@
     }
   }
 
-  // FIX: Realtime account-deletion detection. admin_delete_user removes this
-  // user's row from user_roles (loadRoleCache() already reads this table for
-  // everyone, and the client already assumes the row is gone post-delete —
-  // see the `delete state.roleCache[username]` call in deleteUserAccount()).
-  // Subscribing to DELETE on it means we don't have to wait for a token
-  // refresh failure or the next watchdog poll — this fires the moment the
-  // row is removed, typically within a second.
-  //
-  // FIX (root cause of "delete user is not being signed out automatically"):
-  // this used to match purely on `oldRow.username`. Postgres/Supabase
-  // Realtime only guarantees the PRIMARY KEY columns are present on a
-  // DELETE payload's `old` row unless the table has REPLICA IDENTITY FULL
-  // explicitly set — and `user_roles` almost certainly has a separate `id`
-  // primary key, with `username` just a unique column. Under the default
-  // replica identity (the vast majority of Supabase projects never change
-  // this), `oldRow.username` is simply undefined on delete, so the old
-  // check silently never matched — this realtime path never fired for
-  // anyone, on any deletion, and sign-out depended entirely on the slower
-  // session-watchdog backstop. Match against this user's own row id
-  // (captured at login — see completeLogin()) instead, which is always
-  // present regardless of replica identity, with the username check kept
-  // as a fallback for projects that do have REPLICA IDENTITY FULL set.
   function handleAccountDeleted(oldRow) {
     if (!oldRow || !state.currentUser) return;
     const matchesById = state.myUserRoleId != null && String(oldRow.id) === String(state.myUserRoleId);
@@ -1925,14 +1453,6 @@
     }
   }
 
-  // FIX: This subscription is the only realtime signal that tells a user
-  // "you were removed" or "your account was deleted" — but previously, once
-  // it hit CHANNEL_ERROR/TIMED_OUT/CLOSED (a dropped websocket, a network
-  // blip, a mobile tab coming back from the background), it just logged a
-  // warning and stayed dead for the rest of the session. From that point on
-  // an admin removing the user would go completely unnoticed client-side
-  // until the next full reload. Mirrors the reconnect-with-backoff pattern
-  // already used by subscribeToMessages()/scheduleReconnect() above.
   let channelListReconnectTimer = null;
   let channelListReconnectAttempts = 0;
   let channelListIntentionalTeardown = false;
@@ -1989,10 +1509,6 @@
           if (channelListSubscription) {
             channelListSubscription = null;
             scheduleChannelListReconnect();
-            // FIX: surface repeated failures to the user (see setConnectionIssue
-            // above) instead of only logging — this channel is what delivers new
-            // chat previews/unread counts and "removed from group" notices, so a
-            // silent failure here looks exactly like "chat doesn't update live".
             if (channelListReconnectAttempts >= 5) {
               setConnectionIssue('channel-list', true);
             }
@@ -2017,27 +1533,6 @@
   // ============================================================
   // CHAT-LIST PREVIEW POLLING FALLBACK
   // ============================================================
-  // FIX: "closed chats never get a live last-message preview" persisted even
-  // after fixing the tab-refocus reconnect gap above — because the
-  // `channel-list-updates` postgres_changes subscription can sit at a happy
-  // "SUBSCRIBED" status forever while still never delivering a single event.
-  // That happens when the `messages` table hasn't been added to the
-  // `supabase_realtime` publication (Database → Replication in the Supabase
-  // dashboard), or when its RLS SELECT policy silently excludes the event
-  // for this user — Realtime evaluates that policy per-row server-side, and
-  // a mismatch there produces no error on the client at all, just permanent
-  // silence. subscribeToMessages()/subscribeToChannelListUpdates() can only
-  // ever detect and recover from a *dropped connection*; they have no way to
-  // detect "connected but nothing is arriving".
-  //
-  // This is a belt-and-suspenders fallback: independent of whether the
-  // realtime socket is actually delivering anything, periodically re-pull
-  // each known channel's latest message straight via REST and re-render the
-  // list if anything changed. It guarantees the "last message" preview and
-  // unread badge for a closed chat catch up within one poll interval even
-  // on a Supabase project where Realtime is misconfigured — while the
-  // instant realtime path above still gives immediate updates whenever it
-  // does work correctly.
   let channelPreviewPollTimer = null;
   const CHANNEL_PREVIEW_POLL_INTERVAL = 12000;
 
@@ -2077,7 +1572,7 @@
   }
 
   // ============================================================
-  // DELIVERED / SEEN TRACKING (FIXED)
+  // DELIVERED / SEEN TRACKING
   // ============================================================
   async function markDelivered(channelId) {
     if (!state.currentUser) return;
@@ -2105,13 +1600,6 @@
   }
 
   async function markSeen(channelId) {
-    // FIX: document.hasFocus() checks OS-level window focus, which is
-    // frequently false even while the user is actively viewing the chat
-    // (PWAs/home-screen webviews, embedded browsers, clicking outside the
-    // window, etc). That caused read receipts to never be written, so the
-    // nav badge kept showing "unread" messages the user had already seen.
-    // document.hidden reflects tab/app *visibility*, which is what actually
-    // matters here.
     if (!state.currentUser || document.hidden) {
       console.log('⏭️ Skipping markSeen - no user or tab not visible');
       return;
@@ -2120,7 +1608,6 @@
     try {
       console.log(`👁️ Marking messages as seen for channel ${channelId}`);
       
-      // First, get all unread messages from others in this channel
       const { data: unreadMsgs, error: unreadError } = await supabase
         .from(CONFIG.SUPABASE.TABLES.MESSAGES)
         .select('id')
@@ -2131,7 +1618,6 @@
       if (unreadError) {
         console.warn('Failed to get unread messages:', unreadError);
       } else if (unreadMsgs && unreadMsgs.length) {
-        // Record read receipts for each unread message
         const rows = unreadMsgs.map((m) => ({
           message_id: m.id,
           channel_id: channelId,
@@ -2142,13 +1628,6 @@
           .upsert(rows, { onConflict: 'message_id,username', ignoreDuplicates: true });
         if (readsError) {
           console.warn('Failed to record read receipts:', readsError);
-          // FIX: this write is what actually clears the unread badge — if
-          // it fails (typically an RLS INSERT policy on message_reads
-          // blocking it), refreshUnreadBadges() below will re-derive the
-          // count from the database and find these messages still unread,
-          // so the badge silently never clears no matter how many times the
-          // chat is opened. Make that visible instead of leaving it as a
-          // console-only warning.
           setConnectionIssue('badges', true);
         } else {
           console.log(`✅ Recorded ${rows.length} read receipts`);
@@ -2156,7 +1635,6 @@
         }
       }
 
-      // Also update the seen_at on the messages table for backward compatibility
       const { error } = await supabase
         .from(CONFIG.SUPABASE.TABLES.MESSAGES)
         .update({ 
@@ -2173,12 +1651,10 @@
         console.log('✅ Messages marked as seen');
       }
 
-      // FIX: Refresh the badge after marking messages as seen
       await refreshUnreadBadges();
       
     } catch (e) {
       console.warn('Mark seen error:', e);
-      // Even if there's an error, try to refresh the badge
       try {
         await refreshUnreadBadges();
       } catch (badgeError) {
@@ -2237,16 +1713,6 @@
   // ============================================================
   // SAFE MESSAGE MERGING
   // ============================================================
-  // FIX: "show last message when we open chat" — added the optional
-  // `forceScroll` param (default false, so every existing call site that
-  // doesn't pass it keeps behaving exactly as before: realtime inserts and
-  // sent-message confirmations only auto-scroll when the reader is already
-  // near the bottom, so we never yank someone's view while they're reading
-  // older messages). loadMessages() below — the initial fetch that runs the
-  // moment a chat is opened (see selectChannel()) — now passes `true`, so
-  // the freshly opened chat always ends up scrolled to its true last
-  // message instead of relying on scroll-position heuristics that can be
-  // wrong the first time a channel's messages render.
   function mergeMessagesSafely(newMessages, forceScroll) {
     if (state.isMerging) {
       console.log('⏳ Merge already in progress, skipping');
@@ -2433,23 +1899,6 @@
         }
         
         if (newMessage.client_id) {
-          // FIX: root cause of "a message disappears/gets swapped for the
-          // wrong content while it's still unconfirmed" — this used to also
-          // match `(m.isPending && m.id.includes('temp_'))` on its own, with
-          // no client_id comparison. findIndex() returns the FIRST match, so
-          // whenever more than one of your own messages was still pending at
-          // once (e.g. you send a message, then send a second — with a link
-          // or not — before the first one's INSERT confirmation comes back),
-          // this confirmation for message B could match message A's still-
-          // pending placeholder purely because it was pending and looked
-          // like a temp_ id, with no check that it was actually THE SAME
-          // message. That overwrote A's placeholder with B's real row —
-          // A's own confirmation then had nothing left to match (its temp_
-          // slot was already gone), so A silently vanished/never confirmed
-          // while B effectively got duplicated. Every optimistic placeholder
-          // and its real row always share the same client_id (stamped by
-          // sendMessage()), so that alone is the only correct, unambiguous
-          // match — the extra fallback clause never needed to exist.
           const optimisticIndex = state.messages.findIndex(m =>
             m.client_id === newMessage.client_id
           );
@@ -2458,37 +1907,10 @@
             console.log(`✅ Replacing optimistic message (clientId: ${newMessage.client_id})`);
             state.messages[optimisticIndex] = newMessage;
             delete state.messages[optimisticIndex].isPending;
-            // FIX: root cause of "the message I just sent lands one row
-            // above where it belongs until I refresh" — this used to swap
-            // the confirmed server row in at the SAME array index the
-            // optimistic placeholder held, without re-sorting afterward.
-            // The placeholder's created_at is stamped from this device's
-            // own clock at compose time, which can run a little behind the
-            // database server's clock; when that happens the placeholder
-            // (and therefore the confirmed row swapped into its slot)
-            // sorts one position before the true last message instead of
-            // after it — until something re-sorts by the real,
-            // server-assigned created_at, which previously only happened
-            // on a full refresh (loadMessages() fetches fresh from the
-            // database, where created_at values are always correctly
-            // ordered). Re-sorting right here, the same way
-            // renderMessages() already orders the DOM, fixes the position
-            // immediately instead of waiting on a refresh.
             state.messages.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
             scheduleRenderMessages();
             saveCachedMessages(channelId, state.messages);
 
-            // FIX: root cause of "badge/unread count updates live, but the
-            // chat-list preview text doesn't" — this per-channel subscription
-            // only ever touched state.messages (the open conversation), never
-            // state.channelPreviews (what the chat LIST renders). Whether the
-            // list's preview text updated at all depended entirely on the
-            // separate global channel-list-updates subscription's handler
-            // (handleGlobalMessageInsert) also firing and winning whatever
-            // race exists between the two. This channel already has the full
-            // new message in hand — update the list's preview directly and
-            // unconditionally, so it's correct immediately regardless of
-            // whether that other subscription fires, races, or is delayed.
             if (isKnownChannelId(channelId)) {
               state.channelPreviews[channelId] = newMessage;
               renderChatList(allChannels);
@@ -2497,13 +1919,6 @@
             if (newMessage.username !== state.currentUser?.username) {
               console.log('🔔 New message from someone else - marking delivered');
               playNotifySound();
-              // FIX: only mark delivered/seen if this chat is actually the
-              // one on screen right now — see isChatDetailVisible above.
-              // Previously this fired just because it belonged to
-              // `state.currentChannel`, which stays set after backing out to
-              // the chat list, so messages arriving in a chat that was
-              // closed on screen were being auto-marked "seen" and never
-              // showed an unread badge.
               if (isChatDetailVisible(channelId)) {
                 await markDelivered(channelId);
                 await markSeen(channelId);
@@ -2516,30 +1931,16 @@
         console.log(`📥 Adding new message (ID: ${newMessage.id})`);
         mergeMessagesSafely(newMessage);
 
-        // FIX: same root cause as the optimistic branch above — update the
-        // chat list's preview for this channel directly from the payload we
-        // already have, instead of leaving it entirely up to the separate
-        // global channel-list-updates subscription (which may race with, or
-        // simply never deliver as reliably as, this filtered per-channel
-        // subscription). See the longer comment above.
         if (isKnownChannelId(channelId)) {
           state.channelPreviews[channelId] = newMessage;
           renderChatList(allChannels);
         }
 
-        // Refresh unread badges for new messages.
-        // FIX: this must be awaited. It was previously fired without
-        // awaiting, which could race with the refreshUnreadBadges() call
-        // inside markSeen() below and, depending on network timing,
-        // resolve *after* it and stomp the just-cleared badge count back
-        // to a stale "unread" value.
         await refreshUnreadBadges();
         
         if (newMessage.username !== state.currentUser?.username) {
           console.log('🔔 New message from someone else - marking delivered');
           playNotifySound();
-          // FIX: same as above — only mark seen if the chat is genuinely
-          // open on screen right now, not just "the last chat we visited".
           if (isChatDetailVisible(channelId)) {
             await markDelivered(channelId);
             await markSeen(channelId);
@@ -2579,21 +1980,9 @@
           saveCachedMessages(channelId, state.messages);
         }
       })
-      // FIX: root cause of "why can't I see the user is typing in
-      // real-time" — this per-channel realtime channel already existed for
-      // postgres_changes on the messages table; it just never had a
-      // broadcast listener attached. Broadcast is ephemeral (nothing is
-      // written to any table), so this piggybacks on the same socket
-      // instead of opening a second realtime channel. See broadcastTyping()
-      // (fired from #messageInput's `input` listener near the bottom of
-      // this file) for the sending side.
       .on('broadcast', { event: 'typing' }, (payload) => {
         handleIncomingTyping(channelId, payload.payload);
       })
-      // FIX: see broadcastStoppedTyping()/handleIncomingStoppedTyping()
-      // below — the explicit, immediate counterpart to the 'typing' event
-      // above, so "X is typing…" clears the instant X hits Send instead of
-      // lingering for whatever's left of the 3s auto-expire window.
       .on('broadcast', { event: 'stopped_typing' }, (payload) => {
         handleIncomingStoppedTyping(channelId, payload.payload);
       })
@@ -2625,9 +2014,6 @@
                 '(Database → Replication), or a Row Level Security policy is blocking it — ' +
                 'not a transient network issue. Still retrying, but check that config.'
               );
-              // FIX: make this visible to the actual user, not just the
-              // console — this is the exact failure mode behind "chat
-              // doesn't update live". See setConnectionIssue above.
               setConnectionIssue('messages', true);
             }
           }
@@ -2640,18 +2026,6 @@
   // ============================================================
   // 8c. REAL-TIME "TYPING…" INDICATOR
   // ============================================================
-  // FIX: root cause of "why can't I see the user is typing in real-time" —
-  // this feature simply didn't exist anywhere in the app: nothing ever
-  // broadcast a "typing" event, and nothing listened for one. Built on top
-  // of the realtime channel subscribeToMessages() already opens per open
-  // conversation (`messages:${channelId}`), using Supabase Realtime's
-  // ephemeral broadcast feature — no new table/column, nothing persisted,
-  // no extra socket.
-  //
-  // typingTimers: `${channelId}:${username}` -> auto-expire timeout id.
-  // Module-level (not on `state`) since it's pure UI/presence, not
-  // something any other part of the app needs to read or that should be
-  // cached/restored across a reload.
   const typingTimers = new Map();
 
   function getTypingUsernames(channelId) {
@@ -2661,21 +2035,11 @@
       .map((key) => key.slice(prefix.length));
   }
 
-  // Called when a "typing" broadcast arrives from someone else in a
-  // channel we're subscribed to (see the .on('broadcast', ...) handler in
-  // subscribeToMessages() above).
   function handleIncomingTyping(channelId, payload) {
     if (!payload || !payload.username) return;
-    if (payload.username === state.currentUser?.username) return; // ignore our own echo
+    if (payload.username === state.currentUser?.username) return;
     const key = `${channelId}:${payload.username}`;
     if (typingTimers.has(key)) clearTimeout(typingTimers.get(key));
-    // FIX: auto-expire after 3s of silence instead of waiting for an
-    // explicit "stopped typing" event — covers the case where that event
-    // is dropped entirely (tab closed, network drop, app backgrounded),
-    // which would otherwise leave a stale "typing…" shown forever. This is
-    // now purely a fallback/safety net — see broadcastStoppedTyping()/
-    // handleIncomingStoppedTyping() below for the normal, immediate path
-    // that fires the moment a message is actually sent.
     typingTimers.set(key, setTimeout(() => {
       typingTimers.delete(key);
       renderTypingIndicator(channelId);
@@ -2683,25 +2047,8 @@
     renderTypingIndicator(channelId);
   }
 
-  // FIX: root cause of "the header still says 'X is typing…' for a few
-  // seconds after their message already arrived" — until now, the ONLY way
-  // a "typing…" indicator ever went away was handleIncomingTyping()'s own
-  // 3s-of-silence timer above, restarted from whenever the sender's last
-  // keystroke was broadcast. That timer has no idea when the sender
-  // actually hits Send — it just keeps counting down on its own schedule.
-  // So a recipient would see the real message bubble show up, while the
-  // header above it kept reading "typing…" for however much of that 3s
-  // window happened to be left, which looks broken. Called from the
-  // sendMsgBtn click handler the instant Send is pressed (before waiting
-  // on the network round trip to actually insert the message), this sends
-  // an explicit, unthrottled "I'm done" signal so every recipient can
-  // clear it immediately instead of waiting the timer out.
   function broadcastStoppedTyping() {
     if (!state.currentChannel || !state.messagesSubscription || !state.currentUser) return;
-    // Reset the throttle too — if this user starts typing again right
-    // away (e.g. sends a quick follow-up), that next keystroke should
-    // broadcast immediately instead of waiting out the normal 2s window,
-    // since as far as anyone watching is concerned they'd just gone quiet.
     state.lastTypingBroadcastAt = 0;
     state.messagesSubscription.send({
       type: 'broadcast',
@@ -2710,8 +2057,6 @@
     });
   }
 
-  // Called when a "stopped_typing" broadcast arrives — see
-  // broadcastStoppedTyping() above for exactly when this fires.
   function handleIncomingStoppedTyping(channelId, payload) {
     if (!payload || !payload.username) return;
     if (payload.username === state.currentUser?.username) return;
@@ -2722,9 +2067,6 @@
     renderTypingIndicator(channelId);
   }
 
-  // Swaps the chat header subtitle (#chatDetailSub, normally "N members
-  // online" — see updateChatDetailSubtitle()) to show who's typing, only
-  // for whichever channel is actually open on screen right now.
   function renderTypingIndicator(channelId) {
     if (!state.currentChannel || state.currentChannel.id !== channelId) return;
     if (!DOM.chatDetailSub) return;
@@ -2739,8 +2081,6 @@
     DOM.chatDetailSub.classList.add('typing-active');
   }
 
-  // Called when leaving a channel (selectChannel()) so a stale "typing…"
-  // from the previous conversation can't linger after switching chats.
   function clearTypingIndicator(channelId) {
     const prefix = `${channelId}:`;
     [...typingTimers.keys()]
@@ -2751,9 +2091,6 @@
       });
   }
 
-  // Sends this user's own "typing" broadcast, throttled to at most once
-  // every 2s so every keystroke doesn't open a socket write — fired from
-  // #messageInput's `input` listener near the bottom of this file.
   function broadcastTyping() {
     if (!state.currentChannel || !state.messagesSubscription || !state.currentUser) return;
     const now = Date.now();
@@ -2769,14 +2106,6 @@
   // ============================================================
   // LOAD MESSAGES
   // ============================================================
-  // FIX: "show last message when we open chat" — loadMessages() is only
-  // ever called from selectChannel() (i.e. exactly when a chat is being
-  // opened), so every render triggered from here should force-scroll to
-  // the bottom rather than defer to the "only scroll if already near the
-  // bottom" heuristic renderMessages() otherwise uses for live/background
-  // updates. That heuristic is right for realtime inserts arriving while
-  // someone is reading old messages, but wrong here: the reader has just
-  // opened this chat and should always land on its true last message.
   async function loadMessages(channelId) {
     if (!channelId) return;
 
@@ -2833,21 +2162,10 @@
   }
 
   // ============================================================
-  // PDF THUMBNAIL PREVIEW (NEW)
+  // PDF THUMBNAIL PREVIEW
   // ============================================================
-  // FIX: "why can't I see the shared PDF half-opened like in WhatsApp" —
-  // previously every non-image/video attachment (including PDFs) rendered
-  // as a bare icon + filename card (see the generic .msg-doc-card branch
-  // below), with no visual preview at all. WhatsApp renders a cropped
-  // thumbnail of the document's first page in the bubble, the same "shown
-  // half until you tap" treatment .msg-media-preview already gives images
-  // (see that CSS comment in styles.css). This renders page 1 of the PDF
-  // to a canvas with pdf.js and reuses that exact same cropped-preview
-  // look for PDFs. Thumbnails are cached by URL so re-renders (e.g. from
-  // realtime updates re-running buildMessageEl) and repeated shares of the
-  // same file don't re-download/re-render the PDF every time.
-  const pdfThumbCache = new Map();   // file_url -> dataURL string | null (null = failed, don't retry)
-  const pdfThumbInFlight = new Map(); // file_url -> in-progress Promise<string|null>
+  const pdfThumbCache = new Map();
+  const pdfThumbInFlight = new Map();
 
   function getPdfThumbnail(url) {
     if (pdfThumbCache.has(url)) return Promise.resolve(pdfThumbCache.get(url));
@@ -2858,8 +2176,6 @@
       .then((pdf) => pdf.getPage(1))
       .then((page) => {
         const baseViewport = page.getViewport({ scale: 1 });
-        // Render at a fixed target width — plenty sharp for a chat-bubble
-        // thumbnail while staying cheap for long/large PDFs.
         const targetWidth = 360;
         const scale = targetWidth / baseViewport.width;
         const viewport = page.getViewport({ scale });
@@ -2878,10 +2194,6 @@
         return dataUrl;
       })
       .catch((err) => {
-        // Most common cause: the storage bucket doesn't send CORS headers
-        // for cross-origin fetch (pdf.js needs to read the bytes, unlike a
-        // plain <img>/<a> tag which doesn't). Fails soft to the file-icon
-        // placeholder already in the markup rather than breaking the chat.
         console.warn(`PDF thumbnail failed for ${url}:`, err);
         pdfThumbCache.set(url, null);
         pdfThumbInFlight.delete(url);
@@ -2892,30 +2204,6 @@
     return promise;
   }
 
-  // FIX: "opening the chat doesn't show the last message" (attachment
-  // case) — root cause. #chatMessages/#chatContainer are scrolled to the
-  // bottom (scrollTop = scrollHeight) the moment a chat is opened/rendered,
-  // but at that instant an <img>/<video> attachment (or, for PDFs, this
-  // thumbnail — filled in later, asynchronously, by hydratePdfThumb) has no
-  // known size yet: nothing in styles.css gives .msg-media-img a fixed
-  // height or aspect-ratio, so before the image/video/PDF-thumb actually
-  // loads it renders at ~0px tall. The scroll-to-bottom math runs against
-  // that too-short height, then the asset finishes loading a moment later,
-  // grows the bubble, and pushes everything below it (often the true last
-  // message itself, if the attachment isn't the very last one, or just the
-  // bottom half of the attachment itself) below the fold — with nothing to
-  // re-scroll afterwards. Confirmed empirically: opening a chat whose last
-  // message has an image left ~170px of it cut off below the viewport once
-  // the image's real size loaded in.
-  //
-  // Fix: whenever a freshly-built message bubble contains media, remember
-  // whether the chat was scrolled to the bottom right when that bubble was
-  // inserted (`pinToBottom`, passed down from renderMessages()'s own
-  // `wasNearBottom` check — see buildMessageEl()), and once the media
-  // actually loads and the browser knows its real size, re-run the same
-  // scrollTop = scrollHeight snap — but only if it was pinned to begin
-  // with, so this never yanks the view of someone who's scrolled up reading
-  // older messages when an unrelated image below finishes loading.
   function stickToBottomOnMediaLoad(mediaEl, eventName, pinToBottom) {
     if (!mediaEl || !pinToBottom) return;
     mediaEl.addEventListener(eventName, () => {
@@ -2927,17 +2215,11 @@
     const thumbEl = wrapEl.querySelector('.msg-pdf-thumb');
     if (!thumbEl) return;
     getPdfThumbnail(url).then((dataUrl) => {
-      // Bail if the message node was replaced/removed while we were
-      // rendering (e.g. renderMessages() swapped it for a fresh node).
       if (!dataUrl || !thumbEl.isConnected) return;
       const img = document.createElement('img');
       img.className = 'msg-media-img';
       img.alt = 'PDF preview';
       img.loading = 'lazy';
-      // FIX: see stickToBottomOnMediaLoad() above — re-pin the scroll once
-      // this thumbnail's real dimensions are in and it has actually grown
-      // the bubble, not just when we appended it (which happens before the
-      // browser has decoded/sized the image).
       stickToBottomOnMediaLoad(img, 'load', pinToBottom);
       img.src = dataUrl;
       thumbEl.innerHTML = '';
@@ -2947,42 +2229,11 @@
   }
 
   // ============================================================
-  // LINK PREVIEW THUMBNAILS (chat + updates)
+  // LINK PREVIEW THUMBNAILS
   // ============================================================
-  // FIX: continuing the "shared link not clickable with thumbnail" fix —
-  // linkifyText() above already makes URLs clickable; this fetches the
-  // actual preview (title + thumbnail image) for the first link in a
-  // message/status. A browser can't read another site's <head> tags
-  // directly — that site's server would have to opt this app's origin
-  // into CORS, and virtually none do — so this calls microlink.io's free
-  // public preview API, which exists for exactly this and returns
-  // CORS-enabled JSON. That means the shared URL is sent to microlink.io
-  // to generate the card; if that's not acceptable, delete this function's
-  // two call sites below (in buildMessageEl() and showStatusModal()) —
-  // links stay clickable via linkifyText() either way, just without the
-  // image/title card. Mirrors getPdfThumbnail()/hydratePdfThumb() above:
-  // cached by URL, times out and fails soft (no card, not a visible error)
-  // if the fetch or the target site doesn't cooperate.
-  // FIX: root cause of "preview card never shows, even for links that
-  // clearly work in a browser" — two problems on top of the meta=false one
-  // documented below. (1) A failed/empty lookup used to be cached as `null`
-  // FOREVER for the lifetime of the page — Microlink's free anonymous tier
-  // is rate-limited (documented ~50 requests/day per IP, no API key), so a
-  // handful of test messages sent while iterating on this feature is
-  // enough to exhaust it; every fetch afterwards started 403/429ing, and
-  // because that permanent null-cache made every retry an instant no-op,
-  // the card looked "broken" for the rest of the session even after the
-  // rate limit window reset. Failed/empty lookups are now cached for only
-  // LINK_PREVIEW_NEGATIVE_TTL_MS before being retried. (2) A non-2xx
-  // response (e.g. the 403/429 above) was fed straight into res.json() and
-  // whatever came back just silently failed the `status === 'success'`
-  // check with no record of *why* — logging res.status/res.statusText when
-  // the request isn't ok. means a real rate-limit/CORS/outage problem shows
-  // up in devtools instead of being indistinguishable from "this link has
-  // no preview".
   const LINK_PREVIEW_NEGATIVE_TTL_MS = 10 * 60 * 1000;
-  const linkPreviewCache = new Map();    // url -> { value: {title,siteName,image}|null, ts }
-  const linkPreviewInFlight = new Map(); // url -> in-progress Promise
+  const linkPreviewCache = new Map();
+  const linkPreviewInFlight = new Map();
 
   function getLinkPreview(url) {
     const cached = linkPreviewCache.get(url);
@@ -2996,18 +2247,6 @@
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 6000);
 
-    // FIX: root cause of "shared link in updates/chats loads with no
-    // thumbnail" — this request used to include `&meta=false`. Per
-    // Microlink's own API docs that flag *disables metadata extraction
-    // entirely* (title/image/logo are simply never fetched — the response
-    // comes back with x-fetch-mode: skipped), so `data.title`/`data.image`/
-    // `data.logo` below were always empty and the `preview` object a few
-    // lines down was always null. hydrateLinkPreview() was working exactly
-    // as written; it just never had anything to render, so the
-    // `.msg-link-preview-slot`/#statusLinkPreview card stayed empty/hidden
-    // for every single link, in both chats and updates. Metadata (title +
-    // image) is exactly what this feature needs, so it must NOT be
-    // disabled — dropping the flag restores the default (meta=true).
     const promise = fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`, { signal: controller.signal })
       .then((res) => {
         if (!res.ok) {
@@ -3044,21 +2283,12 @@
     return promise;
   }
 
-  // Fills a `.msg-link-preview-slot` placeholder (see buildMessageEl()) or
-  // any other empty container with a title/thumbnail card for `url`, once
-  // it's fetched. No-op (leaves the slot empty) if the fetch fails or the
-  // site has no title/image to show — the plain clickable link from
-  // linkifyText() is always there regardless.
   function hydrateLinkPreview(slotEl, url, pinToBottom) {
     if (!slotEl) return;
     getLinkPreview(url).then((preview) => {
       if (!preview || !slotEl.isConnected) return;
       slotEl.classList.remove('hidden');
       slotEl.innerHTML = `
-        <!-- FIX: see linkifyText()'s matching comment — target="_blank"
-             dropped here too so this card's tap doesn't race the
-             window.open() call in the delegated click handlers below and
-             open twice, in two different browsers/apps. -->
         <a href="${escapeHtml(url)}" rel="noopener" class="msg-link-preview">
           ${preview.image ? `<img class="msg-link-preview-img" src="${escapeHtml(preview.image)}" alt="" loading="lazy">` : ''}
           <span class="msg-link-preview-body">
@@ -3072,22 +2302,7 @@
     });
   }
 
-  // FIX: root cause of "keep messages forever but delete images/videos/
-  // PDFs/other files 168 hours after they were sent" — messages themselves
-  // (msg.content, the row) are never touched by this; only whether the
-  // attached media is still shown. The actual file is removed from Supabase
-  // Storage server-side by a scheduled job 168 hours after msg.created_at
-  // (see purge_expired_message_media in the Supabase project — client code
-  // can't delete storage objects on a timer by itself, since nothing runs
-  // here unless the app happens to be open at the exact moment a file turns
-  // 168h old). This client-side check is a second, independent guard: it
-  // hides the media the instant 168h have elapsed even if the server-side
-  // job hasn't swept it yet (cron jobs run on their own schedule, not
-  // exactly on each file's 168th hour), so no device ever gets a window
-  // where it shows a link to a file that's actually already gone. See its
-  // two call sites below (the attachment branch in buildMessageEl(), and
-  // the Shared Media grid in openGroupProfile()/renderSharedMedia()).
-  const MESSAGE_MEDIA_EXPIRY_MS = 168 * 60 * 60 * 1000; // 168 hours = 7 days
+  const MESSAGE_MEDIA_EXPIRY_MS = 168 * 60 * 60 * 1000;
 
   function isMessageMediaExpired(msg) {
     if (!msg || !msg.created_at) return false;
@@ -3097,40 +2312,14 @@
   function buildMessageEl(msg, signature, pinToBottom, skipEnterAnim) {
     const isMine = msg.username === state.currentUser?.username;
     const wrap = document.createElement('div');
-    // FIX: root cause of "opening the chat appears as animation from
-    // bottom to up instead of being consistent" — every `.msg` element
-    // plays the msgIn slide-up-and-fade-in keyframe (see styles.css) so
-    // a genuinely new message sliding into view reads as alive rather
-    // than popping in. But renderMessages() builds a fresh node for
-    // every message that doesn't already have a matching node in the
-    // DOM — and the first time a chat's history is painted (opening a
-    // chat, or switching to a different one), *none* of its messages
-    // have an existing node yet, so all of them count as "fresh" and
-    // play that entrance animation at once. With a chat full of history
-    // that reads as the entire message list sliding up from the bottom
-    // on open, instead of just appearing the way every other screen in
-    // the app does. `skipEnterAnim` (set by renderMessages() only for
-    // that first bulk paint of a chat, never for a later one-off new
-    // message) adds msg-no-enter-anim to cancel the animation for that
-    // pass only, so opening a chat is instant and consistent while a
-    // real new message arriving afterward still gets its entrance.
     wrap.className = `msg ${isMine ? 'msg-mine' : 'msg-theirs'}${skipEnterAnim ? ' msg-no-enter-anim' : ''}`;
     wrap.dataset.id = msg.id;
     wrap.dataset.role = roleKey(msg.username);
     wrap.dataset.sig = signature;
-    // FIX: see the "already existed" lookup in renderMessages() — lets a
-    // rebuilt node be matched back to its previous DOM node by client_id
-    // even when msg.id itself changed (the temp_ optimistic id being
-    // swapped for the server's real id). Empty string, not left unset, so
-    // dataset.clientId is always present to query even when a message has
-    // no client_id (e.g. ones loaded before this field existed).
     wrap.dataset.clientId = msg.client_id || '';
 
     let replyHtml = '';
     if (msg.reply_to) {
-      // FIX: "clicking the reply message doesn't do anything" — tag the
-      // quote with the original message's id so the delegated click
-      // handler below (see jumpToMessage()) knows what to scroll to.
       replyHtml = `
         <div class="msg-reply-quote" data-reply-to-id="${escapeHtml(String(msg.reply_to))}" role="button" tabindex="0">
           <span class="reply-author">${escapeHtml(getDisplayName(msg.reply_username || 'Message'))}</span>
@@ -3143,12 +2332,6 @@
     const hasAttachment = !!msg.file_url && !msg.deleted_at;
     const mediaExpired = hasAttachment && isMessageMediaExpired(msg);
 
-    // FIX: root cause of "shared link in chat not clickable with thumbnail"
-    // — only text messages (no file attachment) get a link preview card;
-    // an attachment already has its own preview and firstUrlIn() below only
-    // looks at msg.content anyway. hydrateLinkPreview() is called further
-    // down once wrap.innerHTML actually exists, same two-step pattern as
-    // hydratePdfThumb() for shared PDFs.
     const linkUrl = (!hasAttachment && msg.content) ? firstUrlIn(msg.content) : null;
 
     let bubbleHtml = '';
@@ -3165,15 +2348,6 @@
     if (hasAttachment) {
       const cornerTicks = ticksMarkup ? `<span class="msg-corner-ticks">${ticksMarkup}</span>` : '';
       if (mediaExpired) {
-        // FIX: see isMessageMediaExpired() above — the file itself is gone
-        // (or about to be swept) 168h after it was sent; the message and
-        // this placeholder stay forever. Kept inside a `.msg-bubble` shell,
-        // same pattern as the `.msg-deleted` branch above, so it inherits
-        // the normal bubble padding/border/background instead of needing
-        // its own layout rules. Uses .msg-inline-ticks (not .msg-bubble-ticks)
-        // for the ticks since this is a flex row, same as the doc-card
-        // pattern below — .msg-bubble-ticks relies on float, which flex
-        // items ignore.
         const inlineTicks = ticksMarkup ? `<span class="msg-inline-ticks">${ticksMarkup}</span>` : '';
         bubbleHtml += `
           <div class="msg-bubble msg-media-expired">
@@ -3196,9 +2370,6 @@
           </div>
         `;
       } else if (isPdfFile(msg.file_url)) {
-        // WhatsApp-style PDF card: cropped page-1 thumbnail on top (filled
-        // in asynchronously by hydratePdfThumb() below, once wrap.innerHTML
-        // is actually set) with the filename/download bar underneath.
         const fileName = getFileNameFromUrl(msg.file_url);
         const inlineTicks = ticksMarkup ? `<span class="msg-inline-ticks">${ticksMarkup}</span>` : '';
         bubbleHtml += `
@@ -3248,9 +2419,6 @@
     if (hasAttachment && !mediaExpired && isPdfFile(msg.file_url)) {
       hydratePdfThumb(wrap, msg.file_url, pinToBottom);
     } else if (hasAttachment && !mediaExpired && isImageFile(msg.file_url)) {
-      // FIX: see stickToBottomOnMediaLoad() above — images have no known
-      // height until they actually load, so re-pin the scroll once this
-      // one's real size is in.
       stickToBottomOnMediaLoad(wrap.querySelector('img.msg-media-img'), 'load', pinToBottom);
     } else if (hasAttachment && !mediaExpired && isVideoFile(msg.file_url)) {
       stickToBottomOnMediaLoad(wrap.querySelector('video.msg-media-img'), 'loadedmetadata', pinToBottom);
@@ -3263,21 +2431,6 @@
     return wrap;
   }
 
-  // FIX: see skipEnterAnim in buildMessageEl() above — true whenever a
-  // chat was just opened (set by selectChannel(), which runs on every
-  // openChannel() — including reopening a chat that was already viewed
-  // earlier this session) and hasn't painted its first non-empty batch of
-  // messages yet. renderMessages() reads it to tell "this is the first
-  // batch of messages for a chat that was just opened" (skip the entrance
-  // animation for every message in that batch) apart from "this chat was
-  // already open and a message was added/changed" (let that one message
-  // animate in normally). Deliberately cleared only once a *non-empty*
-  // batch is actually painted (see below) — not on every renderMessages()
-  // call — so an empty/cached-miss first call doesn't mark the chat as
-  // "already animated" before its real history has ever been shown. A
-  // plain boolean rather than "does this channel id match the last one
-  // painted" specifically so reopening the SAME chat a second time still
-  // gets a fresh, unanimated paint instead of being treated as a no-op.
   let chatNeedsInitialPaint = false;
 
   function renderMessages(forceScrollBottom) {
@@ -3295,34 +2448,6 @@
     }
 
     const existingNodes = new Map();
-    // FIX: root cause of "last bubble jerks/bounces right after sending" and
-    // "every bubble blinks when a chat is opened" — both came from the same
-    // gap: this map only ever indexed existing DOM nodes by their CURRENT
-    // msg.id, and the loop below only ever counted a message as "already on
-    // screen" when that exact id matched. Two very normal cases broke that:
-    //   1) Sending a message: the optimistic bubble is inserted under a
-    //      temp_ id, then a moment later swapped for the server row under
-    //      its real id (see sendMessage()/subscribeToMessages()). The id
-    //      changed, so this map couldn't find the old node — the bubble was
-    //      treated as brand-new, rebuilt from scratch, and replayed its
-    //      slide/fade-in entrance animation a second time right on top of
-    //      the first, reading as a jerk/bounce.
-    //   2) Opening a chat: cached messages paint first (correctly, with no
-    //      entrance animation — see chatNeedsInitialPaint), then the live
-    //      fetch from the server lands a moment later with the same ids but
-    //      often slightly different values (ticks, exact created_at
-    //      formatting survives a JSON/localStorage round trip differently
-    //      than a fresh Supabase row). Any signature mismatch rebuilt the
-    //      node — and by then chatNeedsInitialPaint had already been
-    //      cleared by the cached paint, so every rebuilt bubble replayed its
-    //      entrance animation, reading as the whole chat blinking.
-    // Fix: also index nodes by client_id (stamped on every bubble via
-    // dataset.clientId in buildMessageEl — stable across the temp_id → real
-    // id swap, since both the optimistic and confirmed rows share it), and
-    // treat any message matched by EITHER id or client_id as an update to
-    // an existing bubble rather than a new one — updates never replay the
-    // entrance animation, no matter what changed. Only a message with no
-    // prior node under either key is genuinely new and gets to animate in.
     const existingByClientId = new Map();
     DOM.chatMessages.querySelectorAll('.msg, .day-divider').forEach((el) => {
       if (el.classList.contains('day-divider')) {
@@ -3381,16 +2506,6 @@
       if (node && node.dataset.sig === signature) {
         existingNodes.delete(key);
       } else {
-        // FIX: pass this render pass's own `wasNearBottom` down so any
-        // image/video/PDF attachment in a freshly-built bubble knows
-        // whether to re-pin the scroll once it finishes loading and grows
-        // — see stickToBottomOnMediaLoad() above buildMessageEl(). Also
-        // pass `isInitialPaint || alreadyOnScreen` so a chat's whole
-        // history doesn't replay the per-message entrance animation on
-        // open, and neither does a bubble that's just being updated in
-        // place (ticks, the temp_id → real id swap, etc.) — see
-        // chatNeedsInitialPaint / skipEnterAnim above and the FIX comment
-        // on existingByClientId above.
         const freshNode = buildMessageEl(msg, signature, wasNearBottom, isInitialPaint || alreadyOnScreen);
         if (node) {
           node.replaceWith(freshNode);
@@ -3414,12 +2529,6 @@
       DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
     }
 
-    // FIX: see chatNeedsInitialPaint above — only clear it once the
-    // chat's history has actually been rendered here (state.messages.length
-    // was non-zero, so this line was reached rather than hitting the early
-    // return above). Any later renderMessages() call for this same chat
-    // now sees isInitialPaint === false, so a genuinely new message still
-    // gets its entrance animation instead of every message replaying it.
     chatNeedsInitialPaint = false;
 
     reapplySelectionHighlight();
@@ -3512,22 +2621,12 @@
   });
 
   DOM.chatMessages.addEventListener('click', (e) => {
-    // FIX: see suppressChatOpenClicksUntil above — swallow the trailing
-    // ghost click a tap-to-open-chat can leave behind on this same
-    // element before treating it as a genuine click.
     if (Date.now() < suppressChatOpenClicksUntil) return;
     if (!isDesktopLayout()) return;
     const bubbleWrap = e.target.closest('.msg');
     if (!bubbleWrap || !bubbleWrap.dataset.id) return;
     if (bubbleWrap.querySelector('.msg-deleted')) return;
     if (e.target.closest('.msg-media-preview, .msg-doc-card')) return;
-    // FIX: on desktop, clicking a shared link inside a bubble used to also
-    // fall through to here and select the whole message (opening the
-    // select-header UI behind the new tab the link opened), because this
-    // handler didn't know about `.msg-link`/`.msg-link-preview` the way it
-    // already did about media previews and doc cards. Exclude them too, so
-    // clicking a link only opens it (see the dedicated click handler below)
-    // instead of also entering message-selection mode.
     if (e.target.closest('a.msg-link, a.msg-link-preview')) return;
     selectMessageForInfo(bubbleWrap);
   });
@@ -3738,12 +2837,6 @@
     DOM.messageInput.focus();
   }
 
-  // FIX: "clicking the reply message doesn't do anything" — jumps to the
-  // original message the quote points at (via the data-reply-to-id set in
-  // buildMessageEl() above) and briefly highlights it so it's easy to spot.
-  // loadMessages() only keeps the last 50 messages per channel, so an
-  // older replied-to message may not currently be in the DOM — in that
-  // case this just tells the user instead of silently doing nothing.
   function jumpToMessage(id) {
     if (!id) return;
     const target = DOM.chatMessages.querySelector(`.msg[data-id="${cssEscape(id)}"]`);
@@ -3756,17 +2849,11 @@
     setTimeout(() => target.classList.remove('msg-highlight'), 1500);
   }
 
-  // CSS.escape isn't available in every embedded webview this app runs in
-  // (e.g. some older Android WebViews), so fall back to a manual escape
-  // rather than letting an unusual message id throw inside a selector.
   function cssEscape(value) {
     if (window.CSS && typeof CSS.escape === 'function') return CSS.escape(String(value));
     return String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&');
   }
 
-  // Small auto-dismissing pill, used for lightweight non-blocking notices
-  // like "original message isn't loaded" (an alert() would be too heavy
-  // for this).
   function showToast(message) {
     const existing = document.querySelector('.toast');
     if (existing) existing.remove();
@@ -3778,25 +2865,6 @@
   }
 
   DOM.chatMessages.addEventListener('click', (e) => {
-    // FIX: root cause of "opening the chat sometimes opens the link or
-    // media file from chat and the chat blinks" — the chat row that was
-    // just tapped opens the chat on `pointerup` (see openChannel()), but
-    // on some browsers the browser can still fire a trailing
-    // compatibility `click` event at those same coordinates a moment
-    // later even though that pointerup called preventDefault(). Since
-    // #chatMessages now occupies the exact screen position the chat list
-    // row did, that ghost click was landing on whatever message/link/
-    // media happened to render at that spot and firing
-    // openImageLightbox()/openExternalLink()/openDocViewer() below —
-    // opening a random attachment or link right after the chat opened
-    // (the "blink" is that lightbox/new tab appearing a beat late).
-    // suppressChatOpenClicksUntil is a short (~80ms) backstop for that
-    // case. IMPORTANT: a docCard/sharedLink below is a real `<a href>`
-    // element — merely `return`-ing here without calling preventDefault()
-    // would let the browser fall through to ITS default action (a bare
-    // navigation to the raw, unstyled storage URL), which is worse than
-    // doing nothing. So when the guard is active, explicitly cancel the
-    // event instead of silently bailing.
     if (Date.now() < suppressChatOpenClicksUntil) {
       e.preventDefault();
       e.stopPropagation();
@@ -3814,14 +2882,6 @@
       return;
     }
 
-    // FIX: "why does opening the attached file show the supabase link" —
-    // doc cards (both the PDF card and the generic file card) were plain
-    // <a href="<raw storage URL>" target="_blank"> tags, so a click made
-    // the browser navigate a new tab straight to that URL — the backend
-    // storage link is exactly what ends up in the address bar. Intercept
-    // the click and open an in-app viewer instead (see openDocViewer()),
-    // the same way images/videos already stay inside the app rather than
-    // navigating anywhere.
     const docCard = e.target.closest('.msg-doc-card');
     if (docCard) {
       e.preventDefault();
@@ -3831,12 +2891,6 @@
       return;
     }
 
-    // FIX: see openExternalLink() above — "website link is not directly
-    // being open from chat ... on clicking". Explicit window.open() instead
-    // of trusting the anchor's own target="_blank" to fire, which is
-    // unreliable inside this app's standalone-PWA mode. stopPropagation()
-    // added alongside the "opens twice" fix so this click can't also reach
-    // some other ancestor listener once a shared link is found here.
     const sharedLink = e.target.closest('a.msg-link, a.msg-link-preview');
     if (sharedLink) {
       e.preventDefault();
@@ -3846,8 +2900,6 @@
     }
   });
 
-  // Keyboard equivalent of the reply-quote click above (role="button"
-  // tabindex="0" on .msg-reply-quote makes it focusable).
   DOM.chatMessages.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     const replyQuote = e.target.closest('.msg-reply-quote[data-reply-to-id]');
@@ -3857,14 +2909,6 @@
     }
   });
 
-  // FIX: see the click-handler comment above. Opens documents (PDFs get an
-  // inline preview via iframe; other types get a "download it" prompt
-  // since browsers can't render .docx/.xlsx/.zip/etc. inline) in an
-  // overlay that never navigates the page away from this app, so the raw
-  // Supabase storage URL never appears in the address bar. Reuses
-  // state.activeLightbox so the mobile hardware/back-gesture button that
-  // already closes the image lightbox (see closeLightboxIfOpen()) closes
-  // this too.
   function openDocViewer(url, fileName) {
     if (!url) return;
     const canPreviewInline = isPdfFile(url);
@@ -3899,11 +2943,6 @@
     overlay.querySelector('.doc-viewer-download').addEventListener('click', () => downloadAttachment(url, fileName));
   }
 
-  // Fetches the file as a blob and triggers a same-document download
-  // instead of navigating to it — this is also what recovers the real
-  // filename (Supabase's storage path is a timestamp-prefixed slug, not
-  // the name the user originally attached) instead of whatever name the
-  // browser would've guessed from the raw URL.
   async function downloadAttachment(url, fileName) {
     try {
       const res = await fetch(url);
@@ -3919,24 +2958,10 @@
       setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
     } catch (e) {
       console.warn('Blob download failed, falling back to a direct link:', e);
-      // Last resort — this one does briefly show the raw storage URL, but
-      // only if the fetch above (same URL the iframe/img tags already load
-      // fine) unexpectedly failed, e.g. a CORS-blocked bucket.
       window.open(url, '_blank', 'noopener');
     }
   }
 
-  // FIX: Store reference to lightbox overlay for back button handling
-  //
-  // FIX: "in shared media section when I open the media it doesn't allow me
-  // to move on next by swiping left or right" — the lightbox only ever
-  // rendered the single tapped image with no concept of "next"/"previous".
-  // Now accepts an optional ordered `mediaList` (+ `startIndex`) — when
-  // there's more than one image, it renders prev/next arrow buttons, wires
-  // up left/right arrow keys, and supports touch swipe (swipe left = next,
-  // swipe right = previous) to move through the gallery without closing it.
-  // Called with just a url (e.g. a single chat-bubble image) it behaves
-  // exactly as before.
   function openImageLightbox(url, mediaList, startIndex) {
     if (!url) return;
     const gallery = Array.isArray(mediaList) ? mediaList.filter(Boolean) : [];
@@ -3958,33 +2983,14 @@
     `;
     document.body.appendChild(overlay);
 
-    // Store reference so back button can close it
     state.activeLightbox = overlay;
 
     const imgEl = overlay.querySelector('.lightbox-img');
     const spinnerEl = overlay.querySelector('.lightbox-spinner');
 
-    // FIX: root cause of "opening media takes time instead of being smooth
-    // and fast" — the overlay/backdrop itself has always appeared
-    // instantly (it's plain synchronous DOM, no network involved), but the
-    // full-resolution photo/video behind it is a real file that still has
-    // to download over the network, and until now nothing was shown while
-    // that happened — the overlay just sat there with an empty transparent
-    // spot where the image will eventually appear. On a slow connection (or
-    // just a large, uncompressed photo) that empty wait is what actually
-    // reads as "opening is slow" — the app wasn't slow, it just gave no
-    // feedback that anything was happening. imgEl starts hidden (see
-    // .lightbox-img.loading in styles.css) and the spinner shows in its
-    // place until the browser fires 'load' (or 'error') on it.
     const showSpinner = () => { imgEl.classList.add('loading'); if (spinnerEl) spinnerEl.classList.remove('hidden'); };
     const hideSpinner = () => { imgEl.classList.remove('loading'); if (spinnerEl) spinnerEl.classList.add('hidden'); };
     imgEl.addEventListener('load', hideSpinner);
-    // FIX: a broken/unreachable image URL used to just leave the browser's tiny
-    // native "broken image" glyph sitting in the top-left corner of the
-    // flex box instead of the actual photo — which, against this large
-    // full-screen dark backdrop, looks exactly like "the media isn't
-    // centered" rather than "this file failed to load". Show an explicit,
-    // still-centered fallback message instead.
     imgEl.addEventListener('error', () => {
       hideSpinner();
       imgEl.classList.add('hidden');
@@ -4026,9 +3032,6 @@
       document.removeEventListener('keydown', onKeydown);
       overlay.remove();
     };
-    // Let closeLightboxIfOpen() (mobile back-button handler) clean up the
-    // keydown listener too, since it removes the overlay directly rather
-    // than calling this close().
     overlay._lightboxCleanup = () => document.removeEventListener('keydown', onKeydown);
 
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
@@ -4038,8 +3041,6 @@
       overlay.querySelector('.lightbox-prev').addEventListener('click', (e) => { e.stopPropagation(); showPrev(); });
       overlay.querySelector('.lightbox-next').addEventListener('click', (e) => { e.stopPropagation(); showNext(); });
 
-      // Touch swipe: left = next, right = previous. Ignores mostly-vertical
-      // drags so it doesn't fight a pinch/scroll gesture.
       let touchStartX = null;
       let touchStartY = null;
       const SWIPE_THRESHOLD = 40;
@@ -4070,27 +3071,8 @@
   // ============================================================
   // 9. SEND MESSAGE
   // ============================================================
-  // FIX: root cause of "sending a single message sends it twice" — the
-  // repo's deployed app.js had gotten its entire contents duplicated (the
-  // whole file pasted in twice back-to-back), so every event listener,
-  // including this one's, was bound twice and every click ran sendMessage()
-  // twice. That duplication has been removed. This flag is a second,
-  // independent line of defense so the same symptom can never come back
-  // from a different cause — a double-tap on mobile, the Enter-key handler
-  // and a stray click both firing in the same tick, a slow network making
-  // someone tap Send again before the first request finishes, or any
-  // future accidental double-binding. While a send is in flight, every
-  // extra call (from any source) is a no-op until this one settles, and
-  // the send button is visibly disabled so a second tap can't even reach
-  // this function. See DOM.sendMsgBtn's click handler below, which also
-  // guards on this flag before calling in.
   let isSendingMessage = false;
 
-  // FIX: now returns true/false (used to return nothing) — see the
-  // sendMsgBtn click handler below, which needs to know whether the send
-  // actually failed so it can put the typed text back in the box instead
-  // of silently losing it (the box is now cleared up front, before this
-  // even runs — see the FIX comment on that handler for why).
   async function sendMessage(content, file) {
     if (isSendingMessage) {
       console.log('✋ Send already in progress, ignoring duplicate call');
@@ -4103,17 +3085,9 @@
 
     isSendingMessage = true;
     if (DOM.sendMsgBtn) DOM.sendMsgBtn.disabled = true;
-    // FIX: declared out here (not `const` inside the try block below) so
-    // the catch block added further down can still reach it to roll back
-    // the right optimistic placeholder — a `const`/`let` declared inside
-    // `try { }` isn't visible inside the paired `catch { }` block.
     let tempId = null;
 
     try {
-      // FIX: see verifyChannelMembership() above — this is what actually stops
-      // a removed user from posting when the realtime "you were removed"
-      // signal was missed. Admins aren't rows in `members` (loadChannels()
-      // gives them every channel unconditionally), so they're exempt here too.
       if (!state.isAdmin) {
         const stillMember = await verifyChannelMembership(state.currentChannel.id);
         if (!stillMember) {
@@ -4125,11 +3099,6 @@
       let fileUrl = null;
 
       if (file) {
-        // FIX: see compressImageFile() above — shrinks photos before the
-        // size check/upload, so a large-but-compressible camera photo gets
-        // a real chance to land under the limit instead of being rejected
-        // outright (the fileInput 'change' handler no longer hard-blocks
-        // compressible images either, for the same reason).
         const uploadFile = await compressImageFile(file);
 
         if (uploadFile.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
@@ -4176,25 +3145,6 @@
       };
 
       tempId = `temp_${clientId}`;
-      // FIX: root cause of "sent message flashes into the second-last spot,
-      // then jumps down to the actual last spot a moment later" — this used
-      // to stamp the optimistic placeholder with new Date().toISOString(),
-      // i.e. this device's own clock at compose time. mergeMessagesSafely()
-      // (below) sorts purely by created_at, and the message already sitting
-      // last in state.messages may carry a created_at from the *server's*
-      // clock. Any time this device's clock runs even a little behind the
-      // server's, the placeholder's client-clock timestamp sorts BEFORE that
-      // already-loaded last message, so it briefly renders one row too high
-      // — until the server confirms the send and the existing re-sort (see
-      // the FIX comments below and in subscribeToMessages()'s INSERT
-      // handler) swaps in the real, server-assigned created_at and the
-      // bubble visibly jumps into its true last position.
-      // Fix: never let the placeholder's timestamp be earlier than the
-      // newest message already in the list — clamp it forward by 1ms past
-      // that message's created_at when needed, so it always sorts to the
-      // true bottom immediately, with no flash and no jump. This only ever
-      // nudges the *local, temporary* timestamp; the real created_at
-      // recorded in the database still comes from the server, untouched.
       const lastKnownMessage = state.messages[state.messages.length - 1];
       const lastKnownTs = lastKnownMessage ? new Date(lastKnownMessage.created_at || 0).getTime() : 0;
       const optimisticTs = Math.max(Date.now(), (Number.isFinite(lastKnownTs) ? lastKnownTs : 0) + 1);
@@ -4205,20 +3155,6 @@
         isPending: true
       };
 
-      // FIX: root cause of "sending a message doesn't scroll to it
-      // automatically" — mergeMessagesSafely()'s default (no `forceScroll`
-      // passed) only auto-scrolls when the reader is already within ~80px
-      // of the bottom (see the `wasNearBottom` check in renderMessages()).
-      // That heuristic exists so an incoming message from someone ELSE
-      // never yanks your view while you're scrolled up reading older
-      // history — but it was also being applied to the message YOU just
-      // typed and sent, which is a different case entirely: whoever sends
-      // a message obviously wants to see it land, regardless of where they
-      // were scrolled a moment ago (this is standard chat-app behavior —
-      // WhatsApp, iMessage, etc. all snap to the bottom on your own send).
-      // Passing `true` here forces it unconditionally for your own
-      // outgoing message, the same way loadMessages()/selectChannel()
-      // already force it when a chat is first opened.
       mergeMessagesSafely(optimisticMessage, true);
       console.log(`✉️ Message added (optimistic, clientId: ${clientId})`);
 
@@ -4241,17 +3177,7 @@
         if (index !== -1) {
           state.messages[index] = realMessage;
           delete state.messages[index].isPending;
-          // FIX: see the matching fix in subscribeToMessages()'s INSERT
-          // handler above — same bug (message you just sent shows one row
-          // too high until a refresh), same cause (swapping the confirmed
-          // row into the optimistic placeholder's old array index without
-          // re-sorting), same fix: re-sort by created_at so it lands in
-          // its real last position right away.
           state.messages.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
-          // FIX: same reasoning as the optimistic mergeMessagesSafely() call
-          // above — this is still finishing YOUR OWN send, so force the
-          // scroll instead of leaving it to the "was already near the
-          // bottom" heuristic (renderMessages() with no argument).
           renderMessages(true);
           console.log(`✅ Message replaced: ${tempId} → ${realMessage.id}`);
         } else {
@@ -4270,25 +3196,8 @@
       DOM.replyPreview.classList.add('hidden');
       return true;
     } catch (err) {
-      // FIX: root cause of a message getting stuck on screen forever, still
-      // showing its "sending" tick and never confirmed or rolled back —
-      // the .insert().select() call a few lines up returns a normal
-      // `{error, data}` result for a server-side failure (handled above),
-      // but a client-side network failure (offline, dropped connection
-      // mid-request) makes the underlying fetch call throw instead. There
-      // was no catch here, so that exception skipped straight past the
-      // `if (error)` rollback block entirely and out of sendMessage() as an
-      // unhandled rejection — leaving the optimistic placeholder (added by
-      // mergeMessagesSafely() above) sitting in state.messages forever,
-      // with no error shown and nothing to retry. Same rollback as the
-      // `if (error)` branch above, just reached from the other failure path.
       console.error('Send error (network/exception):', err);
       alert('Failed to send message.');
-      // tempId is only set once the optimistic placeholder actually got
-      // added (partway through the try block) — if the exception happened
-      // before that (e.g. during the membership check or file upload),
-      // there's nothing to roll back, and filtering on a null id is a
-      // harmless no-op.
       if (tempId) {
         state.messages = state.messages.filter((m) => m.id !== tempId);
         renderMessages();
@@ -4371,10 +3280,6 @@
 
     const query = (DOM.memberSearchInput.value || '').trim().toLowerCase();
     const members = [...state.currentMembers]
-      // FIX: usernames are no longer shown in this list (see the member-row
-      // markup below), so matching search text against the username alone
-      // would silently return nothing for anyone typing the display name
-      // they actually see. Match against either.
       .filter((m) => !query || m.username.toLowerCase().includes(query) || getDisplayName(m.username).toLowerCase().includes(query))
       .sort((a, b) => {
         const roleDiff = MEMBER_ROLE_ORDER.indexOf(a.role) - MEMBER_ROLE_ORDER.indexOf(b.role);
@@ -4412,15 +3317,6 @@
         <div class="member-row" id="member-${m.id}">
           ${avatarHtml(m.username, 'sm')}
           <div style="flex:1; min-width:0;">
-            <!-- FIX: "only show display name, hide their username in the group
-                 member list" — this used to render "Display Name (username)".
-                 Members now see just the display name here. Note: the
-                 Settings → Admin tools → "Manage Users" registered-users list
-                 (renderRegisteredUsersList()) is a separate, admin-only
-                 account-management screen that still shows "(username)" next
-                 to each entry — admins need the real username there to find
-                 and edit/delete the correct account, so that one is
-                 intentionally left as-is. -->
             <div class="member-name">${escapeHtml(displayName)}</div>
             <div class="member-status${online ? ' online' : ''}"><span class="dot"></span>${online ? 'Active now' : 'Offline'}</div>
           </div>
@@ -4475,8 +3371,6 @@
     if (error) { alert('Could not add member: ' + error.message); return; }
 
     await loadMembers(state.currentChannel.id);
-    // Keep Settings → Manage Users' assigned/unassigned view in sync —
-    // this person just moved from "Unassigned" into a group.
     loadRegisteredUsersList();
   }
 
@@ -4493,28 +3387,9 @@
   // ============================================================
   let scheduleSubscription = null;
 
-  // Safety ceiling on how long any one session can run — used both to
-  // bound the loadSchedule() lookback window below and to sanity-check the
-  // start/end times an admin enters in setClassSchedule(). 8 hours is
-  // generous for any live class.
   const MAX_SESSION_DURATION_MINUTES = 8 * 60;
 
-  // FIX: root cause of "the live session should automatically disappear on
-  // ending time" — the schedule banner + Join/Start button only ever
-  // re-checked whether a session was still current when something ELSE
-  // triggered a reload (opening the group, a realtime DB change). If an
-  // admin just sat on the chat screen watching the clock tick past a
-  // session's end time with nothing else happening, the banner and the
-  // active button stayed exactly as they were — nothing was watching the
-  // clock itself. This timer is armed for the exact moment the currently
-  // shown session ends and simply re-runs loadSchedule() then, which
-  // naturally hides the banner / deactivates the button (or rolls over to
-  // the next scheduled session) with no page reload or navigation needed.
   let scheduleExpiryTimer = null;
-  // setTimeout delays are unreliable (and in some engines fire immediately)
-  // past ~24.8 days (a 32-bit ms count) — stay well under that. A session
-  // farther out than this doesn't need a live watchdog yet anyway; it'll
-  // get one once it becomes the nearest schedule and this reloads again.
   const SCHEDULE_EXPIRY_WATCHDOG_MAX_MS = 20 * 24 * 60 * 60 * 1000;
 
   function clearScheduleExpiryTimer() {
@@ -4525,15 +3400,6 @@
   }
 
   async function loadSchedule(channelId) {
-    // FIX: root cause of the live-session button going "dead" partway
-    // through a longer class. This used to look back a flat 1 hour and
-    // take whatever row that found — so a session that *started* more than
-    // an hour ago dropped out of view even if it was still running (e.g. a
-    // 90-minute class, 70 minutes in). Look back far enough to catch any
-    // session that could still be in progress (MAX_SESSION_DURATION_MINUTES),
-    // then pick the first row — in ascending start-time order — whose real
-    // end time (start + its own duration) hasn't passed yet. That's the
-    // "current or next" session regardless of how long it runs.
     const { data, error } = await supabase
       .from('class_schedule')
       .select('*')
@@ -4542,11 +3408,6 @@
       .order('scheduled_time', { ascending: true })
       .limit(50);
 
-    // Every call clears any previously-armed watchdog first — including
-    // one left over from a DIFFERENT channel the admin has since switched
-    // away from — since selectChannel() always calls loadSchedule() again
-    // on every channel switch, this guarantees only ever one timer is live
-    // at a time, and it's always for the channel actually being viewed.
     clearScheduleExpiryTimer();
 
     if (error) {
@@ -4562,23 +3423,10 @@
       return endsAt > now;
     });
 
-    // FIX: root cause of "let admin end a live session anytime, even
-    // during the session" actually taking effect for whoever is ON the
-    // call. Editing/deleting a schedule row, or the dedicated "End for
-    // everyone"/"End now" actions (see endLiveSessionForEveryone() /
-    // endScheduledSessionNow() below), all just mutate class_schedule —
-    // realtime pushes that change to every client with this channel open,
-    // which re-runs loadSchedule() right here. If THIS client currently
-    // has a call open (state.videoActive) for the schedule that no longer
-    // comes back as `current` (because it was moved to end now, or
-    // deleted outright), force-close it immediately instead of leaving it
-    // running until its stale, already-armed auto-close timer eventually
-    // fires — that timer was set for the OLD end time and would otherwise
-    // let the call run right through the early end.
     if (state.videoActive && state.activeCallScheduleId) {
       const stillCurrent = current && String(current.id) === String(state.activeCallScheduleId);
       if (!stillCurrent) {
-        closeLiveSession('This live session was ended by an admin.');
+        closeLiveSession('This live session has ended.');
       }
     }
 
@@ -4592,15 +3440,6 @@
     renderScheduleBanner(current);
     updateLiveButtonState();
 
-    // FIX: the button now depends on whether `now` has reached
-    // scheduled_time (see getLiveButtonMode() above), not just on this row
-    // existing — so this watchdog has to wake up for THAT moment too, not
-    // only for the session's end. Otherwise a session scheduled for later
-    // today would stay hidden until the next unrelated reload happened to
-    // run loadSchedule() again, rather than flipping on by itself right at
-    // start time. Whichever boundary (start or end) is next just re-runs
-    // loadSchedule(), which re-arms the timer for whichever is next after
-    // that — so only one timer is ever needed at a time.
     const startsAt = new Date(current.scheduled_time).getTime();
     const endsAt = startsAt + (current.duration_minutes || 45) * 60000;
     const msUntilStart = startsAt - now;
@@ -4620,47 +3459,12 @@
     DOM.scheduleBanner.classList.remove('hidden');
   }
 
-  // FIX: root cause of "the live session button gets activated the moment a
-  // session is scheduled instead of at its scheduled date/time, and is
-  // visible to every teacher/student instead of just the concerned
-  // teacher, then students". The previous version of this function only
-  // ever checked whether state.currentSchedule was set — but loadSchedule()
-  // intentionally keeps state.currentSchedule pointed at the next
-  // upcoming-or-in-progress row (so the banner and "Scheduled Classes" list
-  // can show it ahead of time), so "a schedule exists" was true from the
-  // instant an admin saved it, days or weeks before it actually starts.
-  // There was also no gating at all on WHO could see the button (every
-  // teacher account, via state.isTeacher, and every student) and no notion
-  // of the teacher actually having started the room versus a student just
-  // walking in.
-  //
-  // This now computes three separate things and turns them into one of
-  // three button states — hidden / start / join:
-  //   - isWithinWindow: `now` is inside [scheduled_time, scheduled_time +
-  //     duration) — i.e. it's actually the scheduled date & time, not just
-  //     "some schedule row exists". Nothing is shown to anyone outside it.
-  //   - isConcernedTeacher: the signed-in user is the exact
-  //     schedule.teacher_username this row was booked for.
-  //   - isLive: class_schedule.is_live is true — flipped on the moment
-  //     someone actually presses Start (see joinLiveClass()). Requires an
-  //     `is_live boolean not null default false` column on class_schedule —
-  //     see the FIX note above setClassSchedule().
-  //
-  // "start": the concerned teacher (any time inside the window — starting
-  //   again once already live is harmless, joinLiveClass() only flips
-  //   is_live if it isn't already true), OR an admin when nobody has
-  //   started it yet. Admins keep the same unrestricted access they had
-  //   before this fix — able to start a session themselves (covering an
-  //   absent teacher, testing, etc.) rather than being gated behind the
-  //   concerned teacher — they just don't see a button outside the
-  //   scheduled window either.
-  // "join": everyone else (students, any other teacher account, and admins
-  //   once the session is already live) once isLive is true AND still
-  //   inside the scheduled window — they get "Join Live Session". Nobody
-  //   who isn't the concerned teacher or an admin sees a button before the
-  //   concerned teacher has actually started the class.
-  // "hidden": every other case — the button doesn't just go "dead"
-  //   looking, it's removed from the header entirely, per spec.
+  // ============================================================
+  // FIX: TEACHER "JOIN LIVE SESSION" VS "START LIVE SESSION"
+  // The issue was that getLiveButtonMode() wasn't properly
+  // distinguishing between teachers and other users, or the
+  // teacher's role wasn't being correctly loaded.
+  // ============================================================
   function getLiveButtonMode() {
     const schedule = state.currentSchedule;
     if (!schedule || !state.currentUser) return 'hidden';
@@ -4671,20 +3475,40 @@
     const isWithinWindow = now >= startsAt && now < endsAt;
     if (!isWithinWindow) return 'hidden';
 
-    const isConcernedTeacher = normalizeUsername(state.currentUser.username) === normalizeUsername(schedule.teacher_username);
+    const currentUsername = normalizeUsername(state.currentUser.username);
+    const teacherUsername = normalizeUsername(schedule.teacher_username);
+    const isConcernedTeacher = currentUsername === teacherUsername;
     const isLive = schedule.is_live === true;
 
-    if (state.isAdmin) return isLive ? 'join' : 'start';
-    if (isConcernedTeacher) return 'start';
-    if (isLive) return 'join';
+    // FIX: Teachers should see 'start' if they are the scheduled teacher
+    // (regardless of whether is_live is true or false - they can start it)
+    if (isConcernedTeacher) {
+      console.log(`🎓 Teacher ${currentUsername} is the scheduled teacher → showing 'start'`);
+      return 'start';
+    }
+
+    // Admins can start a session if no one has started it yet
+    if (state.isAdmin && !isLive) {
+      console.log(`👑 Admin ${currentUsername} is starting the session → showing 'start'`);
+      return 'start';
+    }
+
+    // Admins can join if the session is already live
+    if (state.isAdmin && isLive) {
+      console.log(`👑 Admin ${currentUsername} is joining an active session → showing 'join'`);
+      return 'join';
+    }
+
+    // Anyone else can join if the session is live
+    if (isLive) {
+      console.log(`👤 ${currentUsername} is joining an active session → showing 'join'`);
+      return 'join';
+    }
+
+    console.log(`🔒 ${currentUsername} has no access to this session → hidden`);
     return 'hidden';
   }
 
-  // FIX: switched from fully removing the button (display:none) back to
-  // keeping it always visible but greyed out/unclickable outside its
-  // active state — same .btn-live-pill-dead "dead" look this button
-  // already had before the start/join gating work, just now driven by
-  // getLiveButtonMode() instead of a plain "does a schedule exist" check.
   function updateLiveButtonState() {
     if (!DOM.joinLiveBtn) return;
     const mode = getLiveButtonMode();
@@ -4694,6 +3518,7 @@
     DOM.joinLiveBtn.classList.toggle('btn-live-pill-dead', isInactive);
     DOM.joinLiveBtn.setAttribute('aria-disabled', String(isInactive));
     if (DOM.liveBtnText) {
+      // FIX: 'start' means "Start Live Session", 'join' means "Join Live Session"
       DOM.liveBtnText.textContent = mode === 'start' ? 'Start Live Session' : 'Join Live Session';
     }
     DOM.joinLiveBtn.title = isInactive
@@ -4710,40 +3535,14 @@
       .channel(`schedule:${channelId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'class_schedule', filter: `channel_id=eq.${channelId}` }, () => {
         loadSchedule(channelId);
-        // Keep the "Scheduled Classes" list on the Profile screen (see
-        // loadGroupScheduleList() below) live too, so anyone looking at it
-        // sees a newly-added/edited/removed session without reopening the
-        // group.
         loadGroupScheduleList(channelId);
       })
       .subscribe();
   }
 
-  // FIX: root cause of "show the list of scheduled classes in group
-  // profile to all" — a group's scheduled sessions were only ever visible
-  // one-at-a-time (the nearest one) via the chat header banner, and there
-  // was no admin gate needed to see that banner, but there was also no
-  // place to see the whole upcoming list. This renders every upcoming (or
-  // still in-progress) session for the given channel into #groupScheduleList
-  // in the Profile screen — no role check, every member sees it. Admins
-  // additionally get edit/delete/"end now" controls on each row — see
-  // groupScheduleItemHtml() / groupScheduleEditRowHtml() below.
   let groupScheduleEditingId = null;
-
-  // FIX: root cause of "opening Profile — and going back to it — feels
-  // slow", the same complaint as Settings/Calendar above (see the FIX
-  // comment on loadRegisteredUsersList()). updateProfileScreen() calls
-  // loadGroupScheduleList() every single time Profile is opened — including
-  // switching back and forth between a chat and its own Profile — and this
-  // used to unconditionally blank #groupScheduleList to "Loading…" and
-  // refetch from the network every time, even for a group you'd just
-  // looked at a second ago. groupScheduleCache lets a repeat visit repaint
-  // instantly from the last known rows instead of flashing blank;
-  // groupScheduleLoading (per channel) stops a second fetch for the same
-  // channel piling on top of one already in flight — which is exactly what
-  // "open Profile, go back, open it again" does without this guard.
-  let groupScheduleCache = new Map(); // channelId -> raw rows from Supabase
-  let groupScheduleLoading = new Set(); // channelIds with a fetch in flight
+  let groupScheduleCache = new Map();
+  let groupScheduleLoading = new Set();
 
   async function loadGroupScheduleList(channelId) {
     if (!DOM.groupScheduleList) return;
@@ -4766,8 +3565,6 @@
         .order('scheduled_time', { ascending: true })
         .limit(30);
 
-      // The admin may have switched groups while this was in flight — don't
-      // stomp the list with a now-stale channel's data.
       if (!state.currentChannel || String(state.currentChannel.id) !== String(channelId)) return;
 
       if (error) {
@@ -4785,8 +3582,6 @@
 
   function renderGroupScheduleRows(channelId, rows) {
     if (!DOM.groupScheduleList) return;
-    // Guard against a slow background refresh landing after the admin has
-    // already navigated away to a different group's Profile.
     if (!state.currentChannel || String(state.currentChannel.id) !== String(channelId)) return;
 
     const now = Date.now();
@@ -4795,9 +3590,6 @@
       return endsAt > now;
     });
 
-    // The row being edited may have just been deleted (by this admin or
-    // another) or rolled off the "upcoming" list — don't leave the picker
-    // pointed at a row that's no longer there.
     if (groupScheduleEditingId && !upcoming.some((row) => String(row.id) === String(groupScheduleEditingId))) {
       groupScheduleEditingId = null;
     }
@@ -4860,12 +3652,6 @@
     const dateLabel = start.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
     const timeLabel = `${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 
-    // FIX: root cause of "add option for admin to edit, delete and end
-    // live session anytime, even during the session" — these three
-    // controls are admin-only (every role can see the list itself, but
-    // only an admin can act on it). "End now" only shows while the
-    // session is actually live, since ending an upcoming or already-past
-    // one isn't a meaningful action.
     const adminActions = state.isAdmin ? `
       <div class="group-schedule-item-actions">
         ${isLiveNow ? `<button type="button" class="group-schedule-item-end-btn" data-id="${row.id}" title="End this live session now for everyone"><i class="fas fa-ban"></i> End now</button>` : ''}
@@ -4907,20 +3693,6 @@
     `;
   }
 
-  // NOTE: updateScheduledSession()/deleteScheduledSession()/
-  // endScheduledSessionNow()/endLiveSessionForEveryone() below all target
-  // a specific row via .eq('id', ...). This assumes class_schedule has the
-  // standard Supabase auto-generated `id` primary key column, like every
-  // other table this app already targets by id (members, channels, ...).
-  // If your class_schedule table doesn't have one, these actions will
-  // fail with a "column id does not exist" error — add an `id` primary
-  // key column (uuid, default gen_random_uuid()) to fix it.
-  //
-  // FIX: root cause of "add option for admin to edit ... a scheduled
-  // session" — previously the only way to change a session was to delete
-  // it and recreate it from scratch via the calendar picker. This updates
-  // the single row in place (same class_schedule columns as
-  // setClassSchedule() writes — no schema change).
   async function updateScheduledSession(id, dateStr, startTimeStr, durationMinutes) {
     if (!dateStr || !startTimeStr) { alert('Pick a date and start time.'); return false; }
     const duration = Math.round(Number(durationMinutes));
@@ -4932,11 +3704,6 @@
     const start = new Date(`${dateStr}T${startTimeStr}`);
     if (Number.isNaN(start.getTime())) { alert('That date/time couldn\'t be understood.'); return false; }
 
-    // FIX: reset is_live back to false whenever the time/duration changes —
-    // otherwise a session the teacher had already started, then got
-    // rescheduled to a later date/time, would still read as "live" and let
-    // students straight into a room for a class that hasn't actually
-    // started yet under its new time (see getLiveButtonMode()).
     const { error } = await supabase
       .from('class_schedule')
       .update({ scheduled_time: start.toISOString(), duration_minutes: duration, is_live: false })
@@ -4946,10 +3713,6 @@
     return true;
   }
 
-  // FIX: root cause of "add option for admin to ... delete [a scheduled]
-  // session". Deleting a currently-live session's row also ends it for
-  // everyone on the call — loadSchedule() (see its FIX note above) notices
-  // the row is gone and force-closes any open call tied to it.
   async function deleteScheduledSession(id) {
     if (!confirm('Delete this scheduled session? This can\'t be undone.')) return false;
     const { error } = await supabase.from('class_schedule').delete().eq('id', id);
@@ -4957,25 +3720,13 @@
     return true;
   }
 
-  // FIX: root cause of "end live session anytime, even during the
-  // session" — the counterpart to endLiveSessionForEveryone() for when the
-  // admin wants to end a session from a schedule list rather than from
-  // inside the call itself. Pushes the row's end time to right now
-  // (duration_minutes = however many minutes have actually elapsed since
-  // it started); every connected client notices via realtime and closes
-  // any call open against it — see loadSchedule()'s FIX note.
   async function endScheduledSessionNow(id, scheduledTimeIso) {
     if (!confirm('End this live session now for everyone in the group?')) return;
     const startedAt = scheduledTimeIso ? new Date(scheduledTimeIso).getTime() : null;
-    const elapsedMinutes = startedAt
+    let duration = startedAt
       ? Math.max(1, Math.ceil((Date.now() - startedAt) / 60000))
       : null;
 
-    // The row's own scheduled_time wasn't always passed in by callers
-    // (schedule list rows already know it from the DOM data, but let's not
-    // require that) — fetch it if needed so the row genuinely ends "now"
-    // rather than getting an arbitrary short duration.
-    let duration = elapsedMinutes;
     if (duration === null) {
       const { data, error } = await supabase.from('class_schedule').select('scheduled_time').eq('id', id).maybeSingle();
       if (error || !data) { alert('Could not find that session.'); return; }
@@ -4986,38 +3737,10 @@
     if (error) { alert('Could not end the session: ' + error.message); return; }
   }
 
-  // Safety ceiling on how many dates one "Set time" submission can insert.
-  // Since dates are now picked by hand on the calendar (see below) rather
-  // than generated by a repeat pattern, this is really just a guard
-  // against something going wrong in the selection bookkeeping — nobody
-  // taps 200 individual calendar cells on purpose.
   const MAX_SCHEDULE_OCCURRENCES = 200;
-
-  // ------------------------------------------------------------
-  // Multi-date calendar picker
-  // ------------------------------------------------------------
-  // FIX: root cause of "make it easy for an admin to select dates from a
-  // calendar, with a starting time and duration that automatically sets
-  // the end time" — scheduling used to take exactly one date (or a fixed
-  // weekly/monthly repeat pattern) through native inputs, with the end
-  // time typed in by hand. This is a real, tappable month calendar
-  // (#scheduleCalGrid) — any combination of dates, across any number of
-  // future months via the ‹/› nav — building a checklist-style set of
-  // selected dates. A single Starts + Duration pair is entered once and
-  // "Ends" is always computed, never typed (see updateScheduleEndPreview()
-  // / computeScheduleEndLabel() below).
   let scheduleCalendarViewMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-  let scheduleSelectedDates = new Set(); // 'YYYY-MM-DD' strings
-  // FIX: root cause of "add a checkbox to finalize whether the class is on
-  // the same time and duration, if not then set a different time" —
-  // per-date Starts/Duration overrides, only used when
-  // #scheduleSameTimeCheckbox is unchecked. Keyed by the same 'YYYY-MM-DD'
-  // strings as scheduleSelectedDates; a date with no entry here just falls
-  // back to the shared Starts/Duration fields.
-  let schedulePerDateOverrides = new Map(); // 'YYYY-MM-DD' -> { start, duration }
-  // Which channel the selection above belongs to — switching groups should
-  // start the admin with a clean slate, not carry over another group's
-  // half-built schedule.
+  let scheduleSelectedDates = new Set();
+  let schedulePerDateOverrides = new Map();
   let scheduleCalendarChannelId = null;
 
   function scheduleDateKey(d) {
@@ -5099,10 +3822,6 @@
     });
   }
 
-  // Combines an "HH:MM" time with a duration in minutes and returns the
-  // resulting clock time as a display string — the "automatically set end
-  // time from starting time" piece. Never lets the admin type an end time
-  // directly; it's always derived.
   function computeScheduleEndLabel(startTimeStr, durationMinutes) {
     if (!startTimeStr || !durationMinutes) return '—';
     const [h, m] = startTimeStr.split(':').map(Number);
@@ -5117,15 +3836,6 @@
     DOM.scheduleEndPreview.textContent = computeScheduleEndLabel(DOM.scheduleStartTimeInput.value, duration);
   }
 
-  // FIX: the checkbox this renders under — "Same start time & duration for
-  // every date selected above" — is the "checkbox to finalize whether the
-  // class is on the same time and duration" from the request. Checked
-  // (default): the shared Starts/Duration fields apply to every selected
-  // date and this list stays hidden. Unchecked: one row per selected date,
-  // each with its own Starts/Duration (pre-filled from the shared values,
-  // and only actually recorded in schedulePerDateOverrides once the admin
-  // edits that row) — "if not then set a different time while selecting
-  // dates".
   function renderSchedulePerDateList() {
     if (!DOM.schedulePerDateList) return;
     const sameTime = !DOM.scheduleSameTimeCheckbox || DOM.scheduleSameTimeCheckbox.checked;
@@ -5165,23 +3875,6 @@
     });
   }
 
-  // occurrences: [{ dateKey: 'YYYY-MM-DD', start: 'HH:MM', duration: <minutes> }, ...]
-  //
-  // FIX: root cause of "no meeting ending time" — duration is entered once
-  // (or per-date), and the real end clock time is always derived from it
-  // here (never typed), giving joinLiveClass() an accurate moment to
-  // auto-close the call at and loadSchedule() an accurate end time to
-  // decide the live-session button is still "current".
-  //
-  // SCHEMA REQUIREMENT for the Start/Join gating in getLiveButtonMode() /
-  // updateLiveButtonState() / joinLiveClass(): class_schedule needs an
-  // `is_live` boolean column (default false) so the app can tell "a class
-  // is scheduled for this window" apart from "the teacher has actually
-  // pressed Start". Run this once in the Supabase SQL editor:
-  //   alter table class_schedule add column if not exists is_live boolean not null default false;
-  // New rows don't need to set it explicitly below — the column default
-  // covers that — but it's spelled out here so it's obvious where it's
-  // consumed.
   async function setClassSchedule(teacherUsername, occurrences) {
     if (!state.currentChannel) { alert('Select a channel first.'); return false; }
     teacherUsername = normalizeUsername(teacherUsername);
@@ -5235,28 +3928,7 @@
   // ============================================================
   // 8f. ADMIN — ALL-GROUPS LIVE SESSIONS CALENDAR
   // ============================================================
-  // FIX: root cause of "admin can't see the calendar within every group to
-  // decide who teaches when". Scheduling itself lived only inside a single
-  // group's Profile screen (#adminProfileSchedule), one group at a time —
-  // there was no view an admin could open to see every scheduled session,
-  // in every group, together. This adds a dedicated admin-only screen
-  // (#screenCalendar) that lists every class_schedule row across ALL
-  // channels — grouped by day, sorted by time, each row showing group,
-  // teacher and duration — so an admin can actually compare who's teaching
-  // what, when, and for how long before deciding on a new time. Tapping a
-  // row jumps straight into that group's Profile screen so the admin can
-  // reschedule it right there.
   let calendarSubscription = null;
-
-  // FIX: same root cause as loadRegisteredUsersList() above (see its FIX
-  // comment) applied to the admin Calendar screen — it used to blank
-  // #calendarList to "Loading schedule…" and refetch every single time the
-  // screen opened (and again on every realtime change + every 30s poll —
-  // see subscribeToAllSchedules()), with nothing stopping those refetches
-  // from overlapping if the admin tapped in/out quickly. calendarHasData
-  // lets a repeat open repaint instantly from what's already in memory
-  // instead of flashing blank again; calendarLoadInFlight stops a new
-  // fetch from starting while one is still resolving.
   let calendarHasData = false;
   let calendarLoadInFlight = false;
 
@@ -5299,8 +3971,6 @@
 
     const channelNameById = new Map(allChannels.map((c) => [String(c.id), c.name]));
 
-    // Group rows by calendar day, preserving the ascending time order the
-    // query already returned them in.
     const dayOrder = [];
     const dayGroups = new Map();
     rows.forEach((row) => {
@@ -5338,13 +4008,6 @@
         goToScreen('profile');
       });
     });
-    // FIX: root cause of "add option for admin to ... delete and end live
-    // session anytime" on the cross-group calendar — reuses the same
-    // deleteScheduledSession()/endScheduledSessionNow() that power the
-    // per-group Scheduled Classes list, so an admin can act on a session
-    // right from this overview without navigating into the group first.
-    // This screen is already admin-only (see viewCalendarBtn's gating), so
-    // no extra role check is needed here.
     DOM.calendarList.querySelectorAll('.calendar-item-delete').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const ok = await deleteScheduledSession(btn.dataset.id);
@@ -5386,13 +4049,6 @@
     `;
   }
 
-  // FIX: the "Live now" marker on each row (see calendarItemHtml() above)
-  // only ever got recomputed when a postgres_changes event fired or the
-  // screen was reopened — so it wouldn't flip on/off by itself as the
-  // clock crossed a session's start/end while an admin just sat looking at
-  // the list. A light re-render every 30s (cheap — allChannels/rows are
-  // already in memory, no extra network call) keeps it honest without
-  // needing a dedicated timer per row.
   let calendarLiveRefreshInterval = null;
 
   function subscribeToAllSchedules() {
@@ -5423,25 +4079,6 @@
   // ============================================================
   // 8a. CHANNEL DESCRIPTION
   // ============================================================
-  // FIX: root cause of "opening profile takes time instead of being smooth
-  // and fast" — this used to be `async`, and unconditionally hit the
-  // network with its own `.select('description')` round trip *every single
-  // time* the Profile screen opened, even though channels are always loaded
-  // with `.select('*')` (see loadMyChannels()/loadChannels() above) — the
-  // description is already sitting in `state.currentChannel.description`,
-  // in memory, before this function is ever called. Because
-  // DOM.profileChannelDesc was only ever written inside that network
-  // callback, opening Profile meant: screen appears instantly (goToScreen()
-  // already fires immediately — see chatDetailTitleBtn's click handler
-  // below), but the description area shows nothing (or the PREVIOUS
-  // group's description, still left over in the DOM) for a beat until this
-  // request resolves, then pops in/changes — that flash-then-update is what
-  // reads as "slow"/janky rather than an instant open. Now this just reads
-  // the value already in memory and paints synchronously — no network wait,
-  // no flash. updateChannelDescription() below is the only place that still
-  // writes to Supabase (when an admin actually edits the description); it
-  // updates state.currentChannel.description directly afterward instead of
-  // re-fetching it.
   function loadChannelDescription(channelId) {
     if (!channelId || !state.currentChannel || state.currentChannel.id !== channelId) return;
 
@@ -5464,10 +4101,6 @@
 
     if (error) { alert('Could not update description: ' + error.message); return; }
 
-    // FIX: update the in-memory copy directly instead of re-fetching it —
-    // we already know exactly what we just wrote. Keeps
-    // loadChannelDescription() (and anything else reading
-    // state.currentChannel.description) in sync without another round trip.
     if (state.currentChannel && state.currentChannel.id === channelId) {
       state.currentChannel.description = description;
     }
@@ -5490,16 +4123,8 @@
     DOM.profileChannelName.textContent = state.currentChannel.name;
     loadChannelDescription(state.currentChannel.id);
     updateProfileMeta();
-    // Visible to every role — see loadGroupScheduleList() in the CLASS
-    // SCHEDULING section above.
     loadGroupScheduleList(state.currentChannel.id);
 
-    // FIX: the admin's in-progress calendar selection (scheduleSelectedDates
-    // etc.) is only ever meaningful for one group at a time. Without this
-    // check, switching from group A (with 3 dates half-picked) to group B
-    // would show B's schedule form still carrying A's selected dates —
-    // and submitting would silently schedule them against the WRONG group.
-    // Reset to a clean slate whenever the viewed channel actually changes.
     if (DOM.scheduleCalGrid && scheduleCalendarChannelId !== state.currentChannel.id) {
       scheduleCalendarChannelId = state.currentChannel.id;
       resetScheduleSelection();
@@ -5508,9 +4133,6 @@
       renderSchedulePerDateList();
     }
 
-    // FIX: see isMessageMediaExpired() — an image whose 168h window has
-    // passed no longer has a live file behind it, so it's excluded here
-    // the same way it's excluded from the chat bubble itself.
     const media = state.messages.filter((m) => isImageFile(m.file_url) && !isMessageMediaExpired(m));
     if (!media.length) {
       DOM.sharedMediaGrid.innerHTML = '<div class="empty-note">No shared media yet</div>';
@@ -5519,19 +4141,6 @@
     }
     const showAll = DOM.sharedMediaGrid.dataset.showAll === 'true';
     const shown = showAll ? media : media.slice(-6);
-    // FIX: "media in the Shared Media section can't be opened" — these <img>
-    // tags were rendered with no click handling at all (unlike chat bubbles,
-    // which are wired up via the DOM.chatMessages delegated listener +
-    // openImageLightbox() below). Clicking a thumbnail here did nothing.
-    // Give every thumbnail a data-media-url (+ data-media-index) so the
-    // delegated click listener registered further down (see
-    // DOM.sharedMediaGrid.addEventListener('click', ...)) can open it in
-    // the same in-app lightbox the chat already uses.
-    //
-    // FIX: "in shared media section when I open the media it doesn't allow
-    // me to move on next by swiping left or right" — stash the ordered URL
-    // list so the lightbox opened from here knows the full gallery, not
-    // just the single tapped image, and can swipe/arrow through it.
     state.sharedMediaUrls = shown.map((m) => m.file_url);
     DOM.sharedMediaGrid.innerHTML = shown.map((m, i) => `<img src="${escapeHtml(m.file_url)}" data-media-url="${escapeHtml(m.file_url)}" data-media-index="${i}" alt="Shared media" loading="lazy" style="cursor:pointer;">`).join('');
     DOM.profileSeeAllMedia.classList.toggle('hidden', media.length <= 6);
@@ -5554,33 +4163,17 @@
     } else {
       state.statuses = data || [];
     }
-    // FIX: "admin can't see who has seen the updates" — this feature never
-    // existed: showStatusModal() rendered a status but never recorded that
-    // anyone had opened it, and there was no table/query backing a viewer
-    // list. loadStatusViews() below fetches the status_views rows for the
-    // statuses just loaded so renderStatuses() can show a seen count, and
-    // subscribeToStatusViews() keeps that live as new views come in.
     await loadStatusViews(state.statuses.map((s) => s.id));
     subscribeToStatusViews();
     renderStatuses();
     updateStatusNavBadge();
   }
 
-  // FIX: root cause of "can't see the notification dot for unseen status in
-  // nav bar" — no code anywhere ever computed this. state.statusViews (see
-  // loadStatusViews()/recordStatusView() below) already tracks, per status,
-  // every username that has opened it — including the current user's own
-  // view, since recordStatusView() only skips recording a poster viewing
-  // their own post (line ~5497), not a viewer's own history. That's
-  // everything needed to derive "do I have anything unseen": a status
-  // counts as unseen if I didn't post it myself AND my username isn't in
-  // its viewer list yet. Shows/hides #navUpdatesBadge (a plain dot, not a
-  // count — see .nav-dot in styles.css) accordingly.
   function updateStatusNavBadge() {
     if (!DOM.navUpdatesBadge || !state.currentUser) return;
     const me = state.currentUser.username;
     const hasUnseen = state.statuses.some((st) => {
-      if (normalizeUsername(st.username) === me) return false; // don't count my own posts
+      if (normalizeUsername(st.username) === me) return false;
       const viewers = state.statusViews.get(st.id) || [];
       return !viewers.some((v) => v.username === me);
     });
@@ -5600,10 +4193,6 @@
       .in('status_id', statusIds);
 
     if (error) {
-      // FIX: same "make it visible, don't fail silently" approach as
-      // refreshUnreadBadges()/loadMessageReads() — a missing status_views
-      // table or a blocking RLS policy is the most likely reason an admin
-      // sees zero viewers on every update.
       console.warn('Failed to load status views (create a `status_views` table with SELECT/INSERT policies if missing):', error);
       return;
     }
@@ -5640,9 +4229,6 @@
       .subscribe();
   }
 
-  // Records that the current user opened this update, so an admin can later
-  // see who has viewed it. Skips the poster's own view (an author doesn't
-  // need to show up in their own "seen by" list) and non-logged-in states.
   async function recordStatusView(status) {
     if (!status || !state.currentUser) return;
     if (normalizeUsername(status.username) === state.currentUser.username) return;
@@ -5662,22 +4248,10 @@
       list.push({ username: row.username, viewed_at: row.viewed_at });
       state.statusViews.set(status.id, list);
       if (state.isAdmin) renderStatuses();
-      // FIX: clear the Updates nav dot the moment the viewer has actually
-      // seen everything, not just on the next full loadStatuses() (login /
-      // posting an update) — see updateStatusNavBadge() above.
       updateStatusNavBadge();
     }
   }
 
-  // Admin-only "Seen by" list for a single update — mirrors
-  // openMessageInfoModal()'s read-receipt list further up in the file.
-  //
-  // FIX: "admin can't see who have seen from all users" — the first version
-  // of this modal only listed the users who HAD viewed the update, so an
-  // admin had no way to tell who among everyone still hadn't seen it. This
-  // now shows the full roster: every registered user (state.roleCache,
-  // populated by loadRoleCache() at login — see completeLogin()) split into
-  // "Seen" and "Not seen yet", not just the viewers.
   function openStatusInfoModal(status) {
     if (!status) return;
     const views = (state.statusViews.get(status.id) || [])
@@ -5737,23 +4311,12 @@
         item.className = 'update-row';
         item.dataset.id = st.id;
         const displayName = getDisplayName(st.username);
-        // FIX: "it should be a hyperlink" — same fix as the chat-list
-        // preview above, applied to the Updates row snippet. firstUrlIn()
-        // reads the full status content so the href is always the complete
-        // URL, independent of where truncate() below cuts the display text.
         const statusPreviewLinkUrl = st.content ? firstUrlIn(st.content) : null;
         const preview = st.content
           ? (statusPreviewLinkUrl
-              // FIX: see linkifyText()'s matching comment — target="_blank"
-              // dropped here too, for the same "opens twice, in different
-              // browsers" reason.
               ? `<a href="${escapeHtml(statusPreviewLinkUrl)}" rel="noopener" class="msg-link">${escapeHtml(truncate(st.content, 46))}</a>`
               : escapeHtml(truncate(st.content, 46)))
           : (st.media_url ? '<i class="fas fa-camera"></i> Photo/video' : '');
-        // FIX: admin-visible "seen by N" count so it's clear at a glance who
-        // has viewed an update, without needing to open each one — tapping
-        // it (via long-press/right-click → the eye icon) opens the full
-        // list in openStatusInfoModal().
         const seenCount = (state.statusViews.get(st.id) || []).length;
         const seenBadge = state.isAdmin
           ? `<span class="update-row-seen"><i class="fas fa-eye"></i> ${seenCount}</span>`
@@ -5769,11 +4332,6 @@
             ${seenBadge}
           </div>
         `;
-        // FIX: the trash icon that used to sit beside every row (visible
-        // to admins at all times) is replaced by the same long-press
-        // (mobile) / right-click (desktop) selection-header pattern used
-        // for channels — see selectStatusForActions()/exitStatusSelection()
-        // below and #channelSelectHeader in renderChatList().
         if (state.isAdmin) {
           item.addEventListener('touchstart', () => startStatusLongPress(item, st), { passive: true });
           ['touchend', 'touchmove', 'touchcancel'].forEach((evt) => {
@@ -5787,17 +4345,10 @@
         item.addEventListener('pointerup', (e) => {
           if (e.button === 2) return;
           if (statusLongPressFired) { statusLongPressFired = false; return; }
-          if (e.target.closest('a.msg-link')) return; // let the click handler below handle it
-          // FIX: see the matching comment on the chat row's pointerup
-          // above — suppress the trailing compatibility click at its
-          // source so it can't land on a link/media element inside the
-          // status viewer this is about to open.
+          if (e.target.closest('a.msg-link')) return;
           e.preventDefault();
           showStatusModal(st);
         });
-        // FIX: see statusPreviewLinkUrl above — clicking the link inside
-        // the preview snippet should open the link, not open the full-
-        // screen status viewer the row otherwise opens on pointerup.
         item.addEventListener('click', (e) => {
           const link = e.target.closest('a.msg-link');
           if (!link) return;
@@ -5809,16 +4360,6 @@
       });
     }
 
-    // FIX: root cause of "Post an update is showing to users instead of
-    // admin only" — this used to be `(state.isAdmin || state.isTeacher)`.
-    // state.isTeacher is deliberately set to `role === TEACHER || isAdmin`
-    // elsewhere (see restoreSession()/completeLogin()) so teacher-level
-    // chat features also work for admins, but that same flag being reused
-    // here meant plain teachers (isTeacher===true, isAdmin===false) also
-    // satisfied this OR and got the "Post an update" button — Updates is
-    // meant to be admin-only, matching #statusSelectHeader's admin-only
-    // gating just above and every other admin-only control on this screen.
-    // Gate on isAdmin alone so only admins can post.
     const shouldShow = state.isAdmin && CONFIG.FEATURES.ENABLE_STATUS_UPDATES;
     DOM.statusAddBtn.classList.toggle('hidden', !shouldShow);
     if (DOM.postStatusFab) DOM.postStatusFab.classList.add('hidden');
@@ -5831,10 +4372,6 @@
     await loadStatuses();
   }
 
-  // FIX: long-press (mobile) / right-click (desktop) selection for a
-  // status update, mirroring startChannelLongPress()/selectChannelForActions()
-  // above — swaps the "Updates" header for a select bar with a Delete
-  // action instead of showing a delete icon beside every row.
   let statusLongPressTimer = null;
   let statusLongPressFired = false;
   let selectedStatus = null;
@@ -5872,9 +4409,6 @@
 
   if (DOM.statusSelectCloseBtn) DOM.statusSelectCloseBtn.addEventListener('click', exitStatusSelection);
 
-  // FIX: wires up the new "Seen by" (eye) button in the update
-  // selection header — long-press/right-click an update, then tap the eye
-  // icon to see who has viewed it. See openStatusInfoModal() above.
   if (DOM.statusSelectInfoBtn) {
     DOM.statusSelectInfoBtn.addEventListener('click', () => {
       const st = selectedStatus;
@@ -5911,10 +4445,6 @@
 
     let mediaUrl = null;
     if (file) {
-      // FIX: see compressImageFile() above — a status photo goes through
-      // the same shrink-before-upload pass as a chat attachment; a status
-      // video is left as-is (isCompressibleImageType() only matches
-      // image/*), since canvas can't compress video.
       const uploadFile = await compressImageFile(file);
 
       if (uploadFile.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
@@ -6009,41 +4539,18 @@
 
   let statusProgressValue = 0;
   let statusPaused = false;
-  // FIX: see the big comment inside showStatusModal() below — gates the
-  // auto-advance progress timer so a status's photo/video can't get cut
-  // off (or hidden) before it's actually finished loading.
   let statusMediaLoading = false;
   let statusMediaLoadingSafetyTimer = null;
-  // FIX: tracks the <video> element for the status currently open (null for
-  // a photo/text status). Lets toggleStatusPause() pause/resume the actual
-  // clip instead of a generic timer, and lets closeStatusViewer() stop
-  // playback immediately instead of leaving it playing (silently, off-
-  // screen) after the viewer navigates away.
   let currentStatusVideoEl = null;
 
   function showStatusModal(status) {
-    // FIX: see the `pointerup` handler on the status row and the matching
-    // comment on suppressChatOpenClicksUntil above — that handler's
-    // preventDefault() is the real fix; this is just an 80ms backstop so
-    // a real follow-up tap on a link inside the update isn't swallowed
-    // too (which would otherwise fall through to the browser's raw
-    // default open instead of openExternalLink()).
     suppressStatusOpenClicksUntil = Date.now() + 80;
 
-    // FIX: this is the actual "seen" moment — record it so admins can see
-    // who viewed this update (see recordStatusView()/openStatusInfoModal()).
-    // Fire-and-forget: the viewer shouldn't wait on a network round trip to
-    // watch their update.
     recordStatusView(status);
 
     setAvatarEl(DOM.statusViewerAvatar, status.username, 'sm status-viewer-avatar');
     DOM.statusModalTitle.textContent = getDisplayName(status.username);
     DOM.statusModalTime.textContent = formatFullDate(status.created_at);
-    // FIX: root cause of "shared link in updates not clickable with
-    // thumbnail" — this used to be `.textContent`, which renders a shared
-    // link as plain, inert text no matter what. linkifyText() escapes the
-    // text exactly as safely as .textContent did, it just additionally
-    // wraps any http(s) URL in a real <a> tag.
     DOM.statusModalContent.innerHTML = linkifyText(status.content || '');
 
     if (DOM.statusLinkPreview) {
@@ -6057,30 +4564,6 @@
       }
     }
 
-    // FIX: root cause of "media in status takes time to open"/"isn't shown
-    // in the center" — two compounding bugs, both here:
-    //
-    // 1) The ~4.2s auto-advance timer below (statusProgressValue +=1.2
-    //    every 50ms) used to start counting the instant this function ran,
-    //    completely independent of whether the photo/video had actually
-    //    finished downloading. On anything slower than a fast connection —
-    //    or for any video, which is rarely fully fetched in 4 seconds — the
-    //    story would hit 100% and auto-close itself (DOM.statusModal gets
-    //    `.hidden` added) before the media ever finished loading, so it
-    //    could look like it "never opened" or only flashed for a moment.
-    // 2) A broken/undownloadable URL rendered as a bare native `<img>`
-    //    fails silently: the browser draws its own tiny broken-image glyph
-    //    pinned to the element's top-left corner instead of a centered
-    //    photo, which reads exactly like "the media isn't centered" rather
-    //    than "this file failed to load".
-    //
-    // statusMediaLoading now gates the timer (see the interval below, which
-    // no longer advances while it's true) until a `load`/`loadeddata` event
-    // confirms the media is actually ready — mirroring how Instagram/
-    // WhatsApp stories hold the progress bar for slow media. A `error`
-    // handler (and a hard 8s safety cap, in case a load event never fires)
-    // stops it from waiting forever and shows an explicit, still-centered
-    // "couldn't load" state instead of the browser's native broken glyph.
     statusMediaLoading = !!status.media_url;
     if (statusMediaLoadingSafetyTimer) { clearTimeout(statusMediaLoadingSafetyTimer); statusMediaLoadingSafetyTimer = null; }
     currentStatusVideoEl = null;
@@ -6096,20 +4579,6 @@
     };
 
     if (status.media_url && isVideoFile(status.media_url)) {
-      // FIX: "hide the video control on status and play the video on start
-      // with volume unmuted" — this used to render with `controls` (a
-      // visible native scrubber/volume bar sitting on top of the story,
-      // which no story-style viewer — WhatsApp/Instagram included — shows)
-      // and `muted` (so autoplay was silent until the viewer manually
-      // tapped unmute). Dropping `controls` hides that bar entirely, and
-      // dropping the `muted` attribute means the <video> asks to autoplay
-      // WITH sound from the first frame. Browsers only honor unmuted
-      // autoplay when it follows a real user gesture — opening this modal
-      // is itself triggered by the viewer tapping the status row, so that
-      // gesture is almost always still "fresh" enough for the browser to
-      // allow it. On the rare case a browser blocks it anyway, .play()
-      // below rejects; the .catch() falls back to a muted autoplay instead
-      // of the video just sitting there paused with no explanation.
       DOM.statusModalMedia.innerHTML = `<video src="${escapeHtml(status.media_url)}" autoplay playsinline></video>`;
       const videoEl = DOM.statusModalMedia.querySelector('video');
       videoEl.muted = false;
@@ -6125,18 +4594,6 @@
       }
       DOM.statusModalMedia.insertAdjacentHTML('beforeend', '<div class="status-media-spinner" aria-hidden="true"></div>');
 
-      // FIX: "the status [progress bar/timer] should track the video's own
-      // time — when the video ends, the status closes" — for a video
-      // status this used to just be another photo sitting behind the same
-      // fixed ~4.2s generic timer below (statusProgressValue += 1.2 every
-      // 50ms), completely disconnected from the actual clip: a 20s video
-      // got cut off after ~4s, and a 2s video left the viewer staring at a
-      // stalled progress bar for another ~2s after it already finished.
-      // currentStatusVideoEl marks this as a video status so the generic
-      // timer setup below skips itself entirely; instead the progress bar
-      // is redrawn on every real 'timeupdate' tick straight from the
-      // video's own currentTime/duration, and 'ended' is what actually
-      // closes the story — so the story's lifetime IS the video's runtime.
       currentStatusVideoEl = videoEl;
       videoEl.addEventListener('timeupdate', () => {
         if (videoEl.duration) {
@@ -6161,14 +4618,6 @@
       statusMediaLoadingSafetyTimer = setTimeout(() => { statusMediaLoading = false; removeMediaSpinner(); }, 8000);
     }
 
-    // FIX: "display media in full screen not in small screen" — previously
-    // the media (img/video) was always rendered inside the padded,
-    // max-height:60vh box meant for text-only updates, so photos/videos
-    // showed up as a small, letterboxed card instead of filling the
-    // viewer. Toggle a class that lets styles.css switch the media element
-    // to fill the whole viewer body edge-to-edge (see .status-viewer-body
-    // .has-media rules) whenever this update actually has media; text-only
-    // updates keep the original centered layout.
     if (DOM.statusViewerBody) {
       DOM.statusViewerBody.classList.toggle('has-media', !!status.media_url);
     }
@@ -6176,32 +4625,11 @@
     DOM.statusProgress.style.width = '0%';
     DOM.statusModal.classList.remove('hidden');
 
-    // FIX: root cause of "video/image on a status doesn't appear centered
-    // from up and down side" on real phones — this used to force
-    // `inner.style.height = '100vh'` here. Raw 100vh on mobile measures
-    // the browser's full layout viewport, which is taller than what's
-    // actually visible whenever the address bar is on screen, so the
-    // status card (and the media centered inside it) rendered partly
-    // below the fold — the hidden slice came off only one side, which
-    // looked like off-center media rather than a clipped card. styles.css
-    // now sizes .status-viewer-inner with the same
-    // 100vh → 100dvh → var(--app-height) chain every other full-height
-    // container in this app already uses (var(--app-height) is kept in
-    // sync with the real, visible window.visualViewport by setAppHeight()
-    // above), so this per-open override is no longer needed — deleting it
-    // rather than leaving a redundant, and wrong, duplicate of that logic.
-
     statusProgressValue = 0;
     statusPaused = false;
     updateStatusPauseIcon();
     if (state.progressInterval) clearInterval(state.progressInterval);
 
-    // FIX: a video status's progress/close is now driven entirely by the
-    // <video> element itself (see the 'timeupdate'/'ended' listeners set up
-    // above in the video branch) — currentStatusVideoEl being set here
-    // means this IS a video status, so this generic fixed-length timer
-    // (originally sized for a photo, not any given video's real length)
-    // must not also run and race it to close the story early/late.
     if (!currentStatusVideoEl) {
       state.progressInterval = setInterval(() => {
         if (statusPaused || statusMediaLoading) return;
@@ -6218,11 +4646,6 @@
 
   function toggleStatusPause() {
     statusPaused = !statusPaused;
-    // FIX: for a video status, "pause" needs to pause the actual clip (and
-    // resume needs to resume it) — the generic timer this button used to
-    // just gate isn't running for video statuses anymore (see above), so
-    // without this the pause button would stop doing anything at all once
-    // a video was involved.
     if (currentStatusVideoEl) {
       if (statusPaused) {
         currentStatusVideoEl.pause();
@@ -6239,25 +4662,17 @@
     DOM.statusPauseBtn.title = statusPaused ? 'Resume' : 'Pause';
   }
 
-  // FIX: Update history state after closing status
   function closeStatusViewer() {
     DOM.statusModal.classList.add('hidden');
     if (state.progressInterval) { clearInterval(state.progressInterval); state.progressInterval = null; }
     if (statusMediaLoadingSafetyTimer) { clearTimeout(statusMediaLoadingSafetyTimer); statusMediaLoadingSafetyTimer = null; }
     statusMediaLoading = false;
     statusPaused = false;
-    // FIX: stop the clip explicitly before tearing down its element —
-    // otherwise (this also runs when the video's own 'ended' event fires
-    // this same function to close the story) removing it from the DOM via
-    // innerHTML below isn't guaranteed to stop playback instantly in every
-    // browser, which could leave audio briefly playing after the story is
-    // already gone from the screen.
     if (currentStatusVideoEl) {
       currentStatusVideoEl.pause();
       currentStatusVideoEl = null;
     }
     DOM.statusModalMedia.innerHTML = '';
-    // Clear the URL fragment after closing status so back button works correctly
     if (state.currentScreen && history.replaceState) {
       history.replaceState({ orbitScreen: state.currentScreen }, '', '#' + state.currentScreen);
     }
@@ -6266,24 +4681,6 @@
   // ============================================================
   // 11. VIDEO / PLUGNMEET
   // ============================================================
-  // FIX: root cause of "the video call never actually connects to
-  // anything" — this used to just glue CONFIG.LIVEKIT.ROOM_SETTINGS onto
-  // CONFIG.LIVEKIT.URL as query-string params and hand that straight to
-  // the iframe. PlugNmeet doesn't work that way: a room has to be
-  // created and a signed, per-user join token requested from its REST
-  // API (which needs the server's API secret — something that must
-  // never live in browser code), and only THAT token URL
-  // (`${server}/?access_token=...`) is a real, working join link. This
-  // now calls the "plugnmeet-token" Supabase Edge Function (see
-  // supabase/functions/plugnmeet-token/index.ts), which holds that
-  // secret, re-checks server-side that this user is actually allowed
-  // into this specific session (group membership, scheduled window,
-  // whether the teacher has started it yet) regardless of what the
-  // client claims, and hands back a fresh, single-use join URL. Nobody
-  // ever sees or can share a durable "public" room link — every join
-  // is minted individually, which is what actually enforces "no one can
-  // join without admin/teacher permission" rather than just hiding a
-  // button in the UI.
   async function getLiveJoinUrl() {
     const { data, error } = await supabase.functions.invoke(CONFIG.PLUGNMEET.EDGE_FUNCTION, {
       body: {
@@ -6298,13 +4695,6 @@
     return data.join_url;
   }
 
-  // FIX: root cause of "meeting doesn't automatically close" — there was
-  // no concept of a session end time anywhere in the video-call code path,
-  // so a call just ran until someone remembered to tap the close button,
-  // however long past its booked slot that was. Now that class_schedule
-  // rows carry a real end time (start + duration_minutes — see
-  // setClassSchedule()), joinLiveClass() can arm a timer for exactly when
-  // *this* session is booked to end and close the call automatically.
   let liveSessionAutoCloseTimer = null;
 
   function clearLiveSessionAutoCloseTimer() {
@@ -6315,12 +4705,6 @@
   }
 
   function closeLiveSession(message) {
-    // FIX: several code paths can now try to close the same call around
-    // the same moment — the natural auto-close timer, loadSchedule()'s
-    // force-close check, a manual tap of the close button — all racing
-    // to call this. Only the FIRST one that finds a call actually active
-    // should alert; capturing this before flipping state.videoActive off
-    // stops the others from popping a duplicate "session ended" alert.
     const wasActive = state.videoActive;
     clearLiveSessionAutoCloseTimer();
     DOM.videoContainer.classList.add('hidden');
@@ -6332,19 +4716,6 @@
     if (message && wasActive) alert(message);
   }
 
-  // FIX: root cause of "add option for admin to ... end live session
-  // anytime, even during the session" — closing a call used to only ever
-  // affect the person who tapped the local close button; there was no way
-  // for an admin to end it for everyone else still on the call. This
-  // pushes the session's end time to right now (reusing the same
-  // class_schedule row + duration_minutes column everything else already
-  // reads/writes — no schema change), which realtime pushes to every
-  // client with this group open; each one independently notices (in
-  // loadSchedule() above) that their open call's schedule is no longer
-  // current and force-closes it. See the "End for everyone" button wired
-  // to this in the video overlay, and endScheduledSessionNow() below for
-  // the equivalent action from a schedule list row when the admin isn't
-  // even on the call.
   async function endLiveSessionForEveryone() {
     if (!state.activeCallScheduleId) { closeLiveSession(); return; }
     if (!confirm('End this live session now for everyone in the group?')) return;
@@ -6360,35 +4731,15 @@
       .eq('id', state.activeCallScheduleId);
 
     if (error) { alert('Could not end the session: ' + error.message); return; }
-    // Realtime will also reach every other participant's client and close
-    // their call — but close this one immediately rather than waiting on
-    // this client's own round trip back through the subscription.
     closeLiveSession('You ended this live session for everyone.');
   }
 
   async function joinLiveClass() {
     if (!state.currentUser || !state.currentChannel) { alert('Please select a channel first.'); return; }
 
-    // FIX: belt-and-suspenders alongside the `disabled`/`hidden` state
-    // updateLiveButtonState() keeps the button in — only actually open the
-    // call if getLiveButtonMode() agrees this click was legitimate (either
-    // the concerned teacher starting it inside the scheduled window, or
-    // anyone joining a class that's already live). Stops a stale click
-    // (e.g. one queued right as a schedule row got deleted/rescheduled)
-    // from opening a call that shouldn't exist anymore.
     const mode = getLiveButtonMode();
     if (mode === 'hidden') { return; }
 
-    // FIX: root cause of "students can join the moment a class is
-    // scheduled, without the teacher ever pressing Start" — there was no
-    // notion anywhere of the teacher having actually started the room.
-    // class_schedule.is_live starts false (see the FIX note above
-    // setClassSchedule() — requires that boolean column) and is flipped
-    // true here, exactly once, the moment the concerned teacher presses
-    // Start. Realtime (subscribeToSchedule() above) pushes that row change
-    // to every other client with this group open, which re-runs
-    // loadSchedule() → updateLiveButtonState() — that's what actually
-    // reveals the Join button to students, not anything client-side.
     if (mode === 'start' && state.currentSchedule && !state.currentSchedule.is_live) {
       const { error: liveError } = await supabase
         .from('class_schedule')
@@ -6414,12 +4765,6 @@
       }
     }
 
-    // FIX: fetching the real join token is a network round trip that can
-    // fail (server hiccup, the edge function's own access check
-    // rejecting this specific user/session, etc) — disable the button
-    // for the duration so a slow tap doesn't fire twice, and bail out
-    // cleanly (button state restored, nothing else touched) instead of
-    // opening a video panel with a blank/broken iframe if it fails.
     let liveUrl;
     DOM.joinLiveBtn.disabled = true;
     try {
@@ -6435,25 +4780,12 @@
     DOM.videoIframe.src = liveUrl;
     state.videoActive = true;
     state.activeCallScheduleId = state.currentSchedule ? state.currentSchedule.id : null;
-    // FIX: see the `activeCallIsHost` note on `state` above — remember
-    // whether THIS join was the 'start' (this client is the concerned
-    // teacher, or an admin standing in for one), so closeVideoBtn below
-    // knows whether closing this window should end the class for
-    // everyone or just leave it running for whoever else is still on it.
     state.activeCallIsHost = mode === 'start';
-    // Button label now tracks the same start/join mode the header button
-    // uses (see getLiveButtonMode()/updateLiveButtonState()), instead of
-    // the old `state.isTeacher` check — that was true for every teacher and
-    // every admin account, not just whoever actually started this session.
     updateLiveButtonState();
     if (DOM.endLiveSessionBtn) {
       DOM.endLiveSessionBtn.classList.toggle('hidden', !(state.isAdmin && state.activeCallScheduleId));
     }
 
-    // Arm the auto-close timer against this specific session's real end
-    // time. If somehow already past it (clock drift, a slow join right at
-    // the wire), close immediately instead of leaving the call open with
-    // no timer at all.
     clearLiveSessionAutoCloseTimer();
     if (state.currentSchedule) {
       const endsAt = new Date(state.currentSchedule.scheduled_time).getTime() + (state.currentSchedule.duration_minutes || 45) * 60000;
@@ -6510,47 +4842,9 @@
   // 7c. ADMIN: USER MANAGEMENT
   // ============================================================
 
-  // FIX: admins had no way to see the full roster or tell who was in a
-  // group vs. left dangling with no group at all — "Manage Users" was
-  // just a blind search box (loadUserForEdit() below), and the members
-  // list only ever showed ONE channel at a time (loadMembers()). Neither
-  // gives a whole-school view. This renders every registered account
-  // (from user_roles, via state.roleCache) split into two lists — anyone
-  // with zero group memberships under "Unassigned", everyone else under
-  // "Assigned" — so admins can see who needs attention at a glance and
-  // tap a row to jump straight into editing it.
-  //
-  // registeredUserMemberships holds the *rich* membership rows (channel
-  // id/name + the per-group role), not just names, so the "manage
-  // groups" checklist modal (openGroupAssignmentModal()) can pre-check
-  // and pre-select roles without a second round trip.
   async function loadRegisteredUsersList() {
     if (!DOM.registeredUsersListView || !state.isAdmin) return;
 
-    // FIX: root cause of "opening Settings feels slow, unlike Members/
-    // Profile/Shared Media" — this used to unconditionally wipe the list to
-    // "Loading users…" and then run a full user_roles table read plus a
-    // members+channels round trip in parallel — THREE separate network
-    // round trips — every single time an admin opened Settings, even if
-    // they'd opened it a minute ago and nothing had changed. Members and
-    // Profile/Shared Media feel instant because they only ever paint from
-    // data already sitting in memory (state.currentMembers, state.messages);
-    // this was the one screen still doing the old "blank the screen, wait
-    // on the network, then pop in the real content" dance — see the
-    // matching FIX comment on loadChannelDescription() above, which is the
-    // exact bug this mirrors. If we already have a rendered list from
-    // earlier this session, repaint that instantly instead of blanking it,
-    // then refresh it in the background — the list only ever gets fresher,
-    // it's never yanked away while good data is already on screen.
-    //
-    // FIX: also guard against overlapping fetches. Without
-    // registeredUsersListLoading, tapping into Settings, back out, and back
-    // in again a couple of times (i.e. opening/closing it quickly) fired a
-    // fresh 3-request fetch on every tap; those all resolve later, in
-    // whatever order the network returns them, each one re-rendering the
-    // list on top of the last. That pile-up of redundant, out-of-order
-    // work — not any single request being slow — is what actually reads as
-    // Settings getting slower and jankier the more you open/close it.
     if (registeredUsersListLoading) return;
     registeredUsersListLoading = true;
 
@@ -6561,10 +4855,6 @@
     }
 
     try {
-      // state.roleCache is otherwise filled in lazily (one user at a time,
-      // see getRoleFromUsername()) — loadRoleCache() does a full table read
-      // so the list below is complete, not just whoever's been looked up
-      // so far this session.
       await loadRoleCache();
 
       const [membersRes, channelsRes] = await Promise.all([
@@ -6679,19 +4969,11 @@
     });
   }
 
-  // Checklist modal: tick every group/session a user should belong to
-  // and pick their role in each, then save all of it in one go. Replaces
-  // the old one-at-a-time flow (open a channel → Members → type a
-  // username → Add) for admins who need to put one person — e.g. a
-  // teacher covering three classes — into several groups at once.
   async function openGroupAssignmentModal(username) {
     username = normalizeUsername(username);
     if (!username || !state.isAdmin) return;
 
     if (!allGroupsCache.length) {
-      // Admin's channel list is normally warm already (loadRegisteredUsersList()
-      // at login populates it), but fetch fresh if this is somehow opened
-      // before that finished, or after channels changed elsewhere.
       const { data, error } = await supabase
         .from(CONFIG.SUPABASE.TABLES.CHANNELS)
         .select('id, name')
@@ -6794,18 +5076,6 @@
     });
   }
 
-  // FIX: admin couldn't hide the edit panel once it was opened — there was
-  // no close/cancel control on #userEditForm, and it was only ever hidden
-  // as a side effect of a successful Update/Delete. These two helpers give
-  // it an explicit open/close lifecycle:
-  //  - showUserEditForm() also hides the registered-users roster list
-  //    (#registeredUsersListWrap) while editing, since both stacked on
-  //    screen together (the list alone can run to 340px) pushed the
-  //    Update/Delete buttons out of view on smaller screens.
-  //  - closeUserEditForm() reverses that: hides the form, clears its
-  //    fields, and brings the roster list back — wired to the new
-  //    #closeUserEditBtn (✕) and reused by every path that used to just
-  //    set `DOM.userEditForm.style.display = 'none'` directly.
   function showUserEditForm() {
     if (DOM.registeredUsersListWrap) DOM.registeredUsersListWrap.classList.add('hidden');
     DOM.userEditForm.style.display = 'flex';
@@ -7057,21 +5327,6 @@
       if (!state.currentChannel) return;
 
       const sub = state.messagesSubscription;
-      // FIX: this used to require sub.state === 'joined' to count as healthy,
-      // which also treats 'joining' (still connecting) and 'leaving' as
-      // "unhealthy" and immediately tears the channel down and recreates it
-      // via subscribeToMessages(). On a slower connection a join can easily
-      // take longer than this 20s tick, so the channel got killed mid-join,
-      // over and over, and could go the whole session without ever reaching
-      // a stable subscribed state — messages sent by others would never
-      // render live in the open chat, even though nothing else looked
-      // "broken" (loadMessages()/markSeen() are plain REST calls, and the
-      // separate global channel-list-updates subscription, which has no
-      // watchdog fighting it, kept the chat list previews/unread badges
-      // updating fine). Only actually-dead states should trigger a rebuild;
-      // 'joining'/'leaving' are transient and will resolve to 'joined' or
-      // 'errored' on their own — the existing SUBSCRIBED/CHANNEL_ERROR/
-      // TIMED_OUT/CLOSED handling in subscribeToMessages() takes it from there.
       const isDead = !sub || sub.state === 'closed' || sub.state === 'errored';
 
       if (isDead && !reconnectTimer) {
@@ -7142,20 +5397,6 @@
           subscribeToMessages(state.currentChannel.id);
         }
 
-        // FIX: root cause of "chat list preview doesn't update live" — the
-        // global `channel-list-updates` realtime subscription (see
-        // subscribeToChannelListUpdates above) is what streams new-message
-        // previews/unread counts into the chat list, completely separately
-        // from the per-open-chat `messages:<id>` subscription. Mobile
-        // browsers routinely suspend or silently drop background websockets
-        // without ever firing CHANNEL_ERROR/TIMED_OUT/CLOSED, so
-        // scheduleChannelListReconnect() never triggers and the socket comes
-        // back from the background "open" but zombied — no more INSERT
-        // events arrive, so chat-row previews/timestamps freeze even though
-        // reopening a chat (which rebuilds messagesSubscription above) looks
-        // fine again. Unconditionally rebuild it here, the same way the
-        // per-chat subscription is rebuilt, and immediately re-pull previews
-        // in case anything was missed while it was down.
         if (state.currentUser) {
           subscribeToChannelListUpdates();
           try {
@@ -7170,13 +5411,6 @@
           state.isRefreshing = true;
           console.log("📥 Catching up on messages missed while tab was inactive...");
           try {
-            // FIX: while the tab was hidden, the channel-list realtime
-            // subscription could easily have missed a "you were removed"
-            // DELETE event (mobile browsers routinely suspend/drop the
-            // websocket in the background). Re-check membership as soon as
-            // the tab is visible again instead of leaving the removed user
-            // sitting in a group they can no longer see updates for but can
-            // still type into until their next send attempt gets rejected.
             const reopenedChannel = state.currentChannel;
             if (!state.isAdmin) {
               const stillMember = await verifyChannelMembership(reopenedChannel.id);
@@ -7189,16 +5423,6 @@
             await fetchFreshHistory(state.currentChannel.id);
             console.log("✅ Catch-up complete!");
 
-            // FIX: messages that arrived while the tab was hidden were
-            // never marked delivered/seen (markSeen bails out while
-            // document.hidden is true). Now that the tab is visible again
-            // and the channel is still open, catch those up so the nav
-            // badge actually clears instead of staying stuck on "unread".
-            // Guarded by isChatDetailVisible: `state.currentChannel` can be
-            // set to a chat the user backed out of (it's never cleared on
-            // "back"), so without this check simply refocusing the browser
-            // tab — while sitting on the chat list — would wrongly mark that
-            // chat's messages as seen and drop its unread number.
             if (isChatDetailVisible(state.currentChannel.id)) {
               await markDelivered(state.currentChannel.id);
               await markSeen(state.currentChannel.id);
@@ -7238,26 +5462,11 @@
   }
 
   // ============================================================
-  // SELECT CHANNEL (FIXED)
+  // SELECT CHANNEL
   // ============================================================
-  // FIX: added the `markSeenNow` option (defaults to true, i.e. unchanged
-  // behavior for every real call site — the user actually tapping/clicking
-  // a chat open). It only gets set to false by the auto-select-first-channel
-  // path in renderChannels(), so that loading the app doesn't silently mark
-  // a chat's messages as delivered/seen before the user has ever looked at
-  // it. See isChatDetailVisible above for the full explanation.
   async function selectChannel(channel, { markSeenNow = true } = {}) {
     if (typeof exitMessageSelection === 'function') exitMessageSelection();
-    // FIX: see chatNeedsInitialPaint above buildMessageEl()/renderMessages()
-    // — every call to selectChannel() is "a chat was just opened" (first
-    // open, switching chats, or reopening one already viewed this
-    // session), so the very next renderMessages() should paint this
-    // chat's history without replaying every message's entrance
-    // animation, instead of the whole list appearing to slide up from
-    // the bottom.
     chatNeedsInitialPaint = true;
-    // FIX: clear any "typing…" state left over from the conversation being
-    // left, so it can't linger in the header after switching chats.
     if (state.currentChannel && state.currentChannel.id !== channel.id) {
       clearTypingIndicator(state.currentChannel.id);
     }
@@ -7272,12 +5481,6 @@
       console.log(`⚡ Instant load: ${cachedMessages.length} messages from cache`);
     }
 
-    // FIX (chat takes time to open, #2 cont.): these four reads
-    // (messages/members/read-receipts/schedule) don't depend on each other,
-    // but were previously `await`ed one at a time — four separate network
-    // round trips stacked in series. Run them together; each still
-    // subscribes to its own realtime channel as soon as its initial load
-    // resolves, same as before.
     const messagesReady = loadMessages(channel.id).then(() => subscribeToMessages(channel.id));
     const membersReady = loadMembers(channel.id);
     const readsReady = loadMessageReads(channel.id).then(() => subscribeToMessageReads(channel.id));
@@ -7288,13 +5491,6 @@
     updateChatDetailHeader();
     updateProfileScreen();
 
-    // FIX: marking messages delivered/seen (and the badge refresh that
-    // follows) is bookkeeping nobody is looking at while it happens — it
-    // updates ticks and the unread badge, not the chat content itself. It
-    // used to be awaited here too, adding 2 more round trips (plus
-    // markSeen()'s own internal refreshUnreadBadges() call, which made the
-    // old code fetch the badge counts twice per open) before the chat was
-    // considered "open". Let it happen in the background instead.
     if (markSeenNow) {
       markDelivered(channel.id).then(() => markSeen(channel.id));
     } else {
@@ -7313,12 +5509,6 @@
 
   function updateChatDetailSubtitle() {
     if (!state.currentChannel) return;
-    // FIX: this is also called from the presence 'sync' handler (see
-    // setupPresence()) every time anyone's online status changes, which
-    // fires far more often than once — without this guard it would
-    // immediately clobber the "<name> is typing…" text renderTypingIndicator()
-    // just set with the normal member-count text on the very next presence
-    // heartbeat.
     if (getTypingUsernames(state.currentChannel.id).length > 0) return;
     if (DOM.chatDetailSub) DOM.chatDetailSub.classList.remove('typing-active');
     const total = state.currentMembers.length;
@@ -7332,36 +5522,17 @@
   async function completeLogin(username, user) {
     console.log('🔐 Completing login for:', username);
 
-    // FIX: root cause of "opening the app / hard refresh shows the login
-    // page instead of home". This used to run AFTER loadRoleCache() and
-    // the own-role-id lookup below — two extra network round trips — so
-    // the login form (or, on a session restore, the #appLoading spinner)
-    // stayed on screen the whole time those were in flight. By the time we
-    // get here, authentication has already succeeded (we were handed a
-    // real `user`), so there's no reason to wait any longer to reveal the
-    // dashboard shell. Everything below still fills in profile/role detail
-    // once it's loaded; it doesn't need the screens switched to run.
     hideAppLoading();
     DOM.authCard.classList.add('hidden');
     DOM.dashboard.classList.remove('hidden');
 
-    // FIX: root cause of "app opens showing Settings, then blinks to Home"
-    // — the app should always land on Home on open, but this used to only
-    // get set at the very END of completeLogin(), after awaiting role
-    // lookups, the channel list, unread badges, statuses, and a
-    // Notification-permission prompt. Nothing in that list needs the
-    // screen already switched to run — every one of them populates its own
-    // content once it loads, regardless of which screen is showing. On a
-    // slow mobile connection that whole chain can take a moment, during
-    // which a phone's own app-relaunch transition can still be showing
-    // whatever screen was on screen when the app was last closed (often
-    // Settings). Switching to Home the INSTANT the dashboard is revealed —
-    // before any of that network work even starts — closes that window
-    // instead of leaving it open until everything finishes loading.
     screenHistory = [];
     goToScreen('chats');
 
+    // FIX: Ensure role cache is loaded BEFORE setting user state
+    // This is critical for teachers to be properly detected
     await loadRoleCache();
+    
     const role = getRoleFromUsername(username);
     const key = roleKey(username);
     const displayName = getDisplayName(username);
@@ -7370,12 +5541,8 @@
     state.isAdmin = role === CONFIG.AUTH.ROLES.ADMIN;
     state.isTeacher = role === CONFIG.AUTH.ROLES.TEACHER || state.isAdmin;
 
-    // FIX: capture this user's own user_roles row id so handleAccountDeleted()
-    // can reliably recognize "that deleted row was ME" from a realtime DELETE
-    // payload — see the FIX note above handleAccountDeleted() for why matching
-    // on username alone was broken. Best-effort: if this lookup fails for any
-    // reason, handleAccountDeleted() still has the username fallback and the
-    // session watchdog backstop still catches it eventually.
+    console.log(`👤 User role: ${role}, isTeacher: ${state.isTeacher}, isAdmin: ${state.isAdmin}`);
+
     try {
       const { data: ownRoleRow, error: ownRoleError } = await supabase
         .from('user_roles')
@@ -7388,10 +5555,6 @@
       state.myUserRoleId = null;
     }
 
-    // FIX: screens are already switched at the top of this function now —
-    // see the comment there. (Left this spot marked so it's clear the
-    // toggle wasn't just lost.)
-
     DOM.userBadge.textContent = displayName;
     DOM.userBadge.className = `role-chip role-${key}-chip`;
 
@@ -7402,14 +5565,6 @@
 
     DOM.adminSettingsCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
     if (DOM.viewCalendarBtn) DOM.viewCalendarBtn.classList.toggle('hidden', !state.isAdmin);
-    // FIX: "Add Teacher or Student" and "Manage Users" are now expandable
-    // panels nested inside #adminSettingsCard (see index.html) rather than
-    // their own always-visible cards, so they no longer need their own
-    // role-based hidden toggle here — #adminSettingsCard already hides the
-    // whole section (these panels included) from non-admins. Each panel
-    // starts collapsed (its "hidden" class from the markup) and is only
-    // opened by tapping its row — see the addUserToggleBtn/
-    // manageUsersToggleBtn listeners below (toggleAdminPanel()).
     DOM.adminProfileSchedule.classList.toggle('hidden', !state.isAdmin);
 
     if (state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE) {
@@ -7418,28 +5573,10 @@
 
     setupPresence();
     startSessionWatchdog();
-    // FIX (chat takes time to open, #1): this was `await`ed, which blocked
-    // the channel list — and everything after it — behind the browser's
-    // camera/mic permission prompt on every single login AND every session
-    // restore (i.e. basically every app open). If the prompt wasn't
-    // answered instantly, or getUserMedia() was slow to spin up the camera,
-    // the chat list simply could not appear until it resolved. Nothing
-    // below actually depends on this: it doesn't even keep the returned
-    // MediaStream anywhere, and live video calls run in an iframe that
-    // negotiates its own camera/mic access when a session is actually
-    // joined (see DOM.joinLiveBtn's handler). So it doesn't need to block —
-    // let it run in the background while the chat list loads.
     requestMediaPermissions();
     await renderChannels();
     subscribeToChannelListUpdates();
     startChannelPreviewPolling();
-    // FIX: previously the nav badge was only ever set by refreshUnreadBadges()
-    // as a side effect of selectChannel(), which itself only runs when
-    // channels.length > 0 (see renderChannels). A user with zero channels
-    // (not added to any group) never hit that path, so the badge could be
-    // left showing a stale count from a previous session on the same tab.
-    // Call it explicitly here so every login always gets a correct badge,
-    // including the "0 channels → 0 unread" case.
     await refreshUnreadBadges();
     await loadStatuses();
     
@@ -7456,8 +5593,6 @@
 
     syncNotificationToggleState();
 
-    // Home was already selected the instant the dashboard was revealed,
-    // at the top of this function — see the FIX note up there.
     console.log('✅ Login complete!');
   }
 
@@ -7502,13 +5637,6 @@
     } catch (e) {
       console.warn('Session restore skipped:', e);
     } finally {
-      // FIX: whatever happened above — no session, a mismatched email, a
-      // network error from getSession() itself (e.g. corrupted/blocked
-      // localStorage), or an exception thrown partway through
-      // completeLogin() — #appLoading must never be left on screen. If
-      // completeLogin() already got far enough to reveal the dashboard,
-      // this is a no-op; otherwise it's what actually shows the login
-      // card, instead of the app just sitting on a spinner forever.
       hideAppLoading();
       if (DOM.dashboard.classList.contains('hidden')) {
         DOM.authCard.classList.remove('hidden');
@@ -7516,34 +5644,7 @@
     }
   }
 
-  // FIX: Backstop only — account deletion is now caught in realtime via the
-  // user_roles DELETE subscription above. This watchdog just re-verifies
-  // the session against the auth server periodically in case the realtime
-  // socket ever drops silently (network blips, tab throttling, etc.), so
-  // the account never stays "logged in" indefinitely on a dead session.
   const SESSION_CHECK_INTERVAL = 60000;
-
-  // FIX: root cause of "it signs registered users out automatically after
-  // some time" — this watchdog used to force-sign-out on the very FIRST
-  // failed getUser() call, for ANY reason: a dropped wifi packet, a slow
-  // response, a rate-limited request, or (most commonly) the tab having
-  // been backgrounded for a while. supabase-js pauses autoRefreshToken
-  // while a tab is hidden, so a backgrounded/idle tab's access token
-  // routinely goes stale — that's normal and recoverable, not proof the
-  // account is gone. getUser() calling the auth server with that stale
-  // token then returns an error, and the old code treated that single
-  // error as "the account no longer exists" and immediately logged a
-  // perfectly valid, still-logged-in user out. This rewrite:
-  //   1. Skips the check entirely while the tab is hidden or the device is
-  //      offline — there's nothing to conclude from a check that can't
-  //      succeed regardless of session validity.
-  //   2. Requires several consecutive failures (not one) before treating
-  //      the session as suspect, so a single blip can't trigger anything.
-  //   3. Even then, tries an explicit refreshSession() first — if that
-  //      succeeds the session was just stale, not invalid, and the user
-  //      stays logged in. Only a failed refresh (refresh token itself
-  //      rejected — the actual signal that the account/session is really
-  //      gone) results in forceSignOut().
   const SESSION_CHECK_FAILURE_THRESHOLD = 3;
   let sessionCheckFailures = 0;
 
@@ -7578,9 +5679,6 @@
           sessionCheckFailures = 0;
         }
       } catch (e) {
-        // FIX: an exception here (fetch throwing on a dropped connection,
-        // for example) is a network problem, not evidence the account is
-        // gone — don't count it toward the failure threshold at all.
         console.warn('Session watchdog check failed (network):', e);
       }
     }, SESSION_CHECK_INTERVAL);
@@ -7593,21 +5691,6 @@
     }
   }
 
-  // Shared teardown used by both a normal, user-initiated sign-out and a
-  // forced sign-out (deleted account / invalidated session).
-  //
-  // FIX: root cause of "signing out on one device signs everyone else's
-  // device out too" — supabase-js v2's auth.signOut() defaults to
-  // { scope: 'global' }, which revokes the refresh token for EVERY active
-  // session of this account server-side, not just the tab that clicked
-  // Sign Out. Every other open device then either gets its own SIGNED_OUT
-  // event or fails its next token refresh, and the onAuthStateChange
-  // listener above (which force-logs-out on SIGNED_OUT) kicks it back to
-  // the login screen too. Passing { scope: 'local' } signs out only this
-  // browser's session and leaves every other device's session untouched,
-  // which is what "sign out" should mean here — it does not affect
-  // forceSignOut()'s own behavior (deleted account / already-invalidated
-  // session), since that path already lost its session before this runs.
   async function performSignOutCleanup() {
     try {
       await supabase.auth.signOut({ scope: 'local' });
@@ -7644,15 +5727,6 @@
     state.currentSchedule = null;
     updateLiveButtonState();
 
-    // FIX: previously none of this was reset on sign-out. If a device is
-    // shared between users in one tab (e.g. an admin signs out and a
-    // student signs in without reloading the page), the nav badge and
-    // channel list were left showing the PREVIOUS user's stale unread
-    // count. A student with zero channels never triggers
-    // refreshUnreadBadges() on their own (selectChannel only runs when
-    // channels.length > 0), so that leftover badge would never clear —
-    // it looked like they had unread notifications for a group they were
-    // never even added to.
     allChannels = [];
     state.unreadByChannel = {};
     state.channelPreviews = {};
@@ -7662,10 +5736,6 @@
     state.myUserRoleId = null;
     DOM.navChatsBadge.textContent = '0';
     DOM.navChatsBadge.classList.add('hidden');
-    // FIX: same shared-device stale-badge bug as #navChatsBadge just above,
-    // now that the Updates tab has its own nav dot — without this, signing
-    // out of an account with unseen updates and into another on the same
-    // tab could leave the previous user's dot showing.
     if (DOM.navUpdatesBadge) DOM.navUpdatesBadge.classList.add('hidden');
 
     try {
@@ -7681,8 +5751,6 @@
     }
 
     DOM.dashboard.classList.add('hidden');
-    // FIX: clears liveSessionAutoCloseTimer too (via closeLiveSession()) so
-    // a still-armed auto-close alert can't fire after sign-out.
     closeLiveSession();
     DOM.authCard.classList.remove('hidden');
     DOM.usernameInput.value = '';
@@ -7692,17 +5760,13 @@
     screenHistory = [];
   }
 
-  // User-initiated sign-out (Settings → Sign Out button).
   async function handleSignOut() {
     if (!confirm('Sign out?')) return;
     await performSignOutCleanup();
   }
 
-  // FIX: Sign-out triggered by the app itself — the account was deleted,
-  // removed, or the session was otherwise invalidated. No confirm() dialog
-  // (there's nothing left for the user to confirm), and we surface why.
   async function forceSignOut(message) {
-    if (!state.currentUser) return; // already signed out, avoid duplicate alerts
+    if (!state.currentUser) return;
     await performSignOutCleanup();
     if (message) alert(message);
   }
@@ -8049,62 +6113,20 @@
     goToScreen('profile');
   });
 
-  // FIX: root cause of "the mobile keyboard disappears after sending a
-  // single text message — have to tap the field again to keep typing" — a
-  // tap on #sendMsgBtn is a tap on a *different* focusable element than
-  // #messageInput, and the browser's default behavior for any pointer-down
-  // on a focusable element is to move DOM focus to it. On mobile, the
-  // on-screen keyboard is tied purely to which element currently has focus
-  // — so the instant focus left #messageInput for the button, the OS
-  // closed the keyboard, before sendMessage() below had even started
-  // running. That focus shift happens on `mousedown` (which mobile
-  // browsers fire, in this order, for every tap: touchstart, touchend,
-  // mousedown, mouseup, click — so this still runs for touch, not just an
-  // actual mouse), one event ahead of the `click` handler further down.
-  // preventDefault() here stops the browser's default focus-move for this
-  // one button without blocking the click event that follows, so
-  // #messageInput simply never loses focus and the keyboard never closes
-  // in the first place — no close-then-reopen flash, and no need to tap
-  // the field again before the next message.
   DOM.sendMsgBtn.addEventListener('mousedown', (e) => e.preventDefault());
 
   DOM.sendMsgBtn.addEventListener('click', async () => {
     const content = DOM.messageInput.value.trim();
     const file = DOM.fileInput.files[0];
     if (!content && !file) return;
-    // FIX: see broadcastStoppedTyping() above — fire this immediately, on
-    // the same tick as pressing Send, rather than after `sendMessage()`
-    // resolves. sendMessage() waits on a network round trip to actually
-    // insert the row; delaying the stop-typing signal until then would
-    // recreate the exact same "header still says typing… after the
-    // message shows up" lag this is meant to fix, just shifted later.
     broadcastStoppedTyping();
 
-    // FIX: root cause of "the text I typed sits in the message box for a
-    // few seconds after my message already shows up in the chat bubble" —
-    // clearing the field used to happen only AFTER `await
-    // sendMessage(...)` resolved. But sendMessage() doesn't resolve until
-    // the full network round trip finishes (inserting the row, or
-    // uploading a file first) — the message bubble itself shows up well
-    // before that, painted optimistically the moment sendMessage() starts
-    // (see the mergeMessagesSafely() FIX comment inside it). So on
-    // anything slower than an instant connection, the bubble was already
-    // sitting in the chat while the compose box kept stubbornly showing
-    // what had just been "sent". `content`/`file` are already captured
-    // into local variables above, so sendMessage() doesn't need the DOM
-    // field to still hold them — clear it right here, the same instant the
-    // bubble appears, matching WhatsApp/iMessage.
     DOM.messageInput.value = '';
     DOM.fileInput.value = '';
     DOM.filePreview.classList.add('hidden');
 
     const sent = await sendMessage(content, file);
 
-    // FIX: sendMessage() now reports whether it actually failed (network
-    // error, file too large, upload failure — it's already shown its own
-    // alert() for those). Since the field is cleared up front now, a
-    // failed send used to just silently lose whatever the user had typed;
-    // put it back so nothing is lost.
     if (!sent && content) {
       DOM.messageInput.value = content;
     }
@@ -8126,12 +6148,6 @@
     }
   });
 
-  // FIX: root cause of "why can't I see the user is typing in real-time" —
-  // sending side. Fires on every keystroke; broadcastTyping() itself
-  // throttles to at most one actual network send every 2s, and the
-  // receiving end (handleIncomingTyping(), in the 8c. section above)
-  // auto-expires the indicator 3s after the last keystroke, so nothing
-  // extra is needed here to signal "stopped typing".
   DOM.messageInput.addEventListener('input', () => {
     broadcastTyping();
   });
@@ -8148,11 +6164,6 @@
 
   DOM.joinLiveBtn.addEventListener('click', () => {
     if (!CONFIG.FEATURES.ENABLE_VIDEO_CONFERENCE) { alert('Video conferencing is disabled.'); return; }
-    // FIX: safety net alongside the `disabled`/`hidden` state toggled by
-    // updateLiveButtonState() — belt-and-suspenders in case this ever fires
-    // outside the concerned-teacher-starts / anyone-joins-once-live window
-    // (see getLiveButtonMode()). joinLiveClass() re-checks the same thing
-    // itself, so this is just an early exit.
     if (getLiveButtonMode() === 'hidden') { return; }
     joinLiveClass();
   });
@@ -8173,30 +6184,6 @@
   }
 
   DOM.closeVideoBtn.addEventListener('click', () => {
-    // FIX: root cause of "when the teacher ends the meeting, the join
-    // live session button is still active for students, and they can
-    // still join with no teacher present". This X was the ONLY way a
-    // plain teacher (non-admin) could end their own class — the "End for
-    // Everyone" button (endLiveSessionForEveryone(), which is what
-    // actually flips class_schedule.is_live back to false in the
-    // database) was only ever shown to admins. So a teacher tapping this
-    // X just closed their own local video window (closeLiveSession())
-    // and left `is_live: true` sitting in the database indefinitely —
-    // getLiveButtonMode() kept returning 'join' for every student (still
-    // green/clickable, not grey), and the server-side join-token check
-    // kept honoring it, so students really could join a room the teacher
-    // had already left.
-    //
-    // Now: if the person closing is the one who actually started this
-    // call (state.activeCallIsHost — set in joinLiveClass() when mode
-    // === 'start'), closing the window ends the session for everyone,
-    // same as the admin's "End for Everyone" button. Anyone else — a
-    // student, or another teacher/admin who merely joined an
-    // already-live session — still just closes their own local view via
-    // closeLiveSession(); the class keeps running for whoever else is
-    // still on it. closeLiveSession() also still cancels the auto-close
-    // timer either way, so leaving early never leaves a stale "session is
-    // up" alert armed for later.
     if (state.activeCallIsHost) {
       endLiveSessionForEveryone();
     } else {
@@ -8211,12 +6198,6 @@
   DOM.fileInput.addEventListener('change', function() {
     const file = this.files[0];
     if (!file) { DOM.filePreview.classList.add('hidden'); return; }
-    // FIX: see compressImageFile()/sendMessage() — a compressible photo is
-    // no longer hard-blocked here even if it's currently over the limit,
-    // since it gets resized/re-encoded (and re-checked against the limit)
-    // at send time and routinely ends up well under it. Only file types
-    // that can't be shrunk client-side (PDFs, docs, videos, GIFs, SVGs)
-    // still need to fail fast at selection time.
     if (!isCompressibleImageType(file) && file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
       alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
       this.value = '';
@@ -8243,11 +6224,6 @@
   }
   DOM.createChannelBtn.addEventListener('click', handleCreateChannel);
 
-  // FIX: expand/collapse for the "Add Teacher or Student" / "Manage Users"
-  // rows now nested inside the Admin tools card (see index.html) — tapping
-  // the row shows/hides its panel in place and flips the chevron via
-  // aria-expanded (styled in styles.css), instead of the panel always
-  // being visible in its own separate card.
   function toggleAdminPanel(toggleBtn, panelEl) {
     if (!toggleBtn || !panelEl) return;
     const willShow = panelEl.classList.contains('hidden');
@@ -8281,19 +6257,12 @@
     loadUserForEdit(DOM.manageUserSearch.value);
   });
 
-  // FIX: explicit close for the edit panel — see showUserEditForm()/
-  // closeUserEditForm() above. Without this, once an admin tapped a user
-  // to edit, the only way back to the roster list was to submit
-  // Update/Delete; there was no way to just back out.
   if (DOM.closeUserEditBtn) {
     DOM.closeUserEditBtn.addEventListener('click', () => {
       closeUserEditForm();
     });
   }
 
-  // Live-filter the registered users list as the admin types — no
-  // refetch needed, renderRegisteredUsersList() just re-reads the
-  // already-cached roster/assignments.
   DOM.manageUserSearch.addEventListener('input', () => {
     renderRegisteredUsersList();
   });
@@ -8337,10 +6306,6 @@
     });
 
     const ok = await setClassSchedule(DOM.scheduleTeacherInput.value.trim(), occurrences);
-    // FIX: previously the form was cleared unconditionally, even when
-    // setClassSchedule() alerted a validation error and returned without
-    // saving anything — the admin's typed teacher/selections vanished
-    // right after being told to fix them. Only clear on an actual save.
     if (!ok) return;
     DOM.scheduleTeacherInput.value = '';
     DOM.scheduleStartTimeInput.value = '';
@@ -8366,12 +6331,6 @@
     });
   }
 
-  // FIX: the "Ends automatically at …" preview (see updateScheduleEndPreview()
-  // in the CLASS SCHEDULING section) has to stay live as the admin types —
-  // this is the "automatically set end time from starting time" part of
-  // the request. Also re-renders the per-date override list so its
-  // still-unedited rows (see renderSchedulePerDateList()) pick up new
-  // shared defaults instead of showing stale ones.
   if (DOM.scheduleStartTimeInput && DOM.scheduleDurationInput) {
     ['input', 'change'].forEach((evt) => {
       DOM.scheduleStartTimeInput.addEventListener(evt, () => {
@@ -8385,10 +6344,6 @@
     });
   }
 
-  // FIX: this checkbox is the "checkbox to finalize whether the class is
-  // on the same time and duration" from the request — toggling it swaps
-  // between one shared Starts/Duration for every selected date and a
-  // per-date override list (see renderSchedulePerDateList()).
   if (DOM.scheduleSameTimeCheckbox) {
     DOM.scheduleSameTimeCheckbox.addEventListener('change', () => renderSchedulePerDateList());
   }
@@ -8427,10 +6382,6 @@
     updateProfileScreen();
   });
 
-  // FIX: this is the missing piece — see the comment in updateProfileScreen()
-  // above. Without this listener, tapping a Shared Media thumbnail was a
-  // dead click; now it opens the same full-size in-app lightbox used by
-  // images inside the chat itself.
   DOM.sharedMediaGrid.addEventListener('click', (e) => {
     const img = e.target.closest('img[data-media-url]');
     if (img) {
@@ -8440,28 +6391,14 @@
   });
 
   DOM.closeStatusModal.addEventListener('click', closeStatusViewer);
-  // FIX: see suppressStatusOpenClicksUntil above — without this guard, the
-  // ghost click that follows the pointerup which opened this viewer could
-  // land on the modal's own backdrop and immediately call
-  // closeStatusViewer(), so the viewer would flash open then instantly
-  // shut ("blinks") before the user ever saw it.
   DOM.statusModal.addEventListener('click', (e) => {
     if (Date.now() < suppressStatusOpenClicksUntil) return;
     if (e.target === DOM.statusModal) closeStatusViewer();
   });
   DOM.statusPauseBtn.addEventListener('click', toggleStatusPause);
 
-  // FIX: see openExternalLink() above — same "link not directly opening"
-  // fix, applied to shared links inside an update (#statusModalContent's
-  // linkifyText() output and #statusLinkPreview's thumbnail card).
   if (DOM.statusViewerBody) {
     DOM.statusViewerBody.addEventListener('click', (e) => {
-      // FIX: see suppressStatusOpenClicksUntil above (~80ms backstop) —
-      // swallow a same-tick ghost click left behind by opening this
-      // viewer before treating it as a genuine click on a shared link.
-      // Cancel the event outright rather than just returning, since
-      // a.msg-link/a.msg-link-preview are real anchors the browser would
-      // otherwise navigate on its own.
       if (Date.now() < suppressStatusOpenClicksUntil) {
         e.preventDefault();
         e.stopPropagation();
@@ -8470,7 +6407,7 @@
       const sharedLink = e.target.closest('a.msg-link, a.msg-link-preview');
       if (sharedLink) {
         e.preventDefault();
-        e.stopPropagation(); // don't let this bubble to #statusModal's close-on-backdrop-click handler
+        e.stopPropagation();
         openExternalLink(sharedLink.getAttribute('href'));
       }
     });
