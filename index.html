@@ -11,7 +11,10 @@
   <title>Nous Complex Orbit</title>
 
   <!-- CSS -->
-  <link rel="stylesheet" href="styles.css">
+  <!-- Cache-busting query param — bump alongside the one on app.js
+     whenever styles.css changes, for the same reason (see the comment
+     on the app.js <script> tag below). -->
+<link rel="stylesheet" href="styles.css?v=20260826a">
 
   <!-- FIX: root cause of "opening the app shows a blank screen for a few
        seconds instead of the loading/home screen" — these three <script>
@@ -753,7 +756,7 @@
      anything) every time app.js changes so browsers/CDNs that cached the
      old file under the plain "app.js" URL are forced to fetch the new
      one instead of silently keeping serving stale code. -->
-<script src="app.js?v=20260826a" defer></script>
+<script src="app.js?v=20260826b" defer></script>
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
