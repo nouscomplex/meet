@@ -4575,10 +4575,27 @@
     // running until its stale, already-armed auto-close timer eventually
     // fires — that timer was set for the OLD end time and would otherwise
     // let the call run right through the early end.
+    //
+    // FIX: root cause of "it shows 'ended by an admin' even when the
+    // admin never touched the room" — this path fires for EVERY way a
+    // still-open call can get force-closed out from under a participant,
+    // and it used to hardcode "an admin" as the cause regardless of which
+    // one actually happened. That was already misleading before (an
+    // admin editing/rescheduling the class from Profile also lands here,
+    // not just "End for Everyone"), and became flatly wrong once the
+    // concerned teacher's own close button started ending the class too
+    // (see closeVideoBtn / state.activeCallIsHost) — a teacher ending
+    // their own class made every student see a message blaming "an
+    // admin" for something the admin had no part in. The client has no
+    // reliable way to know, from this row change alone, which of
+    // "teacher closed it" / "admin ended it for everyone" / "admin ended
+    // it from the schedule list" / "admin edited/removed the schedule"
+    // actually happened — so say only what's actually true in all of
+    // them, instead of guessing a specific actor.
     if (state.videoActive && state.activeCallScheduleId) {
       const stillCurrent = current && String(current.id) === String(state.activeCallScheduleId);
       if (!stillCurrent) {
-        closeLiveSession('This live session was ended by an admin.');
+        closeLiveSession('This live session has ended.');
       }
     }
 
