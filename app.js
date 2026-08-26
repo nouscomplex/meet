@@ -3517,10 +3517,40 @@
     DOM.joinLiveBtn.disabled = isInactive;
     DOM.joinLiveBtn.classList.toggle('btn-live-pill-dead', isInactive);
     DOM.joinLiveBtn.setAttribute('aria-disabled', String(isInactive));
+
     if (DOM.liveBtnText) {
-      // FIX: 'start' means "Start Live Session", 'join' means "Join Live Session"
-      DOM.liveBtnText.textContent = mode === 'start' ? 'Start Live Session' : 'Join Live Session';
+      // FIX: root cause of "teacher sees Join Live Session on the grey/
+      // disabled button instead of Start Live Session" — getLiveButtonMode()
+      // correctly returns 'hidden' (button stays disabled/grey) for the
+      // whole stretch BEFORE the scheduled start time, for every viewer
+      // including the concerned teacher — that's correct, it's not time
+      // yet. But the label used to be driven off that same 'hidden' mode
+      // and just fell back to 'Join Live Session' whenever mode wasn't
+      // exactly 'start' — so the teacher's own upcoming session showed
+      // "Join" (implying someone else has to start it) right up until the
+      // instant it became clickable. The label is now decided
+      // independently of whether the button is currently clickable: a
+      // schedule that exists and belongs to this user (or any admin) is
+      // always labelled "Start Live Session", grey/disabled or not; it
+      // only ever reads "Join Live Session" for someone who isn't the one
+      // who starts it.
+      let label = 'Join Live Session';
+      if (mode === 'start') {
+        label = 'Start Live Session';
+      } else {
+        const schedule = state.currentSchedule;
+        if (schedule && state.currentUser) {
+          const currentUsername = normalizeUsername(state.currentUser.username);
+          const teacherUsername = normalizeUsername(schedule.teacher_username);
+          const isConcernedTeacher = currentUsername === teacherUsername;
+          if (isConcernedTeacher || state.isAdmin) {
+            label = 'Start Live Session';
+          }
+        }
+      }
+      DOM.liveBtnText.textContent = label;
     }
+
     DOM.joinLiveBtn.title = isInactive
       ? (state.currentSchedule ? 'This live session hasn\'t started yet.' : 'No live session is scheduled for this group yet')
       : '';
