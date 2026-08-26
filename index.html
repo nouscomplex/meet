@@ -749,7 +749,11 @@
      scripts execute in document order, so this still runs after
      supabase-js, pdf.js and config.js, exactly like before; it just no
      longer blocks the initial paint of #appLoading either. -->
-<script src="app.js" defer></script>
+<!-- Cache-busting query param: bump this string (date/build number,
+     anything) every time app.js changes so browsers/CDNs that cached the
+     old file under the plain "app.js" URL are forced to fetch the new
+     one instead of silently keeping serving stale code. -->
+<script src="app.js?v=20260826a" defer></script>
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
