@@ -4718,8 +4718,11 @@
   // scheduling-list code still rely on its exact 'hidden' behavior for
   // click-gating), while giving the greyed pre-window button an accurate
   // preview label: the concerned teacher (and an admin, before anyone's
-  // started it) see "Start Live Session" greyed out; everyone else sees
-  // "Join Live Session" greyed out.
+  // started it) see "Start Live Session"; everyone else sees "Join Live
+  // Session". Once the session is actually live (is_live true), EVERYONE
+  // sees "Join Live Session" — including the teacher who started it —
+  // since at that point they're rejoining a running class, not starting
+  // a new one.
   function getLiveButtonLabel() {
     const schedule = state.currentSchedule;
     if (!schedule || !state.currentUser) return 'join';
@@ -4727,8 +4730,8 @@
     const isConcernedTeacher = normalizeUsername(state.currentUser.username) === normalizeUsername(schedule.teacher_username);
     const isLive = schedule.is_live === true;
 
-    if (state.isAdmin) return isLive ? 'join' : 'start';
-    if (isConcernedTeacher) return 'start';
+    if (isLive) return 'join';
+    if (state.isAdmin || isConcernedTeacher) return 'start';
     return 'join';
   }
 
@@ -4737,33 +4740,35 @@
   // active state — same .btn-live-pill-dead "dead" look this button
   // already had before the start/join gating work, just now driven by
   // getLiveButtonMode() instead of a plain "does a schedule exist" check.
+  //
+  // FIX: added a colour state independent of click-gating. Previously
+  // "clickable" and "navy" were the same thing and "not clickable" was
+  // always grey — so the moment the window opened, the concerned
+  // teacher's button jumped straight to navy even though nobody had
+  // pressed Start yet, no different-looking from an actually-running
+  // class. Now colour tracks is_live specifically:
+  //   - hidden (hard-disabled, outside the window / no schedule): grey,
+  //     unclickable — .btn-live-pill-dead (existing).
+  //   - waiting (clickable, is_live still false): grey but clickable —
+  //     .btn-live-pill-waiting — so "Start Live Session" reads as "ready
+  //     to start" rather than looking identical to a live class.
+  //   - live (clickable, is_live true): blue — .btn-live-pill-live — an
+  //     unmistakable "this is happening right now" signal for both the
+  //     teacher rejoining and students joining.
   function updateLiveButtonState() {
     if (!DOM.joinLiveBtn) return;
     const mode = getLiveButtonMode();
     const isInactive = mode === 'hidden';
+    const isLive = !!(state.currentSchedule && state.currentSchedule.is_live);
 
     DOM.joinLiveBtn.disabled = isInactive;
-    DOM.joinLiveBtn.classList.toggle('btn-live-pill-dead', isInactive);
     DOM.joinLiveBtn.setAttribute('aria-disabled', String(isInactive));
-    const label = getLiveButtonLabel();
-    // TEMP DEBUG — remove once confirmed working. If this line never
-    // appears in the console, the browser is still running a cached copy
-    // of app.js (see the cache-busting query param on the <script> tag in
-    // index.html) and none of the code below matters until that's fixed.
-    // If it DOES appear but label keeps coming back 'join' for the
-    // teacher, check isConcernedTeacher/isLive here against what's
-    // actually in class_schedule for this row.
-    console.log('[liveBtn]', {
-      mode,
-      label,
-      username: state.currentUser && state.currentUser.username,
-      isAdmin: state.isAdmin,
-      scheduleTeacher: state.currentSchedule && state.currentSchedule.teacher_username,
-      isLive: state.currentSchedule && state.currentSchedule.is_live,
-      scheduledTime: state.currentSchedule && state.currentSchedule.scheduled_time,
-    });
+    DOM.joinLiveBtn.classList.toggle('btn-live-pill-dead', isInactive);
+    DOM.joinLiveBtn.classList.toggle('btn-live-pill-waiting', !isInactive && !isLive);
+    DOM.joinLiveBtn.classList.toggle('btn-live-pill-live', !isInactive && isLive);
+
     if (DOM.liveBtnText) {
-      DOM.liveBtnText.textContent = label === 'start' ? 'Start Live Session' : 'Join Live Session';
+      DOM.liveBtnText.textContent = getLiveButtonLabel() === 'start' ? 'Start Live Session' : 'Join Live Session';
     }
     DOM.joinLiveBtn.title = isInactive
       ? (state.currentSchedule ? 'This live session hasn\'t started yet.' : 'No live session is scheduled for this group yet')
