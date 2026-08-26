@@ -166,6 +166,16 @@
     // immediately rather than waiting on its original auto-close timer —
     // see the FIX note inside loadSchedule() and endLiveSessionForEveryone().
     activeCallScheduleId: null,
+    // FIX: root cause of "join live session button stays active for
+    // students, and they can join, after the teacher ends the meeting" —
+    // true only when THIS client is the one who actually pressed "Start"
+    // for the currently-open call (concerned teacher, or an admin
+    // covering for one — see getLiveButtonMode()'s 'start' mode). Lets
+    // the close button below tell "the host is leaving, so the class is
+    // over" apart from "a student/other participant is just leaving,
+    // the class carries on for everyone else". See the closeVideoBtn
+    // handler and joinLiveClass() further down.
+    activeCallIsHost: false,
     // FIX: root cause of "why can't I see the user is typing in real-time"
     // — nothing in the app tracked this before. See broadcastTyping()/
     // handleIncomingTyping()/renderTypingIndicator() below (search "8c.
@@ -6317,6 +6327,7 @@
     DOM.videoIframe.src = '';
     state.videoActive = false;
     state.activeCallScheduleId = null;
+    state.activeCallIsHost = false;
     if (DOM.endLiveSessionBtn) DOM.endLiveSessionBtn.classList.add('hidden');
     if (message && wasActive) alert(message);
   }
@@ -6424,6 +6435,12 @@
     DOM.videoIframe.src = liveUrl;
     state.videoActive = true;
     state.activeCallScheduleId = state.currentSchedule ? state.currentSchedule.id : null;
+    // FIX: see the `activeCallIsHost` note on `state` above — remember
+    // whether THIS join was the 'start' (this client is the concerned
+    // teacher, or an admin standing in for one), so closeVideoBtn below
+    // knows whether closing this window should end the class for
+    // everyone or just leave it running for whoever else is still on it.
+    state.activeCallIsHost = mode === 'start';
     // Button label now tracks the same start/join mode the header button
     // uses (see getLiveButtonMode()/updateLiveButtonState()), instead of
     // the old `state.isTeacher` check — that was true for every teacher and
@@ -8156,11 +8173,35 @@
   }
 
   DOM.closeVideoBtn.addEventListener('click', () => {
-    // FIX: goes through closeLiveSession() now so manually closing the
-    // call also cancels its auto-close timer — without this, leaving a
-    // call early still left the timer armed to pop the "session is up"
-    // alert later on whatever screen the user had moved on to.
-    closeLiveSession();
+    // FIX: root cause of "when the teacher ends the meeting, the join
+    // live session button is still active for students, and they can
+    // still join with no teacher present". This X was the ONLY way a
+    // plain teacher (non-admin) could end their own class — the "End for
+    // Everyone" button (endLiveSessionForEveryone(), which is what
+    // actually flips class_schedule.is_live back to false in the
+    // database) was only ever shown to admins. So a teacher tapping this
+    // X just closed their own local video window (closeLiveSession())
+    // and left `is_live: true` sitting in the database indefinitely —
+    // getLiveButtonMode() kept returning 'join' for every student (still
+    // green/clickable, not grey), and the server-side join-token check
+    // kept honoring it, so students really could join a room the teacher
+    // had already left.
+    //
+    // Now: if the person closing is the one who actually started this
+    // call (state.activeCallIsHost — set in joinLiveClass() when mode
+    // === 'start'), closing the window ends the session for everyone,
+    // same as the admin's "End for Everyone" button. Anyone else — a
+    // student, or another teacher/admin who merely joined an
+    // already-live session — still just closes their own local view via
+    // closeLiveSession(); the class keeps running for whoever else is
+    // still on it. closeLiveSession() also still cancels the auto-close
+    // timer either way, so leaving early never leaves a stale "session is
+    // up" alert armed for later.
+    if (state.activeCallIsHost) {
+      endLiveSessionForEveryone();
+    } else {
+      closeLiveSession();
+    }
   });
 
   if (DOM.endLiveSessionBtn) {
