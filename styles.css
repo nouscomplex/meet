@@ -49,6 +49,13 @@
   --role-student: #E1508B;
   --role-student-wash: #FCEAF2;
 
+  /* Live-session button "actually live" accent — a distinct blue from the
+     rest of the navy chat palette so a running class visually pops
+     against the muted grey "not live yet" state (see .btn-live-pill-live
+     / .btn-live-pill-waiting below). */
+  --live-blue: #2F80ED;
+  --live-blue-hover: #2568C4;
+
   /* Status */
   --danger: #E24C43;
   --danger-wash: #FDEBEA;
@@ -96,6 +103,8 @@ body.theme-dark {
   --chat-ink-soft: #C8CBDD;
   --chat-accent: #7BB8FF;
   --success: #34D399;
+  --live-blue: #4C9AFF;
+  --live-blue-hover: #3A87E6;
 }
 
 /* ===== Reset & Base ===== */
@@ -1268,6 +1277,33 @@ body.theme-dark .btn-live-pill:disabled,
 body.theme-dark .btn-live-pill.btn-live-pill-dead {
   color: var(--ink-faint);
 }
+
+/* "Waiting" state: inside the scheduled window and clickable — the
+   concerned teacher (or an admin) can tap this to start the class — but
+   nobody has pressed Start yet (class_schedule.is_live is still false).
+   Same muted grey look as the disabled .btn-live-pill-dead state above
+   so it visually reads as "not live yet", but WITHOUT :disabled/
+   pointer-events:none, since this one has to actually respond to taps.
+   See getLiveButtonLabel()/updateLiveButtonState() in app.js. */
+.btn-live-pill.btn-live-pill-waiting {
+  background: var(--border-strong);
+  color: var(--ink-faint);
+}
+.btn-live-pill.btn-live-pill-waiting i { color: var(--ink-faint); }
+.btn-live-pill.btn-live-pill-waiting:hover { background: var(--border-strong); }
+body.theme-dark .btn-live-pill.btn-live-pill-waiting { color: var(--ink-faint); }
+
+/* "Live" state: class_schedule.is_live is true — the class is actually
+   running. Distinct blue (var(--live-blue), not the default navy) so a
+   live session is unmistakable at a glance, whether you're the teacher
+   rejoining or a student joining for the first time. */
+.btn-live-pill.btn-live-pill-live {
+  background: var(--live-blue);
+  color: #FFFFFF;
+}
+.btn-live-pill.btn-live-pill-live i { color: #FFFFFF; }
+.btn-live-pill.btn-live-pill-live:hover { background: var(--live-blue-hover); }
+body.theme-dark .btn-live-pill.btn-live-pill-live { color: #FFFFFF; }
 
 .schedule-banner {
   display: flex;
