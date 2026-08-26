@@ -4697,6 +4697,41 @@
     return 'hidden';
   }
 
+  // FIX: root cause of "for the teacher it shows a grey 'Join Live
+  // Session' instead of a grey 'Start Live Session'". getLiveButtonMode()
+  // returns 'hidden' any time `now` is outside the scheduled window —
+  // correct, that's what keeps the button greyed out/unclickable before
+  // class time. The bug was that updateLiveButtonState() used that same
+  // 'hidden' result to pick the LABEL too: anything that wasn't literally
+  // the string 'start' fell back to "Join Live Session" — including
+  // 'hidden' — so the concerned teacher's own button previewed the wrong
+  // verb right up until the window opened (at which point mode flips to
+  // 'start' and the text corrects itself, making it look like a timing
+  // glitch rather than a labeling bug).
+  //
+  // getLiveButtonLabel() answers a different question than
+  // getLiveButtonMode(): not "is this clickable right now" but "when it
+  // does become clickable, is this user going to Start or Join" —
+  // computed without the isWithinWindow gate, purely from who's logged
+  // in relative to schedule.teacher_username/is_live. That keeps
+  // getLiveButtonMode() itself untouched (joinLiveClass() and the
+  // scheduling-list code still rely on its exact 'hidden' behavior for
+  // click-gating), while giving the greyed pre-window button an accurate
+  // preview label: the concerned teacher (and an admin, before anyone's
+  // started it) see "Start Live Session" greyed out; everyone else sees
+  // "Join Live Session" greyed out.
+  function getLiveButtonLabel() {
+    const schedule = state.currentSchedule;
+    if (!schedule || !state.currentUser) return 'join';
+
+    const isConcernedTeacher = normalizeUsername(state.currentUser.username) === normalizeUsername(schedule.teacher_username);
+    const isLive = schedule.is_live === true;
+
+    if (state.isAdmin) return isLive ? 'join' : 'start';
+    if (isConcernedTeacher) return 'start';
+    return 'join';
+  }
+
   // FIX: switched from fully removing the button (display:none) back to
   // keeping it always visible but greyed out/unclickable outside its
   // active state — same .btn-live-pill-dead "dead" look this button
@@ -4711,7 +4746,7 @@
     DOM.joinLiveBtn.classList.toggle('btn-live-pill-dead', isInactive);
     DOM.joinLiveBtn.setAttribute('aria-disabled', String(isInactive));
     if (DOM.liveBtnText) {
-      DOM.liveBtnText.textContent = mode === 'start' ? 'Start Live Session' : 'Join Live Session';
+      DOM.liveBtnText.textContent = getLiveButtonLabel() === 'start' ? 'Start Live Session' : 'Join Live Session';
     }
     DOM.joinLiveBtn.title = isInactive
       ? (state.currentSchedule ? 'This live session hasn\'t started yet.' : 'No live session is scheduled for this group yet')
