@@ -2141,6 +2141,19 @@ body.theme-dark .btn-send { color: #FFFFFF; }
 }
 .video-panel iframe { width: 100%; flex: 1; min-height: 0; border: 0; display: block; }
 
+/* FIX: root cause of "why is the meeting not movable and resizable" while
+   minimized — the transition above (added for a smooth minimize/maximize
+   toggle) also fires on every left/top/width/height change, which
+   includes every single pixel a drag or resize gesture produces. That
+   makes the pip visibly lag half a step behind the pointer instead of
+   tracking it. app.js's beginPipDrag()/beginPipResize() add this class
+   for the duration of the gesture (removed again on pointerup) so those
+   same properties update instantly while actually being dragged/resized,
+   while the minimize/maximize button click still gets its animation. */
+.video-panel.video-panel-no-anim {
+  transition: none !important;
+}
+
 /* FIX: root cause of "user can't see the buttons for minimizing/
    maximizing in live meeting so they can text in the group when
    needed" — #videoContainer used to be a fixed full-screen overlay
@@ -2203,6 +2216,14 @@ body.theme-dark .btn-send { color: #FFFFFF; }
 .video-panel.video-panel-minimized .video-toolbar {
   padding: 6px 8px;
   gap: 6px;
+  /* FIX: this is the pip's drag handle (see beginPipDrag() in app.js) —
+     cursor:move signals that, and touch-action:none stops a touch-drag
+     here from also panning/scrolling the chat screen underneath while
+     the pointer is down. Buttons inside still take normal taps —
+     beginPipDrag() bails out via e.target.closest('button') before a
+     drag ever starts on one of them. */
+  cursor: move;
+  touch-action: none;
 }
 
 .video-close,
@@ -2251,6 +2272,41 @@ body.theme-dark .btn-send { color: #FFFFFF; }
 }
 .video-panel.video-panel-minimized .video-end-session-label {
   display: none;
+}
+
+/* FIX: root cause of "why is the minimized meeting not movable and
+   resizable" (resize half) — #videoResizeHandle didn't exist before;
+   nothing offered a way to change the pip's fixed 176x136 size. Hidden
+   entirely outside the minimized state (it would make no sense as a
+   full-screen control) and only shown as a small corner grip once
+   .video-panel-minimized is present — see beginPipResize()/
+   onPipResizeMove() in app.js, which drag this handle to resize
+   #videoContainer via inline width/height, clamped to a sane minimum
+   and to the bounds of the chat screen. */
+.video-resize-handle {
+  display: none;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 20px;
+  height: 20px;
+  z-index: 6;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+.video-resize-handle::before {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 10px;
+  height: 10px;
+  background-image:
+    linear-gradient(135deg, transparent 0 45%, rgba(255,255,255,0.65) 45% 55%, transparent 55% 100%),
+    linear-gradient(135deg, transparent 0 70%, rgba(255,255,255,0.65) 70% 80%, transparent 80% 100%);
+}
+.video-panel.video-panel-minimized .video-resize-handle {
+  display: block;
 }
 
 /* ============================================================
