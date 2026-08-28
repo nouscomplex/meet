@@ -14,7 +14,7 @@
   <!-- Cache-busting query param — bump alongside the one on app.js
      whenever styles.css changes, for the same reason (see the comment
      on the app.js <script> tag below). -->
-<link rel="stylesheet" href="styles.css?v=20260826a">
+<link rel="stylesheet" href="styles.css?v=20260828c">
 
   <!-- FIX: root cause of "opening the app shows a blank screen for a few
        seconds instead of the loading/home screen" — these three <script>
@@ -486,20 +486,43 @@
              flex layout and these buttons from absolute to static
              positioning. No id changed, so app.js's show/hide logic
              (joinLiveClass()/leaveVideoCall()/endLiveSessionForEveryone())
-             needs no changes. -->
+             needs no changes.
+
+             FIX: root cause of "user can't see the buttons for minimizing/
+             maximizing in live meeting so they can text in the group when
+             needed" — this toolbar only ever offered "End for Everyone"
+             (admin-only) and the X, and the X doesn't minimize anything —
+             it tears down the iframe and fully disconnects the call (see
+             closeLiveSession() in app.js). There was no way to keep the
+             call connected while going back to #messageInput to type, so
+             texting the group during a live session meant leaving the call
+             first and rejoining afterward (a brand new join token, since
+             getLiveJoinUrl() never returns a reusable link). #minimizeVideoBtn
+             toggles the .video-panel-minimized class (see
+             setVideoMinimized() in app.js and the matching rules in
+             styles.css) instead of touching videoIframe.src, so the call
+             keeps running while #videoContainer shrinks to a small corner
+             pip and the chat list + composer become usable again
+             underneath it. Tapping the pip's own header (or this button
+             again) restores it to full screen. -->
         <div id="videoContainer" class="hidden video-panel">
           <div id="videoToolbar" class="video-toolbar">
-            <!-- FIX: root cause of "let admin end live session anytime, even
-                 during the session" — #closeVideoBtn below only ever closed
-                 THIS viewer's own window onto the call; there was no way to
-                 end it for everyone else still on it. Admin-only, shown by
-                 joinLiveClass() only when this call is tied to a scheduled
-                 session (state.activeCallScheduleId). See
-                 endLiveSessionForEveryone() in app.js. -->
-            <button id="endLiveSessionBtn" class="hidden video-end-session-btn" title="End this live session for everyone">
-              <i class="fas fa-ban"></i> End for Everyone
+            <button id="minimizeVideoBtn" class="video-minimize-btn" title="Minimize call (keep chatting)">
+              <i class="fas fa-compress"></i>
             </button>
-            <button id="closeVideoBtn" class="video-close"><i class="fas fa-xmark"></i></button>
+            <div class="video-toolbar-right">
+              <!-- FIX: root cause of "let admin end live session anytime,
+                   even during the session" — #closeVideoBtn below only ever
+                   closed THIS viewer's own window onto the call; there was
+                   no way to end it for everyone else still on it.
+                   Admin-only, shown by joinLiveClass() only when this call
+                   is tied to a scheduled session (state.activeCallScheduleId).
+                   See endLiveSessionForEveryone() in app.js. -->
+              <button id="endLiveSessionBtn" class="hidden video-end-session-btn" title="End this live session for everyone">
+                <i class="fas fa-ban"></i> <span class="video-end-session-label">End for Everyone</span>
+              </button>
+              <button id="closeVideoBtn" class="video-close" title="Leave the call"><i class="fas fa-xmark"></i></button>
+            </div>
           </div>
           <iframe id="videoIframe" src="" allow="camera; microphone; display-capture; autoplay; encrypted-media" allowfullscreen></iframe>
         </div>
@@ -756,7 +779,7 @@
      anything) every time app.js changes so browsers/CDNs that cached the
      old file under the plain "app.js" URL are forced to fetch the new
      one instead of silently keeping serving stale code. -->
-<script src="app.js?v=20260828b" defer></script>
+<script src="app.js?v=20260828c" defer></script>
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
