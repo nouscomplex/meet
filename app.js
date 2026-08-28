@@ -3529,7 +3529,23 @@
 
     if (state.videoActive && state.activeCallScheduleId) {
       const stillCurrent = current && String(current.id) === String(state.activeCallScheduleId);
-      if (!stillCurrent) {
+      // FIX: root cause of "when the meeting is ended by teacher or admin
+      // it should show the group chat screen instead of meeting ended
+      // screen" (the delay half of it) — this used to check ONLY whether
+      // the schedule row's time window (scheduled_time + duration_minutes)
+      // was still in the future, never `is_live` itself. endLiveSessionForEveryone()
+      // shortens duration_minutes to the elapsed time AND sets is_live:false
+      // in the same update, but Math.ceil() on the elapsed minutes means
+      // the shortened window can still read up to ~59 seconds in the
+      // future — so `stillCurrent` stayed true and other participants
+      // were left sitting in a call that had already been ended, still
+      // looking "live" client-side, until the next scheduled boundary
+      // timer happened to fire and finally catch the time-window expiry.
+      // Checking `is_live` directly reacts the instant the realtime
+      // update (subscribeToSchedule()) arrives, instead of up to a
+      // minute later.
+      const stillLive = stillCurrent && current.is_live !== false;
+      if (!stillLive) {
         closeLiveSession('This live session has ended.');
       }
     }
@@ -5029,7 +5045,19 @@
     state.activeCallIsHost = false;
     setVideoMinimized(false);
     if (DOM.endLiveSessionBtn) DOM.endLiveSessionBtn.classList.add('hidden');
-    if (message && wasActive) alert(message);
+    // FIX: root cause of "when the meeting is ended by teacher or admin it
+    // should show the group chat screen instead of meeting ended screen"
+    // (the other half of it) — hiding #videoContainer above already
+    // reveals the group chat screen underneath immediately, but this used
+    // to follow it with `alert(message)` — a native, page-blocking modal
+    // that has to be dismissed before the now-visible chat screen can be
+    // touched at all. That's what actually read as a "meeting ended
+    // screen": not the chat failing to appear, but a dialog sitting in
+    // front of it. showToast() (used elsewhere for the same kind of
+    // transient notice — see jumpToMessage()) shows the same message as a
+    // small, non-blocking banner that fades on its own, so landing back
+    // on the chat is immediate and the notice doesn't gate it.
+    if (message && wasActive) showToast(message);
   }
 
   async function endLiveSessionForEveryone() {
@@ -5100,7 +5128,17 @@
     state.activeCallIsHost = mode === 'start';
     updateLiveButtonState();
     if (DOM.endLiveSessionBtn) {
-      DOM.endLiveSessionBtn.classList.toggle('hidden', !(state.isAdmin && state.activeCallScheduleId));
+      // FIX: root cause of "why is there a cross button when there's a
+      // meeting end button available" (the other half — see closeVideoBtn
+      // below) — this used to be admin-only (`state.isAdmin`), so the
+      // TEACHER a session was actually scheduled for never saw "End for
+      // Everyone" at all, only an admin who happened to also be present.
+      // With X now only ever leaving the current viewer's own view, the
+      // host needs their own way to end it for the class — so this now
+      // also shows for whoever actually started the call
+      // (state.activeCallIsHost, set right above from getLiveButtonMode()
+      // === 'start'), on top of the existing admin override.
+      DOM.endLiveSessionBtn.classList.toggle('hidden', !((state.isAdmin || state.activeCallIsHost) && state.activeCallScheduleId));
     }
 
     clearLiveSessionAutoCloseTimer();
@@ -6502,12 +6540,21 @@
     });
   }
 
+  // FIX: root cause of "why is there a cross button when there's a
+  // meeting end button available" — for a host, X used to silently do the
+  // exact same thing as "End for Everyone" (branching on
+  // state.activeCallIsHost below), just with a plainer icon and no label
+  // explaining that's what it was about to do. Worse, "End for Everyone"
+  // was admin-only (see the FIX above on DOM.endLiveSessionBtn), so a
+  // TEACHER host had no other way to just leave their own view — X was
+  // their ONLY control, and it always ended the class for everyone,
+  // confirm dialog or not. X now always does one thing, for anyone: leave
+  // this viewer's own view of the call. Ending it for the whole group is
+  // exclusively #endLiveSessionBtn's job now — the two buttons are
+  // visually distinct (a plain circular X vs. a labeled red pill) because
+  // they're actually different actions.
   DOM.closeVideoBtn.addEventListener('click', () => {
-    if (state.activeCallIsHost) {
-      endLiveSessionForEveryone();
-    } else {
-      closeLiveSession();
-    }
+    closeLiveSession();
   });
 
   if (DOM.endLiveSessionBtn) {
