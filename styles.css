@@ -2125,8 +2125,30 @@ body.theme-dark .msg-time {
 
 body.theme-dark .btn-send { color: #FFFFFF; }
 
+/* FIX: root cause of "why can't I see the meeting in full screen on
+   laptop" — this was `position: absolute; inset: 0`, which covers the
+   full box of its nearest positioned ancestor, and that ancestor is
+   #screenChatDetail (a `.screen`, `position: relative`). On mobile that
+   IS the whole visible app, so it read as full screen there. On a
+   laptop (desktop layout, ≥1024px) #screenChatDetail is only the RIGHT
+   content pane — see #screenChats/.bottom-nav in the desktop media
+   query below — so the call was only ever filling that pane while the
+   92px icon rail and the chat list stayed visible beside it the whole
+   time, never covering the actual browser window. `position: fixed`
+   makes it escape #screenChatDetail's box entirely and cover the real
+   viewport instead — the same pattern already used for every other
+   true full-screen surface in this app (.app-loading, .status-viewer,
+   .modal-overlay all do the same). It isn't clipped by
+   #screenChatDetail's `overflow: hidden` either: none of its ancestors
+   (.screen/.app-body/.phone-frame) set a transform/filter, so nothing
+   forces it back into that box as a containing block.
+   The minimized pip (.video-panel-minimized below) inherits this same
+   `position: fixed` — its default top/right position is unaffected
+   (the chat pane already starts flush with the browser's top-right on
+   both layouts), and setVideoMinimized()/clampPipRect() in app.js work
+   in viewport-absolute coordinates to match. */
 .video-panel {
-  position: absolute; inset: 0; z-index: 20;
+  position: fixed; inset: 0; z-index: 20;
   background: #05061a;
   /* FIX: was a plain positioning context for two position:absolute
      buttons floated on top of the iframe (see .video-toolbar below for
