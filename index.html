@@ -14,7 +14,7 @@
   <!-- Cache-busting query param — bump alongside the one on app.js
      whenever styles.css changes, for the same reason (see the comment
      on the app.js <script> tag below). -->
-<link rel="stylesheet" href="styles.css?v=20260828e">
+<link rel="stylesheet" href="styles.css?v=20260828g">
 
   <!-- FIX: root cause of "opening the app shows a blank screen for a few
        seconds instead of the loading/home screen" — these three <script>
@@ -510,19 +510,24 @@
             <button id="minimizeVideoBtn" class="video-minimize-btn" title="Minimize call (keep chatting)">
               <i class="fas fa-compress"></i>
             </button>
-            <div class="video-toolbar-right">
-              <!-- FIX: root cause of "let admin end live session anytime,
-                   even during the session" — #closeVideoBtn below only ever
-                   closed THIS viewer's own window onto the call; there was
-                   no way to end it for everyone else still on it.
-                   Admin-only, shown by joinLiveClass() only when this call
-                   is tied to a scheduled session (state.activeCallScheduleId).
-                   See endLiveSessionForEveryone() in app.js. -->
-              <button id="endLiveSessionBtn" class="hidden video-end-session-btn" title="End this live session for everyone">
-                <i class="fas fa-ban"></i> <span class="video-end-session-label">End for Everyone</span>
-              </button>
-              <button id="closeVideoBtn" class="video-close" title="Leave the call"><i class="fas fa-xmark"></i></button>
-            </div>
+            <!-- FIX: root cause of "why is there a cross button when
+                 there's a meeting end button available" (per-request
+                 follow-up) — #closeVideoBtn used to sit here as a second,
+                 separate "leave" control. It's removed now: leaving a call
+                 (for anyone, host or not) happens through PlugNmeet's own
+                 leave/end control inside the iframe itself, not a
+                 second button in this outer toolbar — see the
+                 "PLUGNMEET SESSION-ENDED DETECTION" section in app.js for
+                 how the app now notices that happened and returns to the
+                 group chat on its own instead of leaving #videoContainer
+                 sitting open over PlugNmeet's own "session ended" screen.
+                 Admin-only — shown by joinLiveClass() only when this call
+                 is tied to a scheduled session (state.activeCallScheduleId)
+                 and the current viewer is an admin. See
+                 endLiveSessionForEveryone() in app.js. -->
+            <button id="endLiveSessionBtn" class="hidden video-end-session-btn" title="End this live session for everyone">
+              <i class="fas fa-ban"></i> <span class="video-end-session-label">End for Everyone</span>
+            </button>
           </div>
           <iframe id="videoIframe" src="" allow="camera; microphone; display-capture; autoplay; encrypted-media" allowfullscreen></iframe>
           <!-- FIX: root cause of "why is the minimized meeting not
@@ -795,7 +800,7 @@
      anything) every time app.js changes so browsers/CDNs that cached the
      old file under the plain "app.js" URL are forced to fetch the new
      one instead of silently keeping serving stale code. -->
-<script src="app.js?v=20260828f" defer></script>
+<script src="app.js?v=20260828g" defer></script>
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
