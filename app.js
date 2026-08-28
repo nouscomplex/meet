@@ -1,3309 +1,6611 @@
-/* ============================================================
-   NOUS COMPLEX ORBIT — Design System
-   Mobile-first communication app.
-   Signature device: role-colored identity markers
-   (Admin = violet, Teacher = green, Student = rose)
-   ============================================================ */
+// ============================================================
+// NOUS COMPLEX ORBIT — Application Logic
+// ============================================================
 
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+(function() {
+  "use strict";
 
-:root {
-  /* Real visible viewport height, kept in sync with window.visualViewport by
-     app.js. Falls back to 100dvh/100vh until JS runs (or if it can't run). */
-  --app-height: 100dvh;
+  // ============================================================
+  // 0. THEME (applied before login too)
+  // ============================================================
+  try {
+    if (localStorage.getItem('orbit-theme') === 'dark') {
+      document.body.classList.add('theme-dark');
+    }
+  } catch (e) { /* localStorage unavailable */ }
 
-  /* Surfaces */
-  --bg: #fcfcfc;
-  --surface: #FFFFFF;
-  --surface-sunken: #ededed;
-  --border: #ebebed;
-  --border-strong: #e8e9eb;
-
-  /* Text */
-  --ink: #14162B;
-  --ink-soft: #6E7385;
-  --ink-faint: #A2A6B8;
-
-  /* Brand accent (primary interactive color) */
-  --accent: #0E1B75;
-  --accent-dark: #0A1450;
-  --accent-wash: #f0f0f0;
-
-  /* Deep navy (headers, live pill, dark surfaces) — same family as accent */
-  --navy: #0E1B75;
-  --navy-soft: #16267F;
-
-  /* Chat design palette — used exclusively within the chat screen
-     (header, bubbles, composer, live pill, borders, ticks). */
-  --chat-navy: #0E1B75;
-  --chat-white: #FFFFFF;
-  --chat-blue: #99c9f7;
-  --chat-grey: #C9C9C9;
-  --chat-ink: #262626;
-  --chat-ink-soft: #6A6A6A;
-  --chat-accent: var(--chat-navy);
-  --role-admin: #77b3fc;
-  --role-admin-wash: #e4e3e8;
-  --role-teacher: #1FA971;
-  --role-teacher-wash: #E5F8EF;
-  --role-student: #E1508B;
-  --role-student-wash: #FCEAF2;
-
-  /* Live-session button "actually live" accent — a distinct blue from the
-     rest of the navy chat palette so a running class visually pops
-     against the muted grey "not live yet" state (see .btn-live-pill-live
-     / .btn-live-pill-waiting below). */
-  --live-blue: #2F80ED;
-  --live-blue-hover: #2568C4;
-
-  /* Status */
-  --danger: #E24C43;
-  --danger-wash: #FDEBEA;
-  --online: #22C55E;
-  --success: #22C55E;
-  --warning: #F59E0B;
-
-  /* Elevation */
-  --shadow-sm: 0 1px 2px rgba(20, 22, 43, 0.06);
-  --shadow-md: 0 8px 24px -6px rgba(20, 22, 43, 0.14);
-  --shadow-lg: 0 24px 48px -16px rgba(20, 22, 43, 0.28);
-
-  /* Type */
-  --font-display: 'Manrope', 'Inter', system-ui, sans-serif;
-  --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-
-  --radius-sm: 10px;
-  --radius-md: 14px;
-  --radius-lg: 22px;
-  --radius-pill: 999px;
-}
-
-/* Dark theme overrides */
-body.theme-dark {
-  --bg: #0C0E22;
-  --surface: #15172F;
-  --surface-sunken: #1B1E3B;
-  --border: #262A4C;
-  --border-strong: #33375E;
-  --ink: #F1F2FA;
-  --ink-soft: #b9b9bd;
-  --ink-faint: #6E7395;
-
-  /* --accent is used as TEXT/ICON color in many places (icon-btn hover,
-     alpha index, "See all" links, profile meta, settings icons, etc).
-     The default navy (#0E1B75) is nearly invisible on a dark background,
-     which is what was causing icons/headers to "merge" in dark mode.
-     Lighten it here so every element using var(--accent) stays legible. */
-  --accent: #7BB8FF;
-  --accent-dark: #BFDBFF;
-  --accent-wash: #23204A;
-  --chat-white: #15172F;
-  --chat-grey: #33375E;
-  --chat-ink: #FFFFFF;
-  --chat-ink-soft: #C8CBDD;
-  --chat-accent: #7BB8FF;
-  --success: #34D399;
-  --live-blue: #4C9AFF;
-  --live-blue-hover: #3A87E6;
-}
-
-/* ===== Reset & Base ===== */
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-html { 
-  -webkit-text-size-adjust: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-
-body {
-  background: #E8E9F2;
-  color: var(--ink);
-  min-height: 100vh;
-  min-height: 100dvh;
-  height: 100vh;
-  height: 100dvh;
-  height: var(--app-height);
-  overflow: hidden;
-  font-family: var(--font-body);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  line-height: 1.5;
-  transition: background 0.2s ease, color 0.2s ease;
-}
-
-body.theme-dark { background: #050612; }
-
-::selection { background: var(--accent-wash); color: var(--accent-dark); }
-
-/* ===== Scrollbars ===== */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; }
-.scrollbar-hide::-webkit-scrollbar { display: none; }
-.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-
-button { font-family: inherit; }
-
-/* ============================================================
-   APP SHELL — phone frame
-   ============================================================ */
-.app-shell {
-  height: 100vh;
-  height: 100dvh;
-  height: var(--app-height);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  overflow: hidden;
-}
-
-.phone-frame {
-  width: 100%;
-  max-width: 430px;
-  height: 100vh;
-  height: 100dvh;
-  height: var(--app-height);
-  background: var(--bg);
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  overflow: hidden;
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
-  flex: 1;
-}
-
-/* Tablet-ish widths */
-@media (min-width: 560px) and (max-width: 1023.98px) {
-  .app-shell { padding: 28px 12px; }
-  .phone-frame {
-    min-height: 860px;
-    height: 860px;
-    border-radius: 34px;
-    box-shadow: var(--shadow-lg);
-    border: 8px solid var(--navy);
-    max-height: 90vh;
+  // ============================================================
+  // 0b. VIEWPORT HEIGHT (mobile keyboard fix)
+  // ============================================================
+  function setAppHeight() {
+    const vv = window.visualViewport;
+    const h = vv ? vv.height : window.innerHeight;
+    document.documentElement.style.setProperty('--app-height', h + 'px');
   }
-}
-
-/* ============================================================
-   DESKTOP LAYOUT - WhatsApp Web Style
-   ============================================================ */
-@media (min-width: 1024px) {
-  .app-shell { 
-    padding: 0; 
-    align-items: stretch; 
-    justify-content: stretch;
-    height: 100vh;
-    height: 100dvh;
-    height: var(--app-height);
+  setAppHeight();
+  window.addEventListener('resize', setAppHeight);
+  window.addEventListener('orientationchange', setAppHeight);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', setAppHeight);
+    window.visualViewport.addEventListener('scroll', setAppHeight);
   }
 
-  .phone-frame {
-    max-width: none;
-    width: 100%;
-    height: 100vh;
-    height: 100dvh;
-    height: var(--app-height);
-    min-height: 100vh;
-    min-height: 100dvh;
-    border: none;
-    border-radius: 0;
-    box-shadow: none;
-    background: var(--bg);
+  // ============================================================
+  // 1. LOAD CONFIGURATION
+  // ============================================================
+  const CONFIG = window.CONFIG;
+
+  if (!CONFIG) {
+    console.error('❌ Config not loaded! Please include config.js');
+    const loader = document.getElementById('appLoading');
+    const authCardEl = document.getElementById('authCard');
+    if (loader) loader.classList.add('hidden');
+    if (authCardEl) authCardEl.classList.remove('hidden');
+    alert('Configuration file not found. Please check your setup.');
+    return;
   }
 
-  .app-body { 
-    flex-direction: row !important;
-    height: 100%;
-    overflow: hidden;
-    background: var(--bg);
+  console.log(`🏫 ${CONFIG.BRANDING.NAME} v${CONFIG.BRANDING.VERSION}`);
+  console.log(`🔧 Environment: ${CONFIG.ENV}`);
+
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  } else {
+    console.warn('pdf.js failed to load — shared PDFs will fall back to a plain file icon (no page preview).');
   }
 
-  /* Sidebar Navigation */
-  .bottom-nav {
-    position: static !important;
-    flex-direction: column !important;
-    justify-content: flex-start !important;
-    width: 92px !important;
-    height: 100% !important;
-    padding: 28px 8px calc(28px + env(safe-area-inset-bottom)) !important;
-    gap: 26px !important;
-    border-top: none !important;
-    border-right: 1px solid var(--border) !important;
-    order: -1 !important;
-    flex-shrink: 0 !important;
-    background: var(--surface) !important;
-    display: flex !important;
+  // ============================================================
+  // 2. SUPABASE CLIENT
+  // ============================================================
+  const supabase = window.supabase.createClient(
+    CONFIG.SUPABASE.URL,
+    CONFIG.SUPABASE.ANON_KEY
+  );
+
+  const adminAuthClient = window.supabase.createClient(
+    CONFIG.SUPABASE.URL,
+    CONFIG.SUPABASE.ANON_KEY,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        storageKey: 'orbit-admin-auth-noop',
+      }
+    }
+  );
+
+  supabase.auth.onAuthStateChange((event) => {
+    if (event === 'SIGNED_OUT' && state.currentUser) {
+      forceSignOut('Signed Out Successfully');
+    }
+  });
+
+  // ============================================================
+  // 3. APPLICATION STATE
+  // ============================================================
+  const state = {
+    currentUser: null,
+    currentChannel: null,
+    currentMembers: [],
+    statuses: [],
+    messages: [],
+    channelPreviews: {},
+    isAdmin: false,
+    isTeacher: false,
+    videoActive: false,
+    // FIX: root cause of "user can't see the buttons for minimizing/
+    // maximizing in live meeting so they can text in group when needed" —
+    // there was no minimized state at all; #videoContainer was always
+    // either full-screen or fully hidden (see closeLiveSession(), which
+    // tears down videoIframe.src entirely). This flag tracks the new
+    // in-between state — call still connected, panel shrunk to a corner
+    // pip — toggled by setVideoMinimized() below and reflected in the DOM
+    // via the .video-panel-minimized class (styles.css).
+    videoMinimized: false,
+    progressInterval: null,
+    messagesSubscription: null,
+    replyingTo: null,
+    unreadByChannel: {},
+    roleCache: {},
+    displayNameCache: {},
+    onlineUsers: new Set(),
+    currentTab: 'chats',
+    screenReturn: 'chats',
+    currentScreen: 'chats',
+    cachedMessages: {},
+    inactivityTimer: null,
+    connectionWatchdog: null,
+    INACTIVITY_TIMEOUT: 300000,
+    isChannelActive: false,
+    isTabFocused: true,
+    tabChannel: null,
+    isRefreshing: false,
+    isMerging: false,
+    messageReads: new Map(),
+    readsSubscription: null,
+    statusViews: new Map(),
+    statusViewsSubscription: null,
+    activeLightbox: null,
+    sharedMediaUrls: [],
+    myMemberships: new Map(),
+    sessionWatchdog: null,
+    myUserRoleId: null,
+    currentSchedule: null,
+    activeCallScheduleId: null,
+    activeCallIsHost: false,
+    lastTypingBroadcastAt: 0,
+  };
+
+  // ============================================================
+  // 4. DOM REFS
+  // ============================================================
+  const $ = (id) => document.getElementById(id);
+
+  const DOM = {
+    appLoading: $('appLoading'),
+    authCard: $('authCard'),
+    dashboard: $('dashboard'),
+    usernameInput: $('usernameInput'),
+    passwordInput: $('passwordInput'),
+    loginBtn: $('loginBtn'),
+    authError: $('authError'),
+    authErrorText: $('authErrorText'),
+    authLogo: $('authLogo'),
+    sidebarLogo: $('sidebarLogo'),
+
+    screenChats: $('screenChats'),
+    screenUpdates: $('screenUpdates'),
+    screenSettings: $('screenSettings'),
+    screenChatDetail: $('screenChatDetail'),
+    screenMembers: $('screenMembers'),
+    screenProfile: $('screenProfile'),
+    bottomNav: $('bottomNav'),
+    navChatsBadge: $('navChatsBadge'),
+    navUpdatesBadge: $('navUpdatesBadge'),
+
+    chatSearchInput: $('chatSearchInput'),
+    channelList: $('channelList'),
+    brandHeader: $('brandHeader'),
+    channelSelectHeader: $('channelSelectHeader'),
+    channelSelectCloseBtn: $('channelSelectCloseBtn'),
+    channelSelectCount: $('channelSelectCount'),
+    channelSelectRenameBtn: $('channelSelectRenameBtn'),
+    channelSelectDeleteBtn: $('channelSelectDeleteBtn'),
+
+    userBadge: $('userBadge'),
+    updatesScreenHeader: $('updatesScreenHeader'),
+    statusSelectHeader: $('statusSelectHeader'),
+    statusSelectCloseBtn: $('statusSelectCloseBtn'),
+    statusSelectCount: $('statusSelectCount'),
+    statusSelectInfoBtn: $('statusSelectInfoBtn'),
+    statusSelectDeleteBtn: $('statusSelectDeleteBtn'),
+    statusTray: $('statusTray'),
+    statusPlaceholder: $('statusPlaceholder'),
+    statusAddBtn: $('statusAddBtn'),
+    postStatusBtn: $('postStatusBtn'),
+    postStatusFab: $('postStatusFab'),
+    backFromUpdates: $('backFromUpdates'),
+
+    settingsAvatar: $('settingsAvatar'),
+    settingsName: $('settingsName'),
+    settingsEmail: $('settingsEmail'),
+    settingsDisplayName: $('settingsDisplayName'),
+    notifToggle: $('notifToggle'),
+    darkToggle: $('darkToggle'),
+    adminSettingsCard: $('adminSettingsCard'),
+    createChannelBtn: $('createChannelBtn'),
+    viewCalendarBtn: $('viewCalendarBtn'),
+    signOutBtn: $('signOutBtn'),
+
+    screenCalendar: $('screenCalendar'),
+    backFromCalendar: $('backFromCalendar'),
+    calendarList: $('calendarList'),
+
+    adminCreateUserCard: $('adminCreateUserCard'),
+    adminUserManagementCard: $('adminUserManagementCard'),
+    addUserToggleBtn: $('addUserToggleBtn'),
+    manageUsersToggleBtn: $('manageUsersToggleBtn'),
+    newUserUsername: $('newUserUsername'),
+    newUserDisplayName: $('newUserDisplayName'),
+    newUserRole: $('newUserRole'),
+    newUserPassword: $('newUserPassword'),
+    generatePasswordBtn: $('generatePasswordBtn'),
+    createUserBtn: $('createUserBtn'),
+    
+    manageUserSearch: $('manageUserSearch'),
+    loadUserBtn: $('loadUserBtn'),
+    registeredUsersListWrap: $('registeredUsersListWrap'),
+    registeredUsersListView: $('registeredUsersListView'),
+    userEditForm: $('userEditForm'),
+    closeUserEditBtn: $('closeUserEditBtn'),
+    editUsername: $('editUsername'),
+    editDisplayName: $('editDisplayName'),
+    editNewUsername: $('editNewUsername'),
+    editPassword: $('editPassword'),
+    editRole: $('editRole'),
+    manageUserGroupsBtn: $('manageUserGroupsBtn'),
+    updateUserBtn: $('updateUserBtn'),
+    deleteUserBtn: $('deleteUserBtn'),
+
+    backFromChat: $('backFromChat'),
+    chatDetailHeader: document.querySelector('.chat-detail-header'),
+    chatDetailTitleBtn: $('chatDetailTitleBtn'),
+    chatDetailName: $('chatDetailName'),
+    chatDetailSub: $('chatDetailSub'),
+    msgSelectHeader: $('msgSelectHeader'),
+    msgSelectCloseBtn: $('msgSelectCloseBtn'),
+    msgSelectCount: $('msgSelectCount'),
+    msgSelectReplyBtn: $('msgSelectReplyBtn'),
+    msgSelectForwardBtn: $('msgSelectForwardBtn'),
+    msgSelectCopyBtn: $('msgSelectCopyBtn'),
+    msgSelectDeleteBtn: $('msgSelectDeleteBtn'),
+    msgSelectInfoBtn: $('msgSelectInfoBtn'),
+    joinLiveBtn: $('joinLiveBtn'),
+    liveBtnText: $('liveBtnText'),
+    scheduleBanner: $('scheduleBanner'),
+    scheduleBannerText: $('scheduleBannerText'),
+    chatContainer: $('chatContainer'),
+    chatMessages: $('chatMessages'),
+    fileUploadStatus: $('fileUploadStatus'),
+    replyPreview: $('replyPreview'),
+    replyPreviewAuthor: $('replyPreviewAuthor'),
+    replyPreviewText: $('replyPreviewText'),
+    replyPreviewCancel: $('replyPreviewCancel'),
+    filePreview: $('filePreview'),
+    filePreviewName: $('filePreviewName'),
+    filePreviewRemove: $('filePreviewRemove'),
+    fileInput: $('fileInput'),
+    messageInput: $('messageInput'),
+    sendMsgBtn: $('sendMsgBtn'),
+    videoContainer: $('videoContainer'),
+    videoIframe: $('videoIframe'),
+    endLiveSessionBtn: $('endLiveSessionBtn'),
+    closeVideoBtn: $('closeVideoBtn'),
+    minimizeVideoBtn: $('minimizeVideoBtn'),
+
+    backFromMembers: $('backFromMembers'),
+    memberSearchInput: $('memberSearchInput'),
+    adminAddMemberRow: $('adminAddMemberRow'),
+    assignStudentInput: $('assignStudentInput'),
+    registeredUsersList: $('registeredUsersList'),
+    assignRoleSelect: $('assignRoleSelect'),
+    assignStudentBtn: $('assignStudentBtn'),
+    channelMembersList: $('channelMembersList'),
+    alphaIndex: $('alphaIndex'),
+
+    backFromProfile: $('backFromProfile'),
+    profileChannelName: $('profileChannelName'),
+    profileChannelMeta: $('profileChannelMeta'),
+    profileChannelDesc: $('profileChannelDesc'),
+    profileMembersBtn: $('profileMembersBtn'),
+    profileSeeAllMedia: $('profileSeeAllMedia'),
+    sharedMediaGrid: $('sharedMediaGrid'),
+    adminProfileSchedule: $('adminProfileSchedule'),
+    scheduleTeacherInput: $('scheduleTeacherInput'),
+    scheduleCalPrevBtn: $('scheduleCalPrevBtn'),
+    scheduleCalNextBtn: $('scheduleCalNextBtn'),
+    scheduleCalMonthLabel: $('scheduleCalMonthLabel'),
+    scheduleCalGrid: $('scheduleCalGrid'),
+    scheduleSelectedDates: $('scheduleSelectedDates'),
+    scheduleStartTimeInput: $('scheduleStartTimeInput'),
+    scheduleDurationInput: $('scheduleDurationInput'),
+    scheduleEndPreview: $('scheduleEndPreview'),
+    scheduleSameTimeCheckbox: $('scheduleSameTimeCheckbox'),
+    schedulePerDateList: $('schedulePerDateList'),
+    setScheduleBtn: $('setScheduleBtn'),
+    groupScheduleList: $('groupScheduleList'),
+    
+    adminDescEdit: $('adminDescEdit'),
+    channelDescInput: $('channelDescInput'),
+    updateDescBtn: $('updateDescBtn'),
+
+    statusModal: $('statusModal'),
+    statusSegments: $('statusSegments'),
+    statusProgress: $('statusProgress'),
+    closeStatusModal: $('closeStatusModal'),
+    statusViewerAvatar: $('statusViewerAvatar'),
+    statusModalTitle: $('statusModalTitle'),
+    statusModalTime: $('statusModalTime'),
+    statusModalMedia: $('statusModalMedia'),
+    statusModalContent: $('statusModalContent'),
+    statusLinkPreview: $('statusLinkPreview'),
+    statusViewerBody: $('statusViewerBody'),
+    statusPauseBtn: $('statusPauseBtn'),
+  };
+
+  // ============================================================
+  // 5. LOGO HANDLING
+  // ============================================================
+  function setupLogos() {
+    const logoPath = CONFIG.BRANDING.LOGO.PATH;
+    const altText = CONFIG.BRANDING.LOGO.ALT;
+
+    [DOM.authLogo, DOM.sidebarLogo].forEach((el) => {
+      if (!el) return;
+      el.src = logoPath;
+      el.alt = altText;
+      el.addEventListener('error', function onErr() {
+        this.removeEventListener('error', onErr);
+        this.style.display = 'none';
+        const fallback = document.createElement('i');
+        fallback.className = 'fas fa-graduation-cap';
+        fallback.style.cssText = 'color:var(--accent); font-size:1.4rem; display:flex; align-items:center; justify-content:center;';
+        this.parentNode.insertBefore(fallback, this);
+      });
+    });
   }
-  .nav-btn { 
-    padding: 0 !important; 
-    flex-direction: column !important;
-    gap: 4px !important;
+
+  // ============================================================
+  // 5b. NOTIFICATION SOUND & VISUAL NOTIFICATIONS
+  // ============================================================
+  let audioCtx = null;
+
+  function unlockAudioContext() {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    } catch (e) { /* ignore — playNotifySound() will retry and log if needed */ }
+    ['click', 'keydown', 'touchstart'].forEach((evt) => window.removeEventListener(evt, unlockAudioContext));
+  }
+  ['click', 'keydown', 'touchstart'].forEach((evt) => window.addEventListener(evt, unlockAudioContext, { once: false }));
+
+  function playNotifySound() {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      const now = audioCtx.currentTime;
+      [[880, 0], [1175, 0.09]].forEach(([freq, delay]) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, now + delay);
+        gain.gain.exponentialRampToValueAtTime(0.18, now + delay + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + delay + 0.16);
+        osc.connect(gain).connect(audioCtx.destination);
+        osc.start(now + delay);
+        osc.stop(now + delay + 0.18);
+      });
+    } catch (e) {
+      console.warn('Notification sound unavailable:', e);
+    }
+
+    try {
+      if (typeof Notification !== 'undefined' && 
+          Notification.permission === 'granted' && 
+          document.hidden) {
+        const senderName = state.currentUser ? getDisplayName(state.currentUser.username) : 'Someone';
+        const channelName = state.currentChannel?.name || 'Class';
+        
+        const notification = new Notification(`💬 ${senderName} in ${channelName}`, {
+          body: 'New message! Tap to open.',
+          icon: CONFIG.BRANDING.LOGO.PATH || '/favicon.ico',
+          badge: '/favicon.ico',
+          tag: 'new-message-' + Date.now(),
+          requireInteraction: true,
+        });
+        
+        setTimeout(() => {
+          notification.close();
+        }, 10000);
+        
+        notification.onclick = function() {
+          window.focus();
+          notification.close();
+        };
+      }
+    } catch (e) {
+      console.warn('Could not show notification:', e);
+    }
   }
 
-  /* ALL SCREENS - Always use flex on desktop */
-  .screen {
-    display: flex !important;
-    flex-direction: column !important;
-    height: 100% !important;
-    background: var(--bg) !important;
+  // ============================================================
+  // 6. UTILITY FUNCTIONS
+  // ============================================================
+  function getRoleFromUsername(username) {
+    if (!username) return CONFIG.AUTH.ROLES.STUDENT;
+    const key = username.toLowerCase();
+
+    if (state.roleCache[key]) return state.roleCache[key];
+
+    console.warn(`No role found in role cache for "${username}" — defaulting to student.`);
+    return CONFIG.AUTH.ROLES.STUDENT;
   }
 
-  /* Chat List - Left Panel */
-  #screenChats:not(.hidden) {
-    flex: 0 0 clamp(320px, 30vw, 420px) !important;
-    max-width: 420px !important;
-    height: 100% !important;
-    border-right: 1px solid var(--border) !important;
-    background: var(--bg) !important;
-    display: flex !important;
+  function getDisplayName(username) {
+    if (!username) return username;
+    const key = username.toLowerCase();
+    return state.displayNameCache[key] || username;
   }
 
-  /* Highlight the currently open conversation in the list, like WhatsApp Web */
-  .chat-row.active {
-    background: var(--surface-sunken);
-  }
-  .chat-row.active:hover { background: var(--surface-sunken); }
-
-  /* Right Panel - Content Area */
-  #screenUpdates:not(.hidden),
-  #screenSettings:not(.hidden),
-  #screenChatDetail:not(.hidden),
-  #screenMembers:not(.hidden),
-  #screenProfile:not(.hidden),
-  #screenCalendar:not(.hidden) {
-    flex: 1 !important;
-    height: 100% !important;
-    min-width: 0 !important;
-    background: var(--surface) !important;
-    display: flex !important;
+  async function getUserRoles(username) {
+    const { data, error } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('username', username.toLowerCase());
+    
+    if (error || !data || data.length === 0) {
+      return null;
+    }
+    return data.map(row => row.role);
   }
 
-  /* Hide screens when they have the hidden class */
-  .screen.hidden {
-    display: none !important;
+  async function loadRoleCache() {
+    const { data, error } = await supabase.from('user_roles').select('username, role, display_name');
+    if (error) {
+      console.warn('Role cache unavailable:', error);
+      return;
+    }
+    (data || []).forEach((row) => {
+      const key = row.username.toLowerCase();
+      state.roleCache[key] = row.role;
+      if (row.display_name) {
+        state.displayNameCache[key] = row.display_name;
+      }
+    });
+    populateRegisteredUsersDatalist();
   }
 
-  /* Chat list scroll */
-  .chat-list {
-    padding-bottom: 24px !important;
-    background: var(--bg) !important;
+  function populateRegisteredUsersDatalist() {
+    if (!DOM.registeredUsersList) return;
+    DOM.registeredUsersList.innerHTML = Object.keys(state.roleCache)
+      .sort()
+      .map((u) => `<option value="${escapeHtml(u)}"></option>`)
+      .join('');
   }
 
-  #screenSettings { 
-    padding-bottom: 0 !important;
-    background: var(--surface) !important;
-  }
-  
-  .members-wrap { 
-    padding-bottom: 24px !important;
-    background: var(--surface) !important;
+  function roleKey(username) {
+    const role = getRoleFromUsername(username);
+    if (role === CONFIG.AUTH.ROLES.ADMIN) return 'admin';
+    if (role === CONFIG.AUTH.ROLES.TEACHER) return 'teacher';
+    return 'student';
   }
 
-  .fab { bottom: 28px !important; }
-  
-  /* Hide back buttons on desktop.
-     FIX: root cause of "group profile / members has no way back on laptop,
-     mobile is fine" — #backFromProfile and #backFromMembers used to be
-     blanket-hidden here along with the others. That's fine for screens
-     with an obvious alternate way back (Chat/Updates have the persistent
-     chat list or their own bottom-nav tab to fall back on), but Profile and
-     Members are reached by drilling further in (Chats → Chat → Profile →
-     Members) and, on desktop, each replaces the panel entirely with
-     nothing left pointing back to the screen you came from — re-clicking
-     the same row in the list on the left only gets you back to the chat
-     itself, not to Profile/Members specifically, and there was no visible
-     control that said so. Both are excluded from this rule so they keep
-     the same working back button mobile already has.
-
-     FIX: root cause of "the back button on Live Sessions Calendar is not
-     visible on laptop" — #backFromCalendar used to be grouped in this same
-     hidden list under the same "has the bottom nav to fall back on"
-     assumption as Chat/Updates. That assumption doesn't hold for Calendar:
-     unlike Chats/Updates it isn't a bottom-nav tab at all (only
-     chats/updates/settings are — see ROOT_TABS in app.js), and like
-     Profile/Members it's only reached by drilling in from elsewhere
-     (Settings → Admin tools → "Live Sessions Calendar"). Technically the
-     Settings icon does stay highlighted underneath and clicking it would
-     also leave Calendar (goToScreen() only updates the active tab for a
-     ROOT_TABS screen, and Calendar isn't one), but nothing on screen makes
-     that obvious — there was no visible way back. #backFromCalendar's
-     click handler (see app.js) already correctly returns to Settings; it
-     just needed to not be display:none. Excluded here the same way
-     Profile/Members already are. */
-  #backFromChat,
-  #backFromUpdates {
-    display: none !important;
+  function avatarHtml(username, size) {
+    const key = roleKey(username);
+    const displayName = getDisplayName(username);
+    const initial = (displayName || '?').charAt(0).toUpperCase();
+    const sizeClass = size === 'sm' ? ' sm' : size === 'lg' ? ' lg' : '';
+    const online = state.onlineUsers.has((username || '').toLowerCase());
+    return `<div class="avatar avatar-${key}${sizeClass}">${initial}<span class="avatar-dot${online ? ' online' : ''}"></span></div>`;
   }
 
-  .status-viewer-inner { 
-    border-radius: 0 !important; 
-    height: 100vh !important; 
-    max-height: 100vh !important; 
-    max-width: 480px !important; 
+  function channelColorKey(ch) {
+    const keys = ['admin', 'teacher', 'student'];
+    let hash = 0;
+    for (const c of String(ch.id)) hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
+    return keys[hash % keys.length];
   }
 
-  .brand-header {
-    background: var(--bg) !important;
-    border-bottom: 1px solid var(--border) !important;
+  function channelAvatarHtml(ch) {
+    const key = channelColorKey(ch);
+    const initial = (ch.name || '?').charAt(0).toUpperCase();
+    return `<div class="avatar avatar-${key}">${initial}</div>`;
   }
 
-  /* screen-header sits inside panels whose background is var(--surface)
-     on desktop (Settings/Members/Profile/Updates). It previously used
-     var(--bg), a different shade, which created a mismatched seam
-     between header and body — most visible in dark mode. Match it to
-     the panel background and add a hairline border for definition. */
-  .screen-header {
-    background: var(--surface) !important;
-    border-bottom: 1px solid var(--border) !important;
+  function setAvatarEl(el, username, extraClass) {
+    if (!el) return;
+    const key = roleKey(username);
+    const displayName = getDisplayName(username);
+    el.className = `avatar avatar-${key}${extraClass ? ' ' + extraClass : ''}`;
+    el.textContent = (displayName || '?').charAt(0).toUpperCase();
   }
 
-  .chat-detail-header {
-    border-bottom: 1px solid var(--border) !important;
+  function generateEmail(username) {
+    return `${username}${CONFIG.AUTH.EMAIL_SUFFIX}`;
   }
 
-  /* Subtle dotted "wallpaper" behind messages, like WhatsApp Web's
-     chat background. Uses existing theme variables so it adapts
-     automatically to light/dark without any new colors. */
-  .chat-scroll {
-    background-color: var(--chat-white);
-    background-image: radial-gradient(var(--border) 1px, transparent 1px);
-    background-size: 24px 24px;
+  function normalizeUsername(raw) {
+    return (raw || '').trim().toLowerCase();
   }
 
-  /* Cap bubble width on wide screens — 84% of a 1600px window is huge */
-  .msg { max-width: 60%; }
-
-  /* ===== "No chat selected" welcome screen (desktop only) =====
-     WhatsApp Web hides the conversation header/composer entirely and
-     shows a centered placeholder until a chat is opened. Replicate
-     that instead of leaving the right panel blank on first load. */
-  #screenChatDetail.no-chat .chat-detail-header,
-  #screenChatDetail.no-chat .schedule-banner,
-  #screenChatDetail.no-chat .reply-preview,
-  #screenChatDetail.no-chat .file-preview-bar,
-  #screenChatDetail.no-chat #fileUploadStatus,
-  #screenChatDetail.no-chat .composer {
-    display: none !important;
-  }
-  #screenChatDetail.no-chat .chat-scroll {
-    background-image: none;
-    align-items: center;
-    justify-content: center;
-  }
-  #screenChatDetail.no-chat #chatMessages {
-    display: flex;
-    width: 100%;
-    height: 100%;
+  function generatePassword(length = 10) {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    let out = '';
+    for (let i = 0; i < length; i++) out += chars.charAt(Math.floor(Math.random() * chars.length));
+    return out;
   }
 
-  .chat-welcome {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 14px;
-    padding: 24px;
-    text-align: center;
+  function formatDate(ts) {
+    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
-  .chat-welcome-icon {
-    width: 96px;
-    height: 96px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--surface-sunken);
-    color: var(--ink-faint);
-    font-size: 34px;
+
+  function dayKey(ts) {
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
   }
-  .chat-welcome-title {
-    font-family: var(--font-display);
-    font-weight: 800;
-    font-size: 1.4rem;
-    color: var(--ink);
+
+  function formatDayLabel(ts) {
+    const d = new Date(ts);
+    const now = new Date();
+    const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86400000);
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays > 1 && diffDays < 7) return d.toLocaleDateString([], { weekday: 'long' });
+    if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+    return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
   }
-  .chat-welcome-sub {
-    font-size: 13.5px;
-    color: var(--ink-faint);
-    max-width: 320px;
-    line-height: 1.5;
+
+  function buildDayDivider(dk, label) {
+    const el = document.createElement('div');
+    el.className = 'day-divider';
+    el.dataset.day = dk;
+    el.innerHTML = `<span class="day-divider-label">${escapeHtml(label)}</span>`;
+    return el;
   }
-}
-
-.hidden { display: none !important; }
-.center-text { text-align: center; }
-.empty-note { font-size: 13px; color: var(--ink-faint); padding: 10px 2px; }
-
-/* ============================================================
-   SESSION CHECK LOADER / SPLASH SCREEN (FIX — see #appLoading in index.html)
-   ============================================================ */
-/* FIX: root cause of "why is the loading screen navy blue instead of
-   white (#ffffff)" — this used to be `background: var(--accent)`, and
-   --accent resolves to #0E1B75 (navy) in light mode and #7BB8FF (pale
-   blue) in dark mode — never white. The splash shows before app.js has
-   even decided light vs. dark (it's the very first thing painted), so
-   it's pinned to a literal #ffffff here instead of a theme variable —
-   it should look the same regardless of which theme the user ends up in. */
-.app-loading {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 18px;
-  background: #ffffff;
-}
-/* FIX: was .app-loading-emblem — a small 64px app-icon crop of
-   nouscomplex.png. This is the app's splash screen now, so it renders the
-   dedicated nouscomplex-splash.png graphic large enough to read as a real
-   splash (not a tiny icon), without cropping it into a rounded square. */
-.app-loading-splash {
-  width: min(220px, 60vw);
-  height: auto;
-  object-fit: contain;
-}
-/* FIX: the ring/top colors here were white-on-white, tuned for the old
-   navy background — invisible against the new #ffffff splash above.
-   Switched to the navy accent so the spinner is actually visible. */
-.app-loading-spinner {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  border: 3px solid rgba(14, 27, 117, 0.16);
-  border-top-color: var(--accent);
-  animation: orbit-loading-spin 0.8s linear infinite;
-}
-@keyframes orbit-loading-spin {
-  to { transform: rotate(360deg); }
-}
-
-/* ============================================================
-   AUTH CARD
-   ============================================================ */
-.auth-wrap {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: var(--bg);
-  overflow-y: auto;
-}
-
-.auth-card {
-  width: 100%;
-  max-width: 360px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
-  padding: 36px 30px 28px;
-}
-
-.auth-emblem {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
-  object-fit: contain;
-  margin: 0 auto 18px;
-  display: block;
-  background: transparent;
-  mix-blend-mode: multiply;
-  border: none;
-  box-shadow: none;
-  outline: none;
-}
-
-.auth-title {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 1.5rem;
-  text-align: center;
-  color: var(--ink);
-  margin-bottom: 4px;
-  letter-spacing: -0.01em;
-}
-
-.auth-sub {
-  font-size: 13.5px;
-  color: var(--ink-soft);
-  text-align: center;
-  margin-bottom: 24px;
-}
-
-.auth-note {
-  font-size: 11.5px;
-  color: var(--ink-faint);
-  text-align: center;
-  margin-top: 18px;
-}
-
-.error-text {
-  color: var(--danger);
-  font-size: 13px;
-  margin-top: 10px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-/* ============================================================
-   FORM ELEMENTS
-   ============================================================ */
-.field {
-  width: 100%;
-  padding: 12px 14px;
-  border-radius: var(--radius-sm);
-  border: 1.5px solid var(--border);
-  background: var(--surface);
-  color: var(--ink);
-  font-family: var(--font-body);
-  font-size: 14.5px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-.field::placeholder { color: var(--ink-faint); }
-.field:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-wash);
-}
-
-.field-sm {
-  padding: 9px 11px;
-  font-size: 13px;
-  border-radius: var(--radius-sm);
-  border: 1.5px solid var(--border);
-  background: var(--surface);
-  color: var(--ink);
-  flex: 1;
-  min-width: 0;
-}
-.field-sm:focus { outline: none; border-color: var(--accent); }
-
-/* ============================================================
-   BUTTONS
-   ============================================================ */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-family: var(--font-body);
-  font-weight: 700;
-  font-size: 14px;
-  border: none;
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  transition: transform 0.1s ease, box-shadow 0.15s ease, background 0.15s ease;
-}
-.btn:active { transform: scale(0.98); }
-
-.btn-primary { background: var(--navy); color: #fff; padding: 13px 20px; }
-.btn-primary:hover { background: var(--accent-dark); }
-
-/* Standalone variants (not just .btn modifiers) — used by modal
-   button stacks like the delete-user data choice, which apply these
-   classes directly rather than alongside .btn. */
-.btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-family: var(--font-body);
-  font-weight: 700;
-  font-size: 14px;
-  border: 1.5px solid var(--border);
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--ink-soft);
-  padding: 12px 18px;
-  transition: transform 0.1s ease, background 0.15s ease;
-}
-.btn-secondary:hover { background: var(--border); }
-.btn-secondary:active { transform: scale(0.98); }
-
-.btn-danger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-family: var(--font-body);
-  font-weight: 700;
-  font-size: 14px;
-  border: none;
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  background: var(--danger);
-  color: #fff;
-  padding: 12px 18px;
-  transition: transform 0.1s ease, filter 0.15s ease;
-}
-.btn-danger:hover { filter: brightness(0.92); }
-.btn-danger:active { transform: scale(0.98); }
-
-.btn-ghost {
-  background: var(--surface);
-  color: var(--ink-soft);
-  border: 1.5px solid var(--border);
-  padding: 10px 14px;
-}
-.btn-ghost:hover { border-color: var(--border-strong); color: var(--ink); background: var(--surface-sunken); }
-
-.btn-block { width: 100%; }
-
-.icon-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-sm);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ink-soft);
-  background: transparent;
-  border: 1.5px solid transparent;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all 0.15s ease;
-}
-.icon-btn:hover { background: var(--surface-sunken); color: var(--accent); }
-
-.back-btn { background: var(--surface-sunken); }
-
-.btn-admin-sm {
-  font-size: 12.5px;
-  padding: 9px 12px;
-  border-radius: var(--radius-sm);
-  border: 1.5px solid var(--role-admin);
-  color: var(--role-admin);
-  background: var(--role-admin-wash);
-  font-weight: 700;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  transition: all 0.15s ease;
-  white-space: nowrap;
-}
-.btn-admin-sm:hover { background: var(--role-admin); color: #fff; }
-
-.btn-navy-pill {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  width: 100%;
-  padding: 13px;
-  margin: 14px 18px 4px;
-  width: calc(100% - 36px);
-  background: var(--navy);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius-pill);
-  font-weight: 700;
-  font-size: 14.5px;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-.btn-navy-pill:hover { background: var(--navy-soft); }
-
-/* ============================================================
-   ROLE IDENTITY SYSTEM
-   ============================================================ */
-.role-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  padding: 4px 10px 4px 8px;
-  border-radius: 999px;
-  color: var(--role-student);
-  background: var(--role-student-wash);
-}
-.role-chip::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
-.role-admin-chip { color: var(--role-admin); background: var(--role-admin-wash); }
-.role-teacher-chip { color: var(--role-teacher); background: var(--role-teacher-wash); }
-.role-student-chip { color: var(--role-student); background: var(--role-student-wash); }
-
-.avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 15px;
-  color: #fff;
-  flex-shrink: 0;
-  position: relative;
-}
-.avatar.sm { width: 32px; height: 32px; font-size: 13px; }
-.avatar.lg { width: 56px; height: 56px; font-size: 20px; }
-
-.avatar-admin { background: linear-gradient(155deg, var(--role-admin), #7A70F0); }
-.avatar-teacher { background: linear-gradient(155deg, var(--role-teacher), #3FC98C); }
-.avatar-student { background: linear-gradient(155deg, var(--role-student), #EE79A8); }
-
-.avatar-dot {
-  position: absolute;
-  bottom: -1px;
-  right: -1px;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: var(--ink-faint);
-  border: 2.5px solid var(--surface);
-}
-.avatar-dot.online { background: var(--online); }
-
-/* ============================================================
-   APP BODY / SCREENS
-   ============================================================ */
-.app-body {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  position: relative;
-  overflow: hidden;
-  height: 100%;
-}
-
-.screen {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-  position: relative;
-  height: 100%;
-}
-
-/* ===== Brand header (Chats screen) ===== */
-.brand-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 18px 18px 14px;
-  flex-shrink: 0;
-  background: var(--bg);
-}
-.brand-mark { 
-  display: none;
-}
-
-.text-logo {
-  font-family: 'Helvetica Neue', Arial, sans-serif;
-  font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: -0.5px;
-  color: #0E1B75;
-  text-transform: uppercase;
-  display: inline-block;
-  white-space: nowrap;
-  border: none;
-  box-shadow: none;
-  outline: none;
-  background: transparent;
-}
-
-body.theme-dark .text-logo {
-  color: #7BB8FF;
-}
-
-.brand-word { font-family: var(--font-display); font-weight: 800; font-size: 1.5rem; color: #C9CBDA; letter-spacing: -0.01em; }
-body.theme-dark .brand-word { color: #3A3E63; }
-
-/* ===== Generic screen header ===== */
-.screen-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 18px 14px;
-  flex-shrink: 0;
-  background: var(--bg);
-  z-index: 2;
-  position: relative;
-}
-.screen-title { font-family: var(--font-display); font-weight: 800; font-size: 1.25rem; color: var(--ink); flex: 1; }
-
-/* ===== Search bar ===== */
-.search-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 18px 12px;
-  padding: 11px 14px;
-  background: var(--surface-sunken);
-  border-radius: var(--radius-pill);
-  color: var(--ink-faint);
-  flex-shrink: 0;
-}
-.search-bar input {
-  border: none;
-  background: transparent;
-  outline: none;
-  flex: 1;
-  font-size: 14px;
-  color: var(--ink);
-  font-family: var(--font-body);
-}
-.search-bar input::placeholder { color: var(--ink-faint); }
-
-/* ============================================================
-   CHAT LIST
-   ============================================================ */
-.chat-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 2px 10px 90px;
-  display: flex;
-  flex-direction: column;
-}
-
-/* FIX: root cause of "app on opening shows the empty grey page before
-   loading the chats" — #channelList used to ship with nothing in it but
-   an HTML comment (see index.html). completeLogin() in app.js reveals
-   #dashboard as soon as it knows the user is signed in (that itself is a
-   deliberate, separate fix — see the comment on #appLoading in
-   index.html), but the channel list itself still has to make its own
-   network round trip (loadChannels()) before it has anything to render.
-   Between those two moments there was no spinner, no skeleton, nothing —
-   just blank space under the search bar, which on a slow connection can
-   sit there for a second or more and reads as a broken/empty screen.
-   These placeholder rows ship directly in #channelList's markup so
-   they're visible instantly, and renderChatList() (app.js) already does
-   `channelList.innerHTML = ''` before drawing real rows, so they're
-   replaced automatically the moment the real data (or the "no channels"
-   empty-state) is ready — no app.js changes needed for this part. */
-.chat-row-skeleton {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 8px;
-}
-.chat-row-skeleton::before {
-  content: '';
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: var(--surface-sunken);
-  flex-shrink: 0;
-  animation: skeleton-pulse 1.2s ease-in-out infinite;
-}
-.chat-row-skeleton::after {
-  content: '';
-  flex: 1;
-  height: 14px;
-  border-radius: 6px;
-  background: var(--surface-sunken);
-  animation: skeleton-pulse 1.2s ease-in-out infinite;
-}
-@keyframes skeleton-pulse {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
-}
-
-.chat-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 8px;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: background 0.12s ease;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-.chat-row:hover, .chat-row:active { background: var(--surface-sunken); }
-.chat-row .avatar { position: relative; }
-
-.chat-row-body { flex: 1; min-width: 0; }
-.chat-row-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.chat-row-name { font-weight: 700; font-size: 14.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: none; -webkit-user-select: none; }
-.chat-row-time { font-size: 11px; color: var(--ink-faint); flex-shrink: 0; user-select: none; -webkit-user-select: none; }
-.chat-row-bottom { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; }
-.chat-row-preview { font-size: 13px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: none; -webkit-user-select: none; }
-
-.unread-badge {
-  background: var(--accent);
-  color: #fff;
-  font-size: 10.5px;
-  font-weight: 700;
-  min-width: 19px;
-  height: 19px;
-  border-radius: 999px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 5px;
-  flex-shrink: 0;
-}
-
-/* FIX: rename/delete for a channel used to be icon buttons revealed
-   on row hover (chat-admin-actions). Replaced by the admin-only
-   #channelSelectHeader select bar (long-press / right-click a row) —
-   see renderChatList()/selectChannelForActions() in app.js. */
-
-/* Floating action button */
-.fab {
-  position: absolute;
-  right: 20px;
-  bottom: 92px;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  font-size: 18px;
-  box-shadow: var(--shadow-md);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s ease, transform 0.1s ease;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-.fab:hover { background: var(--accent-dark); }
-.fab:active { transform: scale(0.95); }
-
-/* ============================================================
-   UPDATES LIST
-   ============================================================ */
-.updates-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 2px 18px 90px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.update-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 4px;
-  cursor: pointer;
-  border-radius: var(--radius-md);
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-.update-row:hover { background: var(--surface-sunken); }
-.update-row .avatar { box-shadow: 0 0 0 2.5px var(--surface), 0 0 0 4px var(--accent); }
-.update-row-body { flex: 1; min-width: 0; }
-.update-row-name { font-weight: 700; font-size: 14px; color: var(--ink); }
-.update-row-time { font-size: 12px; color: var(--ink-faint); display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-.update-row-preview { font-size: 12.5px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
-/* FIX: admin-only "seen by N" indicator on each update row — see
-   renderStatuses()/openStatusInfoModal() in app.js. */
-.update-row-seen { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--ink-soft); }
-.update-row-seen i { font-size: 10px; }
-
-.status-add-wrap { padding: 10px 18px 18px; flex-shrink: 0; }
-
-/* ============================================================
-   SETTINGS
-   ============================================================ */
-#screenSettings { 
-  overflow: hidden;
-  height: 100%;
-}
-
-.settings-scroll-container {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 0 0 20px 0;
-  -webkit-overflow-scrolling: touch;
-}
-
-.settings-profile-card {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin: 4px 18px 18px;
-  padding: 16px;
-  background: var(--surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  border: 1px solid var(--border);
-}
-.settings-profile-name { font-weight: 800; font-size: 15.5px; color: var(--ink); font-family: var(--font-display); user-select: text; -webkit-user-select: text; }
-.settings-profile-email { font-size: 12.5px; color: var(--ink-faint); margin-top: 2px; user-select: text; -webkit-user-select: text; }
-.settings-profile-displayname { font-size: 12px; color: var(--ink-soft); margin-top: 2px; user-select: text; -webkit-user-select: text; }
-
-.settings-list {
-  margin: 0 18px 10px;
-  background: var(--surface);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
-}
-.settings-list-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--role-admin);
-  padding: 12px 16px 4px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.settings-row {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border);
-}
-.settings-row:last-child { border-bottom: none; }
-.settings-row-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: var(--accent-wash);
-  color: var(--accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  flex-shrink: 0;
-}
-.settings-row-text { flex: 1; min-width: 0; }
-.settings-row-title { font-weight: 700; font-size: 14px; color: var(--ink); }
-.settings-row-sub { font-size: 11.5px; color: var(--ink-faint); margin-top: 1px; }
-
-.settings-action-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  text-align: left;
-  padding: 13px 16px;
-  border: none;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--ink);
-  font-weight: 600;
-  font-size: 13.5px;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-.settings-action-row:last-child { border-bottom: none; }
-.settings-action-row:hover { background: var(--surface-sunken); }
-.settings-action-row i { color: var(--role-admin); width: 16px; }
-
-/* FIX: "Add Teacher or Student" / "Manage Users" — now rows inside the
-   Admin tools card (see #adminSettingsCard in index.html) that expand a
-   panel in place, matching how Create New Session / Live Sessions
-   Calendar already look, instead of always-open standalone cards. */
-.admin-toggle-chevron {
-  margin-left: auto;
-  width: auto !important;
-  font-size: 12px;
-  color: var(--ink-faint) !important;
-  transition: transform 0.15s ease;
-}
-.admin-toggle-row[aria-expanded="true"] .admin-toggle-chevron {
-  transform: rotate(180deg);
-}
-.admin-panel {
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-sunken);
-}
-.admin-panel:last-child { border-bottom: none; }
-
-.logout-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  width: calc(100% - 36px);
-  margin: 10px 18px 0;
-  padding: 13px;
-  background: var(--danger-wash);
-  color: var(--danger);
-  border: none;
-  border-radius: var(--radius-pill);
-  font-weight: 700;
-  font-size: 14px;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-.logout-btn:hover { background: var(--danger); color: #fff; }
-
-/* ===== Toggle switch ===== */
-.toggle { position: relative; display: inline-block; width: 44px; height: 26px; flex-shrink: 0; }
-.toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
-.toggle-track {
-  position: absolute; inset: 0;
-  background: var(--border-strong);
-  border-radius: 999px;
-  transition: background 0.18s ease;
-  cursor: pointer;
-}
-.toggle-thumb {
-  position: absolute;
-  top: 3px; left: 3px;
-  width: 20px; height: 20px;
-  background: #fff;
-  border-radius: 50%;
-  box-shadow: var(--shadow-sm);
-  transition: transform 0.18s ease;
-}
-.toggle input:checked + .toggle-track { background: var(--accent); }
-.toggle input:checked + .toggle-track .toggle-thumb { transform: translateX(18px); }
-
-/* ============================================================
-   CHAT DETAIL
-   ============================================================ */
-.chat-detail-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 14px;
-  border-bottom: 1px solid var(--chat-grey);
-  background: var(--chat-white);
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  flex-shrink: 0;
-}
-.chat-detail-title {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 2px 0;
-  text-align: left;
-}
-.title-name { font-family: var(--font-display); font-weight: 800; font-size: 15.5px; color: var(--chat-accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
-.title-sub { font-size: 11.5px; color: var(--chat-ink-soft); }
-/* FIX: root cause of "why can't I see the user is typing in real-time" —
-   there was no typing-indicator feature anywhere in the app; nothing ever
-   broadcast a "typing" event and nothing listened for one. app.js now
-   broadcasts/listens via Supabase Realtime broadcast (see broadcastTyping()/
-   handleIncomingTyping()/renderTypingIndicator() in app.js) and swaps this
-   same #chatDetailSub subtitle to "<name> is typing…" while it's active.
-   This just makes that state visually distinct from the normal "N members
-   online" text. */
-.title-sub.typing-active { color: var(--chat-accent); font-weight: 600; }
-
-.btn-live-pill {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 9px 13px;
-  border-radius: var(--radius-pill);
-  background: var(--chat-navy);
-  color: var(--chat-white);
-  border: none;
-  cursor: pointer;
-  font-weight: 700;
-  font-size: 11.5px;
-  white-space: nowrap;
-  flex-shrink: 0;
-  transition: background 0.15s ease;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-.btn-live-pill:hover { background: #16267F; }
-.btn-live-pill i { color: var(--chat-blue); }
-
-body.theme-dark .btn-live-pill { color: #FFFFFF; }
-
-/* FIX: "dead" state for the live-session button — active only while a
-   session is actually scheduled for the open group (state.currentSchedule
-   in app.js). Muted grey instead of the vivid navy so it visibly reads as
-   inactive rather than just failing to respond to taps. Both the
-   `:disabled` pseudo-class and the `.btn-live-pill-dead` class are covered
-   since app.js toggles both together; the class alone is also what the
-   markup ships with by default before app.js has checked for a schedule. */
-.btn-live-pill:disabled,
-.btn-live-pill.btn-live-pill-dead {
-  background: var(--border-strong);
-  color: var(--ink-faint);
-  cursor: not-allowed;
-  pointer-events: none;
-  box-shadow: none;
-}
-.btn-live-pill:disabled i,
-.btn-live-pill.btn-live-pill-dead i {
-  color: var(--ink-faint);
-}
-.btn-live-pill:disabled:hover,
-.btn-live-pill.btn-live-pill-dead:hover {
-  background: var(--border-strong);
-}
-body.theme-dark .btn-live-pill:disabled,
-body.theme-dark .btn-live-pill.btn-live-pill-dead {
-  color: var(--ink-faint);
-}
-
-/* "Waiting" state: inside the scheduled window and clickable — the
-   concerned teacher (or an admin) can tap this to start the class — but
-   nobody has pressed Start yet (class_schedule.is_live is still false).
-   Same muted grey look as the disabled .btn-live-pill-dead state above
-   so it visually reads as "not live yet", but WITHOUT :disabled/
-   pointer-events:none, since this one has to actually respond to taps.
-   See getLiveButtonLabel()/updateLiveButtonState() in app.js. */
-.btn-live-pill.btn-live-pill-waiting {
-  background: var(--border-strong);
-  color: var(--ink-faint);
-}
-.btn-live-pill.btn-live-pill-waiting i { color: var(--ink-faint); }
-.btn-live-pill.btn-live-pill-waiting:hover { background: var(--border-strong); }
-body.theme-dark .btn-live-pill.btn-live-pill-waiting { color: var(--ink-faint); }
-
-/* "Live" state: class_schedule.is_live is true — the class is actually
-   running. Distinct blue (var(--live-blue), not the default navy) so a
-   live session is unmistakable at a glance, whether you're the teacher
-   rejoining or a student joining for the first time. */
-.btn-live-pill.btn-live-pill-live {
-  background: var(--live-blue);
-  color: #FFFFFF;
-}
-.btn-live-pill.btn-live-pill-live i { color: #FFFFFF; }
-.btn-live-pill.btn-live-pill-live:hover { background: var(--live-blue-hover); }
-body.theme-dark .btn-live-pill.btn-live-pill-live { color: #FFFFFF; }
-
-.schedule-banner {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 10px 18px;
-  background: rgba(107, 180, 250, 0.16);
-  color: var(--chat-accent);
-  font-size: 12.5px;
-  border-bottom: 1px solid var(--chat-grey);
-  flex-shrink: 0;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-
-.chat-scroll {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-height: 0;
-  background: var(--chat-white);
-  -webkit-overflow-scrolling: touch;
-}
-
-#chatMessages {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.msg { display: flex; gap: 8px; max-width: 84%; animation: msgIn 0.2s ease-out; }
-.msg-theirs { align-self: flex-start; }
-.msg-mine { align-self: flex-end; flex-direction: row-reverse; }
-/* FIX: root cause of "opening the chat appears as animation from bottom
-   to up instead of being consistent" — every .msg plays msgIn below so a
-   genuinely new message eases into view. But opening (or reopening) a
-   chat builds every message in its history as a fresh .msg node in one
-   pass, so without this override they'd all play msgIn at once and the
-   whole conversation would visibly slide up from the bottom on open.
-   app.js's buildMessageEl()/renderMessages() (see chatNeedsInitialPaint)
-   add this class only to that first bulk paint's nodes, so opening a
-   chat is instant like every other screen while a real new message
-   arriving afterward still gets its entrance animation. Higher
-   specificity than the .msg rule above so it wins over it. */
-.msg.msg-no-enter-anim { animation: none; }
-
-/* Centered "Today / Yesterday / Wed, Aug 12" pill between groups of
-   messages from different calendar days, WhatsApp-style. */
-.day-divider {
-  align-self: center;
-  margin: 4px 0;
-}
-.day-divider-label {
-  display: inline-block;
-  padding: 4px 12px;
-  border-radius: 999px;
-  background: var(--border);
-  color: var(--text-muted, #667085);
-  font-size: 12px;
-  font-weight: 600;
-}
-body.theme-dark .day-divider-label {
-  background: rgba(255,255,255,0.08);
-}
-
-@keyframes msgIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-
-.msg-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.msg-mine .msg-body { align-items: flex-end; }
-
-.msg-meta { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
-.msg-mine .msg-meta { flex-direction: row-reverse; }
-
-.msg-author { font-size: 12px; font-weight: 700; color: var(--chat-accent); user-select: text; -webkit-user-select: text; }
-.msg-time { font-size: 10.5px; color: var(--chat-ink-soft); user-select: text; -webkit-user-select: text; }
-
-/* ============================================================
-   MESSAGE DELIVERY STATUS (NEW)
-   ============================================================ */
-.msg-delivery-status {
-  font-size: 10.5px;
-  color: var(--chat-ink-soft);
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  margin-left: 4px;
-  font-weight: 500;
-}
-
-.msg-delivery-status.sent {
-  color: var(--chat-ink-soft);
-}
-
-.msg-delivery-status.delivered {
-  color: var(--chat-ink-soft);
-}
-
-.msg-delivery-status.delivered i {
-  color: var(--chat-blue);
-}
-
-.msg-delivery-status.seen {
-  color: var(--chat-blue);
-}
-
-.msg-delivery-status.seen i {
-  color: var(--chat-blue);
-}
-
-/* Ticks for sent messages — shown only on the sender's own outgoing
-   bubbles. Single grey check = sent, double grey check = delivered,
-   double blue check = seen. Uses --chat-ink-soft (not --chat-grey) so it
-   stays visible in dark mode too — --chat-grey is a near-black navy tone
-   there, meant for borders, and is nearly invisible as text/icon color. */
-.msg-ticks {
-  display: inline-flex;
-  align-items: center;
-  gap: 1px;
-  font-size: 11px;
-  color: var(--chat-ink-soft);
-  line-height: 1;
-}
-
-.msg-ticks.delivered {
-  color: var(--chat-ink-soft);
-}
-
-.msg-ticks.seen {
-  color: var(--chat-blue);
-}
-
-.msg-seen-time {
-  font-size: 10px;
-  color: var(--chat-ink-soft);
-  margin-left: 4px;
-}
-
-/* Dark mode delivery status */
-body.theme-dark .msg-delivery-status {
-  color: var(--chat-ink-soft);
-}
-
-body.theme-dark .msg-delivery-status.seen {
-  color: #7BB8FF;
-}
-
-body.theme-dark .msg-ticks.seen {
-  color: #7BB8FF;
-}
-
-/* "delivered" stays grey (not blue) in dark mode too — only "seen" is
-   blue. --chat-ink-soft already resolves to a legible light grey
-   (#C8CBDD) here via the base .msg-ticks rule, so no override needed for
-   the delivered state. */
-
-/* Ticks now live inside the bubble/attachment corner instead of on
-   their own line below the message — see buildMessageEl(). Three
-   contexts:
-   - .msg-bubble-ticks: text bubbles. Floated so the last line of text
-     wraps around it, WhatsApp-style.
-   - .msg-corner-ticks: image/video attachments. A small pill overlaid
-     on the media itself. Anchored top-right (not bottom-right) so it
-     never collides with the image's expand button or a video's native
-     control bar, both of which sit at the bottom.
-   - .msg-inline-ticks: document cards, appended after the download icon.
-   All three override the tick color to translucent white (plus the
-   existing blue for "seen") since they now sit on the dark navy "mine"
-   bubble or a dark overlay pill, not the plain chat background the
-   base .msg-ticks color was tuned for. */
-.msg-bubble-ticks {
-  float: right;
-  margin-left: 6px;
-  margin-top: 4px;
-}
-
-.msg-corner-ticks {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 6px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.45);
-  pointer-events: none;
-}
-
-.msg-inline-ticks {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 8px;
-  flex-shrink: 0;
-}
-
-.msg-bubble-ticks .msg-ticks,
-.msg-bubble-ticks .msg-ticks.delivered,
-.msg-corner-ticks .msg-ticks,
-.msg-corner-ticks .msg-ticks.delivered,
-.msg-inline-ticks .msg-ticks,
-.msg-inline-ticks .msg-ticks.delivered {
-  color: rgba(255, 255, 255, 0.72);
-}
-.msg-bubble-ticks .msg-ticks.seen,
-.msg-corner-ticks .msg-ticks.seen,
-.msg-inline-ticks .msg-ticks.seen {
-  color: var(--chat-blue);
-}
-/* .msg-inline-ticks sits on the doc card, which for "theirs" messages
-   never renders ticks at all (isMine-gated in JS) — but the doc card
-   background for "mine" is a light overlay on navy (see .msg-mine
-   .msg-doc-card below), so the translucent-white rule above still
-   reads fine there too. */
-
-/* ============================================================ */
-.msg-bubble {
-  padding: 10px 13px;
-  border-radius: 16px;
-  font-size: 14px;
-  line-height: 1.45;
-  background: var(--chat-white);
-  border: 1px solid var(--chat-grey);
-  color: var(--chat-ink);
-  word-break: break-word;
-  /* FIX: "clicking any text selects it" / "link is still plain text" —
-     these two complaints share one root cause. user-select:text here let
-     the browser's native text-selection gesture compete with every click
-     inside a bubble, including clicks on a .msg-link/.msg-link-preview
-     anchor: if the browser reads the mousedown→mouseup as a selection drag
-     (extremely easy to trigger by accident — a click rarely has zero
-     pixels of movement), it can swallow the click event entirely, so the
-     link never opens and just "selects" instead — which reads exactly like
-     an inert, unclickable link that happens to highlight when clicked.
-     Copying a message's text already has a dedicated, reliable path that
-     doesn't need native selection at all — long-press/right-click a
-     message → Copy (see DOM.msgSelectCopyBtn's navigator.clipboard.writeText()
-     call) — so native selection here was redundant on top of being
-     harmful. Matches the rest of the chat chrome (avatars, rows, nav),
-     which is already user-select:none. */
-  user-select: none;
-  -webkit-user-select: none;
-}
-.msg-theirs .msg-bubble { border-bottom-left-radius: 4px; }
-.msg-mine .msg-bubble { background: var(--chat-navy); border-color: var(--chat-navy); color: var(--chat-white); border-bottom-right-radius: 4px; }
-
-/* Dark mode bubble overrides */
-body.theme-dark .msg-theirs .msg-bubble {
-  background: #1A1D3A;
-  border-color: #2A2D5A;
-  color: #FFFFFF;
-}
-
-body.theme-dark .msg-mine .msg-bubble {
-  background: var(--chat-navy);
-  border-color: var(--chat-navy);
-  color: #FFFFFF;
-}
-
-/* FIX: placeholder shown once a message's attached image/video/PDF/file has
-   aged out 168h after being sent — see isMessageMediaExpired() in app.js.
-   Mirrors .msg-deleted's plain-bubble-plus-icon look (no dedicated CSS of
-   its own, it just inherits .msg-bubble) but muted/italic instead of the
-   bubble's normal ink color, so it visually reads as "gone" rather than as
-   an ordinary text message. */
-.msg-media-expired {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-style: italic;
-  color: var(--ink-faint);
-}
-.msg-mine .msg-media-expired { color: rgba(255, 255, 255, 0.72); }
-.msg-media-expired i { flex-shrink: 0; }
-
-body.theme-dark .msg-author {
-  color: #7BB8FF;
-}
-
-body.theme-dark .msg-time {
-  color: #8A8FB5;
-}
-
-.msg-file { font-size: 12px; color: var(--chat-accent); text-decoration: none; display: inline-flex; align-items: center; gap: 5px; margin-top: 2px; }
-.msg-mine .msg-file { color: var(--chat-white); }
-.msg-file:hover { text-decoration: underline; }
-
-/* ============================================================
-   LINK PREVIEWS (FIX — see linkifyText()/hydrateLinkPreview() in app.js)
-   ============================================================
-   "shared link in chat or in updates not clickable with thumbnail" —
-   .msg-link is just the inline clickable <a> a URL becomes inside message/
-   status text. .msg-link-preview is the WhatsApp/Slack-style card
-   (thumbnail + title + domain) that gets fetched and dropped into a
-   `.msg-link-preview-slot` (chat bubbles) or #statusLinkPreview (the
-   updates viewer) once hydrateLinkPreview() resolves. */
-.msg-link { color: var(--chat-accent); text-decoration: underline; word-break: break-all; }
-.msg-mine .msg-link { color: var(--chat-white); }
-
-.msg-link-preview-slot:empty { display: none; }
-
-.msg-link-preview {
-  display: flex;
-  flex-direction: column;
-  margin-top: 6px;
-  border-radius: 10px;
-  overflow: hidden;
-  text-decoration: none;
-  background: rgba(0,0,0,0.045);
-  max-width: 260px;
-  transition: background 0.15s ease;
-}
-.msg-link-preview:hover { background: rgba(0,0,0,0.08); }
-.msg-mine .msg-link-preview { background: rgba(255,255,255,0.16); }
-.msg-mine .msg-link-preview:hover { background: rgba(255,255,255,0.24); }
-
-.msg-link-preview-img {
-  display: block;
-  width: 100%;
-  height: 130px;
-  object-fit: cover;
-  background: var(--chat-grey);
-}
-
-.msg-link-preview-body {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 10px;
-  min-width: 0;
-}
-/* FIX: "it should be a hyperlink" — the whole card is already wrapped in a
-   real, clickable <a> (see .msg-link-preview above), but the title text
-   inside it used to look like a plain bold heading (var(--chat-ink), no
-   underline) with nothing to visually mark it as a link. Give it the same
-   link treatment as the inline .msg-link text — accent color + underline —
-   so it actually reads as a hyperlink, not just behaves like one. */
-.msg-link-preview-title {
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--chat-accent);
-  text-decoration: underline;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.msg-mine .msg-link-preview-title { color: var(--chat-white); }
-.msg-link-preview-site {
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--chat-ink-soft);
-}
-.msg-mine .msg-link-preview-site { color: rgba(255,255,255,0.75); }
-
-/* Updates viewer's link preview sits on the dark full-screen status
-   background rather than a bubble, so it gets its own (lighter-weight)
-   treatment instead of reusing the chat-bubble background tint above. */
-#statusLinkPreview:empty,
-#statusLinkPreview.hidden {
-  display: none;
-}
-#statusLinkPreview {
-  margin-top: 14px;
-  width: 100%;
-  max-width: 320px;
-}
-#statusLinkPreview .msg-link-preview {
-  background: rgba(255,255,255,0.1);
-  max-width: none;
-}
-#statusLinkPreview .msg-link-preview:hover { background: rgba(255,255,255,0.16); }
-#statusLinkPreview .msg-link-preview-title,
-#statusLinkPreview .msg-link-preview-site { color: #fff; }
-#statusLinkPreview .msg-link-preview-site { color: rgba(255,255,255,0.7); }
-
-/* WhatsApp-style document card for non-image/video attachments —
-   file-type icon, recovered original filename, and extension badge,
-   instead of a bare "Attached file" text link. */
-.msg-doc-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 2px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: rgba(0,0,0,0.045);
-  text-decoration: none;
-  max-width: 260px;
-  transition: background 0.15s ease;
-}
-.msg-doc-card:hover { background: rgba(0,0,0,0.08); }
-.msg-mine .msg-doc-card { background: rgba(255,255,255,0.16); }
-.msg-mine .msg-doc-card:hover { background: rgba(255,255,255,0.24); }
-
-.msg-doc-icon {
-  flex-shrink: 0;
-  width: 38px;
-  height: 38px;
-  border-radius: 8px;
-  background: var(--chat-accent);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-}
-
-.msg-doc-info { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.msg-doc-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--chat-ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 150px;
-}
-.msg-mine .msg-doc-name { color: var(--chat-white); }
-.msg-doc-ext { font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em; color: var(--chat-ink-soft); }
-.msg-mine .msg-doc-ext { color: rgba(255,255,255,0.75); }
-
-.msg-doc-download { margin-left: auto; flex-shrink: 0; color: var(--chat-ink-soft); font-size: 13px; }
-.msg-mine .msg-doc-download { color: rgba(255,255,255,0.75); }
-
-/* WhatsApp-style PDF preview card: a cropped page-1 thumbnail (filled in
-   by hydratePdfThumb() in app.js once pdf.js has rendered it — see
-   getPdfThumbnail()) sitting above the filename/download bar. .msg-doc-card
-   is a horizontal row by default; override it to stack the thumbnail on
-   top since a PDF card needs both a preview image and an info row. */
-.msg-pdf-card {
-  flex-direction: column;
-  align-items: stretch;
-  padding: 0;
-  max-width: 260px;
-  overflow: hidden;
-}
-.msg-pdf-thumb {
-  position: relative;
-  width: 100%;
-  height: 190px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--chat-grey);
-  color: var(--chat-ink-soft);
-  font-size: 34px;
-  overflow: hidden;
-}
-.msg-mine .msg-pdf-thumb { background: rgba(255,255,255,0.14); color: rgba(255,255,255,0.85); }
-/* Once loaded, the thumbnail is a real <img class="msg-media-img"> node —
-   object-fit:cover + object-position:top crops it to show just the top
-   portion of page 1, the same "shown half until tapped" look
-   .msg-media-preview already gives images/videos. */
-.msg-pdf-thumb img.msg-media-img {
-  width: 100%;
-  height: 100%;
-  max-height: none;
-  object-fit: cover;
-  object-position: top center;
-}
-.msg-pdf-info-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-}
-
-/* WhatsApp-style attachment preview: capped height + object-fit:cover
-   crops tall images so only part shows in the bubble ("shown half")
-   until the user taps to open the full-resolution lightbox view. */
-.msg-media-preview {
-  position: relative;
-  margin-top: 2px;
-  border-radius: 10px;
-  overflow: hidden;
-  cursor: pointer;
-  max-width: 260px;
-  display: block;
-}
-.msg-media-img {
-  display: block;
-  width: 100%;
-  max-height: 220px;
-  object-fit: cover;
-  background: var(--chat-grey);
-}
-.msg-media-video-wrap { cursor: default; }
-.msg-media-video-wrap .msg-media-img { max-height: 260px; object-fit: contain; background: #000; }
-.msg-media-expand {
-  position: absolute;
-  bottom: 6px;
-  right: 6px;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: rgba(0,0,0,0.55);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  pointer-events: none;
-}
-
-.lightbox-overlay {
-  position: fixed;
-  inset: 0;
-  /* FIX: "media viewer background is black instead of the theme's navy" —
-     this was a flat rgba(0,0,0,0.9) backdrop, unrelated to the app's navy
-     brand color used everywhere else a full-screen surface shows up (the
-     status/update viewer's .status-viewer-inner, the brand header, primary
-     buttons — all var(--navy)/var(--chat-navy), #0E1B75). Shared by both
-     the image/video lightbox and the file/PDF viewer (see
-     `overlay.className = 'lightbox-overlay doc-viewer-overlay'` /
-     `= 'lightbox-overlay'` in app.js), so fixing it here covers both.
-     Tinting rgba() with the same navy instead of black keeps the
-     slightly-see-through backdrop feel (rather than going fully opaque
-     like .status-viewer-inner) while actually matching the theme. */
-  background: rgba(14, 27, 117, 0.92);
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  animation: msgIn 0.15s ease-out;
-}
-.lightbox-img {
-  max-width: 100%;
-  max-height: 100%;
-  border-radius: 8px;
-  object-fit: contain;
-}
-/* FIX: root cause of "opening media takes time instead of being smooth and
-   fast" — see the matching FIX comment in openImageLightbox() (app.js).
-   The overlay used to render the <img> immediately with nothing else on
-   screen, so the full-screen backdrop sat there empty (no spinner, no
-   placeholder) for however long the actual photo/video took to download —
-   that empty wait is what reads as "slow", not the overlay opening itself.
-   .loading hides the (possibly half-rendered) image while a spinner takes
-   its place; app.js removes .loading the moment the image's `load` event
-   fires. */
-.lightbox-img.loading { visibility: hidden; }
-/* Explicit top/left/transform centering rather than relying on the
-   .lightbox-overlay flex container's align-items/justify-content to
-   center this — those don't reliably apply to absolutely-positioned flex
-   children across browsers, which would silently reproduce the exact
-   "not centered" bug this spinner exists to avoid. */
-.lightbox-spinner {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: 3px solid rgba(255, 255, 255, 0.25);
-  border-top-color: #fff;
-  animation: orbit-loading-spin 0.8s linear infinite;
-}
-.lightbox-spinner.hidden { display: none; }
-/* FIX: root cause of "media not showing in center" for any attachment that
-   fails to load (wrong/expired URL, unrecognized file type misread as an
-   image, network error) — a plain broken <img> renders the browser's tiny
-   native broken-image glyph pinned to the top-left of its box rather than
-   centered like a loaded image would be via object-fit, which reads
-   exactly like "the media isn't centered". Shown instead of the native
-   glyph once the image's `error` event fires (see openImageLightbox() in
-   app.js); already centered for free since it's a sibling flex child of
-   .lightbox-overlay (display:flex; align-items:center; justify-content:center). */
-.lightbox-broken {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  color: rgba(255, 255, 255, 0.75);
-  font-size: 14px;
-}
-.lightbox-broken.hidden { display: none; }
-.lightbox-broken i { font-size: 30px; }
-.lightbox-close {
-  position: absolute;
-  top: 18px;
-  right: 18px;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(255,255,255,0.12);
-  color: #fff;
-  font-size: 18px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.lightbox-close:hover { background: rgba(255,255,255,0.22); }
-
-/* Gallery prev/next arrows — only rendered when openImageLightbox() is
-   given more than one image (e.g. from the Shared Media grid), so a single
-   attached-image lightbox looks exactly as before. */
-.lightbox-nav {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(255,255,255,0.12);
-  color: #fff;
-  font-size: 18px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1;
-}
-.lightbox-nav:hover { background: rgba(255,255,255,0.22); }
-.lightbox-prev { left: 12px; }
-.lightbox-next { right: 12px; }
-@media (min-width: 640px) {
-  .lightbox-prev { left: 24px; }
-  .lightbox-next { right: 24px; }
-}
-
-/* Document viewer overlay (see openDocViewer() in app.js) — reuses
-   .lightbox-overlay for the dimmed backdrop/centering, adds a bordered
-   panel with its own header (filename + download/close) so it reads as
-   an in-app screen rather than a raw file being loaded. */
-.doc-viewer-overlay { padding: 0; }
-@media (min-width: 640px) { .doc-viewer-overlay { padding: 24px; } }
-
-.doc-viewer-panel {
-  width: 100%;
-  height: 100%;
-  max-width: 720px;
-  max-height: 860px;
-  background: var(--surface);
-  border-radius: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  box-shadow: var(--shadow-lg);
-}
-@media (min-width: 640px) { .doc-viewer-panel { border-radius: var(--radius-lg); } }
-
-.doc-viewer-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-  flex-shrink: 0;
-}
-.doc-viewer-name {
-  font-weight: 700;
-  font-size: 14px;
-  color: var(--ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-.doc-viewer-actions { display: flex; gap: 6px; flex-shrink: 0; }
-
-.doc-viewer-body {
-  flex: 1;
-  min-height: 0;
-  background: var(--surface-sunken);
-}
-.doc-viewer-frame {
-  width: 100%;
-  height: 100%;
-  border: 0;
-  display: block;
-  background: #fff;
-}
-.doc-viewer-no-preview {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  color: var(--ink-faint);
-  padding: 24px;
-  text-align: center;
-}
-.doc-viewer-no-preview i { font-size: 40px; }
-.doc-viewer-no-preview p { font-size: 13.5px; max-width: 260px; }
-
-.msg-ticks { display: inline-flex; align-items: center; gap: 1px; font-size: 12px; color: var(--chat-grey); line-height: 1; }
-.msg-ticks.seen { color: var(--chat-blue); }
-.msg-seen-time { font-size: 10px; color: var(--chat-ink-soft); margin-top: 2px; }
-
-.msg-reply-quote {
-  border-left: 3px solid var(--chat-blue);
-  background: rgba(107, 180, 250, 0.12);
-  border-radius: 6px;
-  padding: 5px 9px;
-  margin-bottom: 5px;
-  font-size: 12.5px;
-  max-width: 100%;
-  /* FIX: was inert — now jumps to the original message (see
-     jumpToMessage() in app.js), so it needs to read as tappable. */
-  cursor: pointer;
-}
-.msg-reply-quote:hover, .msg-reply-quote:focus-visible { background: rgba(107, 180, 250, 0.22); }
-.msg-reply-quote:focus-visible { outline: 2px solid var(--chat-blue); outline-offset: 1px; }
-.msg-mine .msg-reply-quote { background: rgba(255,255,255,0.2); border-left-color: var(--chat-white); }
-.msg-mine .msg-reply-quote:hover, .msg-mine .msg-reply-quote:focus-visible { background: rgba(255,255,255,0.3); }
-.msg-reply-quote .reply-author { font-weight: 700; display: block; color: var(--chat-accent); }
-.msg-mine .msg-reply-quote .reply-author { color: var(--chat-white); }
-.msg-reply-quote .reply-text { color: var(--chat-ink-soft); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.msg-mine .msg-reply-quote .reply-text { color: rgba(255,255,255,0.85); }
-
-/* FIX: brief flash on the target bubble after jumpToMessage() scrolls to
-   it, so it's obvious which message the reply was pointing at. */
-.msg-highlight .msg-bubble {
-  animation: msgHighlightFlash 1.5s ease-out;
-}
-@keyframes msgHighlightFlash {
-  0% { box-shadow: 0 0 0 2px var(--chat-blue); background-color: rgba(107, 180, 250, 0.35); }
-  100% { box-shadow: 0 0 0 0 transparent; }
-}
-
-/* Lightweight non-blocking notice, e.g. "original message isn't loaded"
-   from jumpToMessage() — see showToast() in app.js. */
-.toast {
-  position: fixed;
-  left: 50%;
-  bottom: 90px;
-  transform: translateX(-50%);
-  background: rgba(20,20,20,0.92);
-  color: #fff;
-  padding: 10px 16px;
-  border-radius: 20px;
-  font-size: 13px;
-  z-index: 10000;
-  box-shadow: var(--shadow-lg);
-  animation: msgIn 0.15s ease-out;
-  pointer-events: none;
-  max-width: 80%;
-  text-align: center;
-}
-
-/* FIX: reply/delete no longer render as per-bubble buttons — they used
-   to float oddly near the top of the message (stretched to the full
-   message height) instead of sitting cleanly beside it, for both
-   admins and regular users. Both actions now live only in the
-   top select-header bar (see .msg-select-header below), opened by
-   long-press (mobile) or click (desktop) on any message. */
-
-
-.reply-preview {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 16px; border-top: 1px solid var(--chat-grey); background: rgba(107, 180, 250, 0.14);
-  position: sticky; bottom: 0; z-index: 2;
-  flex-shrink: 0;
-}
-.reply-preview .bar { width: 3px; align-self: stretch; background: var(--chat-navy); border-radius: 2px; }
-.reply-preview .info { flex: 1; min-width: 0; }
-.reply-preview .info .author { font-size: 12px; font-weight: 700; color: var(--chat-accent); }
-.reply-preview .info .text { font-size: 12.5px; color: var(--chat-ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.file-preview-bar {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 16px; border-top: 1px solid var(--chat-grey);
-  background: var(--chat-white); font-size: 13px; color: var(--chat-ink-soft);
-  position: sticky; bottom: 0; z-index: 2;
-  flex-shrink: 0;
-}
-.file-preview-bar span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-#fileUploadStatus {
-  font-size: 12px; color: var(--chat-accent); padding: 8px 16px;
-  border-top: 1px solid var(--chat-grey); background: rgba(107, 180, 250, 0.14);
-  flex-shrink: 0;
-}
-
-.composer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-top: 1px solid var(--chat-grey);
-  background: var(--chat-white);
-  position: sticky;
-  bottom: 0;
-  z-index: 3;
-  flex-shrink: 0;
-}
-.composer .field { flex: 1; min-width: 0; border-radius: var(--radius-pill); background: var(--chat-white); border: 1.5px solid var(--chat-grey); color: var(--chat-ink); }
-.composer .field:focus { box-shadow: none; border-color: var(--chat-accent); }
-.composer .icon-btn { color: var(--chat-accent); -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
-.composer .icon-btn:hover { background: rgba(107, 180, 250, 0.16); color: var(--chat-accent); }
-
-.btn-send {
-  width: 40px; height: 40px; border-radius: 50%;
-  background: var(--chat-navy); color: var(--chat-white); border: none; cursor: pointer;
-  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-  transition: background 0.15s ease, transform 0.1s ease;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-.btn-send i { transform: rotate(45deg); }
-.btn-send:hover { background: var(--chat-blue); }
-.btn-send:active { transform: scale(0.94); }
-
-body.theme-dark .btn-send { color: #FFFFFF; }
-
-.video-panel {
-  position: absolute; inset: 0; z-index: 20;
-  background: #05061a;
-  /* FIX: was a plain positioning context for two position:absolute
-     buttons floated on top of the iframe (see .video-toolbar below for
-     why that overlapped PlugNmeet's own header). Now a column flex
-     layout: the toolbar takes its natural height first, the iframe
-     fills the rest — so the controls have their own space, separate
-     from the meeting room instead of layered over it. */
-  display: flex;
-  flex-direction: column;
-  transition: width 0.2s ease, height 0.2s ease, top 0.2s ease, left 0.2s ease,
-    right 0.2s ease, bottom 0.2s ease, border-radius 0.2s ease;
-}
-.video-panel iframe { width: 100%; flex: 1; min-height: 0; border: 0; display: block; }
-
-/* FIX: root cause of "user can't see the buttons for minimizing/
-   maximizing in live meeting so they can text in the group when
-   needed" — #videoContainer used to be a fixed full-screen overlay
-   (position:absolute; inset:0) with no smaller state at all, and the
-   only exit was #closeVideoBtn, which fully disconnects the call (see
-   closeLiveSession() in app.js) rather than just getting it out of the
-   way. This shrinks the SAME panel — call kept alive, videoIframe.src
-   untouched — into a small corner pip anchored within this screen (not
-   the whole viewport, so it stays correctly placed in the desktop
-   two-pane layout too) once app.js's setVideoMinimized() toggles this
-   class. With the panel out of full-screen, #chatContainer and the
-   composer underneath become visible and usable again, so a message
-   can be typed and sent without leaving the call. Toggled back to the
-   base .video-panel layout (full screen) by the same button/class. */
-.video-panel.video-panel-minimized {
-  /* Anchored top-right, clear of .chat-detail-header (sticky, ~64px) —
-     NOT bottom-right. #chatContainer/.composer sit at the literal bottom
-     of this same .screen (composer is position:sticky; bottom:0), so a
-     bottom-anchored pip would land right on top of #messageInput — the
-     one control this whole fix exists to make reachable again. */
-  top: 78px;
-  left: auto;
-  right: 14px;
-  bottom: auto;
-  width: 176px;
-  height: 136px;
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  box-shadow: var(--shadow-lg);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-}
-
-/* FIX: root cause of the close ("X") and "End for Everyone" buttons
-   overlapping the speaker name / connection-signal indicators inside
-   the live room — those buttons used to be position:absolute at
-   top:14px, floating directly on top of the iframe. PlugNmeet renders
-   its own header bar (active speaker, mic/network signal icons — see
-   header#main-header in nouscomplex.css) in that exact same top strip
-   of the iframe, so our controls sat right on top of theirs. This bar
-   sits ABOVE the iframe in normal flow instead (see .video-panel's
-   flex layout above), so the two sets of controls are fully separate
-   and never overlap. */
-.video-toolbar {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 14px;
-  background: #05061a;
-}
-/* Groups "End for Everyone" + the leave/close X on the right, so the
-   new minimize button (below) can sit on its own at the left without
-   extra markup changes to the two existing buttons. */
-.video-toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.video-panel.video-panel-minimized .video-toolbar {
-  padding: 6px 8px;
-  gap: 6px;
-}
-
-.video-close,
-.video-minimize-btn {
-  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
-  background: rgba(255,255,255,0.15); color: #fff; border: none; cursor: pointer;
-  backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center;
-  transition: background 0.15s ease;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-.video-close:hover,
-.video-minimize-btn:hover { background: rgba(255,255,255,0.28); }
-
-.video-end-session-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 14px;
-  height: 34px;
-  flex-shrink: 0;
-  border-radius: var(--radius-pill);
-  background: var(--danger);
-  color: #fff;
-  border: none;
-  cursor: pointer;
-  font-size: 11.5px;
-  font-weight: 700;
-  white-space: nowrap;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-.video-end-session-btn:hover { background: #c73a32; }
-
-/* Minimized pip: shrink the controls too and drop the "End for
-   Everyone" text label down to just its icon so three controls still
-   fit in a ~176px-wide bar without wrapping or overflowing. */
-.video-panel.video-panel-minimized .video-close,
-.video-panel.video-panel-minimized .video-minimize-btn {
-  width: 24px; height: 24px; font-size: 11px;
-}
-.video-panel.video-panel-minimized .video-end-session-btn {
-  padding: 0 8px;
-  height: 24px;
-  font-size: 10px;
-}
-.video-panel.video-panel-minimized .video-end-session-label {
-  display: none;
-}
-
-/* ============================================================
-   MEMBERS
-   ============================================================ */
-.admin-add-row { display: flex; gap: 6px; margin: 0 18px 12px; flex-shrink: 0; }
-.members-wrap { flex: 1; display: flex; min-height: 0; padding-bottom: 90px; }
-.member-list { flex: 1; overflow-y: auto; padding: 0 8px 18px 18px; display: flex; flex-direction: column; -webkit-overflow-scrolling: touch; }
-.member-row {
-  display: flex; align-items: center; gap: 12px;
-  padding: 9px 6px; border-radius: var(--radius-md);
-  scroll-margin-top: 8px;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-.member-row:hover { background: var(--surface-sunken); }
-.member-name { font-weight: 700; font-size: 14px; color: var(--ink); }
-.member-display-name { font-size: 12px; color: var(--ink-soft); margin-left: 6px; }
-.member-status { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-faint); margin-top: 1px; }
-.member-status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-faint); }
-.member-status.online { color: var(--online); }
-.member-status.online .dot { background: var(--online); }
-.member-remove-btn { margin-left: auto; }
-.member-role-chip { font-size: 9px; padding: 2px 7px; }
-.member-group-letter {
-  font-size: 11px; font-weight: 800; color: var(--ink-faint);
-  padding: 10px 6px 4px; letter-spacing: 0.04em;
-}
-.member-role-header {
-  font-size: 11.5px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;
-  color: var(--accent); padding: 14px 6px 6px; border-top: 1px solid var(--border);
-  margin-top: 4px;
-}
-.member-role-header:first-child { border-top: none; margin-top: 0; padding-top: 4px; }
-
-/* ============================================================
-   ADMIN — REGISTERED USERS LIST (Settings → Manage Users)
-   Two separate lists — Unassigned (no group memberships at all)
-   and Assigned (shows which group/session each is in) — plus a
-   per-row button that opens the multi-group checklist modal.
-   ============================================================ */
-.registered-users-wrap {
-  max-height: 340px;
-  overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  -webkit-overflow-scrolling: touch;
-}
-.registered-users-list { display: flex; flex-direction: column; }
-.registered-user-section + .registered-user-section { border-top: 1px solid var(--border); }
-.registered-user-section-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-  background: var(--surface-sunken);
-  padding: 7px 10px;
-  position: sticky;
-  top: 0;
-}
-.registered-user-section-label.unassigned-label { color: var(--warning); }
-.registered-user-count { font-weight: 600; opacity: 0.75; text-transform: none; letter-spacing: 0; }
-.registered-user-rows { display: flex; flex-direction: column; }
-.registered-user-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  cursor: pointer;
-  border-bottom: 1px solid var(--border);
-  -webkit-tap-highlight-color: transparent;
-}
-.registered-user-row:last-child { border-bottom: none; }
-.registered-user-row:hover { background: var(--surface-sunken); }
-.registered-user-info { flex: 1; min-width: 0; }
-.registered-user-name {
-  font-weight: 700;
-  font-size: 13.5px;
-  color: var(--ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.registered-user-groups {
-  font-size: 11.5px;
-  color: var(--ink-faint);
-  margin-top: 1px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.registered-user-groups.unassigned { color: var(--warning); font-weight: 600; }
-.registered-user-manage-btn { width: 28px; height: 28px; flex-shrink: 0; font-size: 12px; }
-
-/* Collapsed state: while the edit form below is open, the roster list is
-   hidden (not removed, toggled via the app-wide .hidden utility class) so
-   the panel doesn't eat the whole screen — see showUserEditForm()/
-   closeUserEditForm() in app.js. */
-
-/* Edit-user form header — title + explicit close/back control so the
-   panel can be dismissed without submitting Update/Delete, restoring the
-   roster list above it. */
-.user-edit-form-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.user-edit-form-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-}
-#closeUserEditBtn { width: 26px; height: 26px; font-size: 12px; flex-shrink: 0; }
-
-/* Multi-group checklist modal (openGroupAssignmentModal in app.js) */
-.group-assign-modal { max-width: 380px; }
-.group-assign-list {
-  max-height: 320px;
-  overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  -webkit-overflow-scrolling: touch;
-}
-.group-assign-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 10px;
-  border-bottom: 1px solid var(--border);
-  cursor: pointer;
-}
-.group-assign-row:last-child { border-bottom: none; }
-.group-assign-row:hover { background: var(--surface-sunken); }
-.group-assign-row input[type="checkbox"] {
-  width: 17px;
-  height: 17px;
-  accent-color: var(--role-admin);
-  flex-shrink: 0;
-  cursor: pointer;
-}
-.group-assign-name {
-  flex: 1;
-  min-width: 0;
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.group-assign-role { flex: 0 0 100px; }
-
-.alpha-index {
-  width: 18px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  padding: 8px 4px;
-  flex-shrink: 0;
-}
-.alpha-index span {
-  font-size: 9px;
-  color: var(--ink-faint);
-  cursor: pointer;
-  line-height: 1.35;
-  font-weight: 600;
-}
-.alpha-index span:hover, .alpha-index span.active { color: var(--accent); font-weight: 800; }
-
-/* ============================================================
-   PROFILE
-   ============================================================ */
-#screenProfile { 
-  overflow: hidden;
-  height: 100%;
-}
-
-.profile-scroll-container {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 0 0 20px 0;
-  -webkit-overflow-scrolling: touch;
-}
-
-.profile-card {
-  margin: 4px 18px 14px;
-  padding: 20px;
-  background: var(--surface);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
-  text-align: center;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-.profile-card-name { font-family: var(--font-display); font-weight: 800; font-size: 1.3rem; color: var(--ink); }
-.profile-card-meta { font-size: 12.5px; font-weight: 700; color: var(--accent); margin-top: 4px; }
-.profile-card-desc { font-size: 13px; color: var(--ink-soft); margin-top: 10px; line-height: 1.55; user-select: text; -webkit-user-select: text; }
-
-.profile-section-row {
-  display: flex; align-items: baseline; justify-content: space-between;
-  margin: 18px 18px 10px;
-}
-.section-label { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-faint); }
-.see-all-link { font-size: 12.5px; font-weight: 700; color: var(--accent); text-decoration: none; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
-.see-all-link:hover { text-decoration: underline; }
-
-.shared-media-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin: 0 18px;
-}
-.shared-media-grid img {
-  width: 100%;
-  aspect-ratio: 1;
-  object-fit: cover;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  background: var(--surface-sunken);
-}
-.shared-media-grid .empty-note { grid-column: 1 / -1; }
-
-.schedule-card {
-  margin: 18px 18px 4px;
-  padding: 16px;
-  background: var(--surface);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
-}
-.schedule-field-label {
-  display: block;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  margin: 0 0 3px 2px;
-}
-.schedule-step-num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  background: var(--accent-wash);
-  color: var(--accent);
-  font-size: 8.5px;
-  font-weight: 800;
-  margin-right: 2px;
-  vertical-align: 1px;
-}
-
-/* ============================================================
-   ADMIN SCHEDULE FORM — MULTI-DATE CALENDAR PICKER
-   ============================================================ */
-.schedule-calendar-wrap {
-  /* FIX: "make calendar size bit smaller" — this used to stretch the full
-     width of the card, which on anything wider than a phone made each day
-     cell (grid-template-columns: repeat(7, 1fr) at 100% width) balloon far
-     past a comfortable tap target. Capping the wrapper's width and
-     centering it shrinks every cell with it, without changing the grid
-     logic at all. */
-  max-width: 240px;
-  margin: 0 auto 10px;
-  background: var(--surface-sunken);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 8px;
-}
-.schedule-calendar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 4px;
-}
-.schedule-calendar-header .icon-btn { width: 22px; height: 22px; font-size: 11px; }
-.schedule-calendar-month { font-weight: 700; font-size: 11.5px; color: var(--ink); }
-.schedule-calendar-weekdays {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  text-align: center;
-  font-size: 8.5px;
-  font-weight: 700;
-  color: var(--ink-faint);
-  margin-bottom: 3px;
-}
-.schedule-calendar-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 2px;
-}
-.schedule-cal-cell {
-  aspect-ratio: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--ink);
-  font-size: 10px;
-  font-weight: 600;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-.schedule-cal-cell.is-empty { background: none; cursor: default; }
-.schedule-cal-cell.is-today { box-shadow: inset 0 0 0 1.5px var(--accent); }
-.schedule-cal-cell.is-selected { background: var(--accent); color: #fff; }
-.schedule-cal-cell:disabled { color: var(--ink-faint); background: none; cursor: not-allowed; opacity: 0.5; }
-.schedule-cal-cell:not(:disabled):not(.is-selected):hover { background: var(--border-strong); }
-
-.schedule-selected-dates {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-.schedule-selected-dates .empty-note { padding: 2px; }
-.schedule-date-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 6px 5px 10px;
-  background: var(--accent-wash);
-  color: var(--accent);
-  border-radius: var(--radius-pill);
-  font-size: 11.5px;
-  font-weight: 700;
-}
-.schedule-date-chip-remove {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(255,255,255,0.5);
-  color: var(--accent);
-  font-size: 9px;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
-.schedule-date-chip-remove:hover { background: var(--accent); color: #fff; }
-
-.schedule-end-preview {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--ink-soft);
-  margin: 0 2px 10px;
-}
-.schedule-end-preview i { color: var(--accent); font-size: 11px; }
-.schedule-end-preview span { font-weight: 700; color: var(--ink); }
-
-.schedule-checkbox-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-  color: var(--ink);
-  padding: 8px 2px;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.schedule-checkbox-row input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--accent);
-  flex-shrink: 0;
-}
-
-.schedule-per-date-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 2px 0 10px;
-}
-.schedule-per-date-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px;
-  background: var(--surface-sunken);
-  border-radius: var(--radius-md);
-}
-.schedule-per-date-label {
-  flex: 0 0 62px;
-  font-size: 11.5px;
-  font-weight: 700;
-  color: var(--ink);
-}
-.schedule-per-date-row .field-sm { flex: 1; min-width: 0; }
-.schedule-per-date-end {
-  flex: 0 0 auto;
-  font-size: 10.5px;
-  color: var(--ink-faint);
-  white-space: nowrap;
-}
-
-/* ============================================================
-   GROUP PROFILE — SCHEDULED CLASSES LIST (visible to everyone)
-   ============================================================ */
-.group-schedule-list { margin: 0 18px 18px; display: flex; flex-direction: column; gap: 8px; }
-.group-schedule-list .empty-note { padding: 4px 2px; }
-
-.group-schedule-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 11px 13px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-}
-.group-schedule-item.is-live { border-color: var(--success); background: var(--accent-wash); }
-
-.group-schedule-item-date { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.group-schedule-item-date-label { font-weight: 700; font-size: 13px; color: var(--ink); }
-.group-schedule-item-time-label { font-size: 11.5px; color: var(--ink-faint); }
-
-.group-schedule-item-teacher {
-  font-size: 12px;
-  color: var(--ink-soft);
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-}
-.group-schedule-item-teacher i { color: var(--accent); font-size: 11px; }
-
-/* FIX: admin-only edit/delete/"end now" controls on each row — see
-   "add option for admin to edit, delete and end live session anytime,
-   even during the session" and groupScheduleItemHtml()/
-   groupScheduleEditRowHtml() in app.js. */
-.group-schedule-item-actions {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.group-schedule-item-actions .icon-btn { width: 30px; height: 30px; font-size: 12px; }
-.group-schedule-item-end-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 10px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--danger);
-  background: var(--danger-wash);
-  color: var(--danger);
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-  white-space: nowrap;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-.group-schedule-item-end-btn:hover { background: var(--danger); color: #fff; }
-
-.group-schedule-item.is-editing {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-}
-.group-schedule-edit-fields {
-  display: flex;
-  gap: 6px;
-}
-.group-schedule-edit-fields .field-sm { flex: 1; min-width: 0; }
-.group-schedule-edit-actions {
-  display: flex;
-  gap: 6px;
-}
-.group-schedule-edit-actions .btn-admin-sm { flex: 1; }
-
-/* ============================================================
-   ADMIN — ALL-GROUPS LIVE SESSIONS CALENDAR
-   ============================================================ */
-#screenCalendar { overflow: hidden; height: 100%; }
-
-.calendar-scroll-container {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 14px 18px 24px;
-  -webkit-overflow-scrolling: touch;
-}
-
-.calendar-day-group + .calendar-day-group { margin-top: 18px; }
-
-.calendar-day-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  padding: 0 2px 8px;
-}
-
-/* FIX: root cause of "add option for admin to edit, delete and end live
-   session anytime" on the all-groups calendar — each row used to be a
-   single <button> wrapping everything, which left no room for separate
-   delete/"end now" controls (nested interactive elements aren't valid
-   HTML and break click handling). .calendar-item is now the outer row
-   (no longer itself clickable); .calendar-item-link is the button that
-   still navigates into the group's Profile screen, and
-   .calendar-item-admin-actions sits beside it holding the admin-only
-   quick actions. See calendarItemHtml() in app.js. */
-.calendar-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 12px;
-  margin-bottom: 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-}
-.calendar-item:hover { border-color: var(--accent); }
-.calendar-item.is-live { border-color: var(--success); background: var(--accent-wash); }
-
-.calendar-item-link {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 1;
-  min-width: 0;
-  background: none;
-  border: none;
-  padding: 0;
-  margin: 0;
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
-  font-family: inherit;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-
-.calendar-item-admin-actions {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.calendar-item-time {
-  flex: 0 0 62px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  line-height: 1.3;
-}
-.calendar-item-time-start { font-weight: 800; font-size: 13.5px; color: var(--ink); }
-.calendar-item-time-end { font-size: 11px; color: var(--ink-faint); }
-
-.calendar-item-text { flex: 1; min-width: 0; }
-.calendar-item-group {
-  font-weight: 700;
-  font-size: 14px;
-  color: var(--ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.calendar-item-teacher {
-  font-size: 12px;
-  color: var(--ink-soft);
-  margin-top: 2px;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-.calendar-item-teacher i { color: var(--accent); font-size: 11px; }
-
-.calendar-item-duration {
-  flex-shrink: 0;
-  font-size: 11.5px;
-  font-weight: 700;
-  color: var(--ink-faint);
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-.calendar-live-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--success);
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.22);
-}
-
-/* ============================================================
-   BOTTOM NAVIGATION
-   ============================================================ */
-.bottom-nav {
-  position: relative;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-around;
-  padding: 10px 8px calc(10px + env(safe-area-inset-bottom));
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-  z-index: 5;
-  flex-shrink: 0;
-}
-.nav-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--ink-faint);
-  font-size: 10.5px;
-  font-weight: 600;
-  padding: 2px 14px;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-.nav-icon-wrap {
-  position: relative;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-/* Bottom-nav icons are inline SVGs (traced from the provided artwork)
-   rather than Font Awesome glyphs. fill="currentColor" on the <svg>
-   means they pick up color exactly like the old <i> icons did — no
-   change needed to the active-state rules below. */
-.nav-icon-svg {
-  width: 18px;
-  height: 18px;
-  display: block;
-  color: inherit;
-}
-.nav-btn.active { color: var(--ink); }
-.nav-btn.active .nav-icon-wrap { background: var(--navy); color: #fff; }
-.nav-badge {
-  position: absolute; top: -3px; right: -3px;
-  background: var(--accent); color: #fff; font-size: 9px; font-weight: 700;
-  min-width: 15px; height: 15px; border-radius: 999px;
-  display: flex; align-items: center; justify-content: center; padding: 0 3px;
-}
-/* FIX: "notification dot for unseen status in nav bar" — the Updates tab
-   reuses .nav-badge's pill/positioning but as a plain dot, no digit inside
-   (unlike #navChatsBadge's unread count): WhatsApp's status tab indicator
-   is presence-only ("something's unseen"), not a count, so this drops the
-   padding/min-width sizing that exists to fit 1-3 digits and sizes it as a
-   small fixed circle instead. Toggled by updateStatusNavBadge() in app.js. */
-.nav-badge.nav-dot {
-  min-width: 10px; width: 10px; height: 10px;
-  padding: 0; top: -1px; right: -1px;
-}
-
-/* ============================================================
-   STATUS / UPDATE VIEWER
-   ============================================================ */
-.status-viewer {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(5, 6, 24, 0.6);
-  padding: 0;
-}
-.status-viewer-inner {
-  width: 100%;
-  max-width: 430px;
-  /* FIX: root cause of "video/image on a status doesn't appear centered
-     from up and down side" on real phones — this used to be a plain
-     `height: 100%` of `.status-viewer` (position:fixed; inset:0), which
-     mobile browsers size to the *layout* viewport, not the visible one.
-     With the address bar on screen, that's taller than what's actually
-     visible, so this card (and the media centered inside it via
-     .status-viewer-body.has-media below) rendered partly below the fold —
-     reading as "not centered", since the hidden slice came off one side
-     only. Every other full-height container in this app (body,
-     .app-shell, .phone-frame) already avoids this with the same
-     100vh → 100dvh → var(--app-height) fallback chain, where
-     --app-height is kept in sync with window.visualViewport by
-     setAppHeight() in app.js; this was the one container that still used
-     the plain, unsafe unit. This also replaces the old per-open
-     `inner.style.height = '100vh'` hack in showStatusModal() (app.js),
-     which forced the exact same broken value in JS — removed there now
-     that CSS handles it correctly on its own. */
-  height: 100vh;
-  height: 100dvh;
-  height: var(--app-height);
-  /* FIX: root cause of "status screen is not fit to the screen in mobile —
-     it shows up and down empty space, should fill the screen" — this used
-     to be a flat `max-height: 860px` right here in the base (mobile,
-     <560px width) rule, so it applied on every phone, not just the
-     tablet/desktop "phone mockup" card further down. Any real phone taller
-     than 860 CSS px (common on today's tall-aspect-ratio phones — e.g.
-     iPhone 14/15 Pro Max is 932px, many 20:9/21:9 Android phones run
-     880-930px) got capped short of the actual screen height, and since
-     .status-viewer (the fixed, dark backdrop behind this card) centers it
-     with align-items/justify-content: center, the leftover space split
-     evenly above and below — the backdrop showing through top and bottom
-     instead of the card filling edge to edge. .phone-frame (the main app
-     shell) never had this problem because its own default/mobile rule
-     carries no max-height at all — only ITS `@media (min-width: 560px)`
-     tablet block adds a fixed/bounded height for the "card on a bigger
-     screen" look. Moving the 860px cap down into this same media query
-     (next rule) makes the status viewer follow that exact pattern: no cap
-     on real phones (fills whatever var(--app-height) actually is), capped
-     only once the viewport is wide enough to be tablet/desktop. */
-  background: var(--navy);
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  overflow: hidden;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-@media (min-width: 560px) {
-  .status-viewer-inner { border-radius: 26px; height: 860px; max-height: 860px; }
-}
-
-.status-segments { display: flex; gap: 4px; padding: 14px 14px 0; flex-shrink: 0; }
-.segment { flex: 1; height: 3px; border-radius: 999px; background: rgba(255,255,255,0.22); overflow: hidden; }
-.segment-fill { height: 100%; width: 0%; background: #fff; transition: width 0.05s linear; }
-
-.status-viewer-header { display: flex; align-items: center; gap: 10px; padding: 14px 14px 10px; flex-shrink: 0; }
-.status-viewer-header .back-btn { background: rgba(255,255,255,0.1); color: #fff; }
-.status-viewer-header .back-btn:hover { background: rgba(255,255,255,0.2); }
-.status-viewer-avatar { box-shadow: 0 0 0 2px #fff; }
-.status-viewer-meta { flex: 1; min-width: 0; }
-.status-viewer-name { font-weight: 700; font-size: 14px; color: #fff; }
-.status-viewer-time { font-size: 11.5px; color: rgba(255,255,255,0.55); }
-.status-viewer-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 22px; gap: 14px; overflow-y: auto; }
-/* FIX: same native-selection-vs-click conflict as .msg-bubble above,
-   applied to the Updates full-screen viewer's text (#statusModalContent
-   renders inside here) — this is exactly the "clicking any text selects it
-   instead of opening the link" complaint for shared links inside updates. */
-.status-viewer-body p { color: #fff; font-size: 16px; line-height: 1.6; font-weight: 500; text-align: center; user-select: none; -webkit-user-select: none; }
-.status-viewer-body p:empty { display: none; }
-/* FIX: .msg-link's default color (var(--chat-accent), navy) is meant for
-   text on light chat-bubble backgrounds — against this viewer's dark navy
-   background (.status-viewer-inner) it would be nearly invisible. Use the
-   same pale chat-blue already used elsewhere for text/icons on navy. */
-.status-viewer-body .msg-link { color: var(--chat-blue); }
-.status-viewer-media:empty { display: none; }
-.status-viewer-media img, .status-viewer-media video {
-  max-width: 100%; max-height: 60vh; border-radius: 14px; object-fit: contain; display: block;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-/* FIX: root cause of "media in status takes time to open" — see the big
-   comment in showStatusModal() (app.js). This spinner is appended next to
-   the img/video while it's still downloading (the auto-advance story timer
-   is now paused for that same window, so the update can't skip itself
-   before its media is visible). Absolutely positioned over
-   .status-viewer-media, which is the centering flex container in both the
-   has-media and text+media layouts, so the spinner is centered no matter
-   which layout is active. */
-.status-media-spinner {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: 3px solid rgba(255, 255, 255, 0.25);
-  border-top-color: #fff;
-  animation: orbit-loading-spin 0.8s linear infinite;
-  z-index: 1;
-}
-/* FIX: root cause of "media in status is not showing in center" for any
-   update whose photo/video actually fails to load (expired/broken URL,
-   network error) — a bare broken <img> renders the browser's native
-   broken-image glyph pinned to the top-left of its box instead of a
-   centered photo, which is indistinguishable from "the media isn't
-   centered". Shown instead once app.js's `error` handler fires; centered
-   via the same flex rules as a real loaded image/video (see
-   .status-viewer-media and .status-viewer-body.has-media .status-viewer-media
-   above/below). */
-.status-media-broken {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  color: rgba(255, 255, 255, 0.75);
-  font-size: 14px;
-  width: 100%;
-  height: 100%;
-  justify-content: center;
-}
-.status-media-broken i { font-size: 30px; }
-
-/* FIX: "display media in full screen not in small screen" — when an update
-   has a photo/video, .has-media (toggled in showStatusModal() in app.js)
-   switches the body from the padded/centered text layout to an edge-to-edge
-   layout that fills the entire viewer, WhatsApp/Instagram-story style.
-   Text-only updates are untouched and keep using the rules above. */
-.status-viewer-body.has-media {
-  padding: 0;
-  gap: 0;
-  align-items: stretch;
-  justify-content: flex-start;
-  position: relative;
-  overflow: hidden;
-}
-/* FIX: root cause of "screen shows empty black color around the opened
-   media instead of navy blue" — this used to be `background: #000`. Media
-   is shown with object-fit: contain (see the img/video rule just below),
-   so anything that isn't the same aspect ratio as the viewer leaves
-   letterboxing/pillarboxing bars — those bars render in *this* container's
-   background, not .status-viewer-inner's. #000 is a different, flatly
-   black color from the app's navy (var(--navy), #0E1B75) that
-   .status-viewer-inner already uses everywhere else in the viewer (header,
-   segments, non-media background), so those bars read as a jarring pure-
-   black band instead of matching the surrounding navy chrome. Use the same
-   navy variable so the bars blend seamlessly with the rest of the viewer. */
-.status-viewer-body.has-media .status-viewer-media {
-  flex: 1;
-  width: 100%;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--navy);
-}
-.status-viewer-body.has-media .status-viewer-media img,
-.status-viewer-body.has-media .status-viewer-media video {
-  width: 100%;
-  height: 100%;
-  max-width: 100%;
-  max-height: 100%;
-  border-radius: 0;
-  object-fit: contain;
-}
-.status-viewer-body.has-media p:not(:empty) {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  margin: 0;
-  z-index: 2;
-  padding: 46px 20px 22px;
-  background: linear-gradient(to top, rgba(0,0,0,0.78), rgba(0,0,0,0.4) 60%, transparent);
-  text-align: left;
-  font-size: 14.5px;
-  pointer-events: none;
-}
-
-/* ============================================================
-   MODALS
-   ============================================================ */
-.modal-overlay {
-  background: rgba(20, 22, 43, 0.5);
-  backdrop-filter: blur(3px);
-  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 70; padding: 16px;
-}
-.modal-card {
-  background: var(--surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  padding: 26px;
-  width: 100%;
-  max-width: 360px;
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-.modal-title { font-family: var(--font-display); font-weight: 800; font-size: 16px; color: var(--ink); display: flex; align-items: center; gap: 8px; }
-.modal-body { color: var(--ink-soft); font-size: 14px; margin: 12px 0 16px; line-height: 1.55; }
-
-/* WhatsApp-style message selection: click a message (desktop) or
-   long-press it (mobile) and, instead of a floating pill over the
-   bubble, the chat header itself swaps out for this bar — same
-   spot the group name normally sits in — with a close (X), a
-   "1 selected" label, and an Info button that opens the
-   read-receipt modal. See selectMessageForInfo()/exitMessageSelection()
-   in app.js. */
-.msg-select-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 14px;
-  border-bottom: 1px solid var(--chat-grey);
-  background: var(--chat-white);
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  flex-shrink: 0;
-  animation: msgIn 0.12s ease-out;
-}
-.msg-select-header.hidden { display: none; }
-.msg-select-count {
-  flex: 1;
-  min-width: 0;
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 15.5px;
-  color: var(--ink);
-}
-.msg-select-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-.msg-select-actions .icon-btn.hidden { display: none; }
-
-/* Forward-to-channel picker, reusing the modal-overlay/modal-card look. */
-.forward-channel-list { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; margin: 4px 0 16px; }
-.forward-channel-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 8px;
-  border: none;
-  background: transparent;
-  border-radius: var(--radius-md, 10px);
-  cursor: pointer;
-  text-align: left;
-  font-family: var(--font-body);
-  color: var(--ink);
-}
-.forward-channel-row:hover { background: var(--surface-sunken); }
-.forward-channel-name { font-size: 14px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* Highlight on the bubble currently backing the selection header,
-   so it's clear which message "1 selected" refers to. */
-.msg.msg-selected .msg-bubble {
-  outline: 2px solid var(--chat-accent);
-  outline-offset: 1px;
-}
-
-.msg-info-section-label {
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--ink-soft);
-  margin: 16px 0 8px;
-}
-.msg-info-list { display: flex; flex-direction: column; gap: 10px; max-height: 160px; overflow-y: auto; }
-.msg-info-row { display: flex; align-items: center; gap: 10px; }
-.msg-info-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.msg-info-time { font-size: 12px; color: var(--ink-soft); flex-shrink: 0; }
-.msg-info-time.msg-info-pending { color: var(--danger); opacity: 0.8; }
-.msg-info-time.msg-info-notdelivered { color: var(--ink-soft); opacity: 0.6; }
-
-/* ============================================================
-   RESPONSIVE TIGHTENING
-   ============================================================ */
-@media (max-width: 380px) {
-  .avatar { width: 36px; height: 36px; font-size: 13px; }
-  .brand-word { font-size: 1.25rem; }
-  .auth-card { padding: 26px 20px 22px; }
-}
-
-/* ============================================================
-   MOBILE TAP OPTIMIZATION
-   ============================================================ */
-.chat-row,
-.update-row,
-.member-row,
-.calendar-item,
-.calendar-item-link,
-.group-schedule-item,
-.nav-btn,
-.btn,
-.icon-btn,
-.fab,
-.settings-action-row,
-.logout-btn,
-.btn-live-pill,
-.btn-navy-pill,
-.btn-admin-sm,
-.see-all-link,
-.status-viewer-media img,
-.status-viewer-media video,
-.modal-card,
-.status-viewer-inner,
-.schedule-banner,
-.profile-card,
-.settings-profile-card,
-.auth-card {
-  -webkit-tap-highlight-color: transparent;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-
-/* Allow text selection in specific areas
-   FIX: .msg-bubble and .status-viewer-body p used to be listed here too.
-   This rule comes AFTER their own dedicated rules above in the file, so —
-   same selector specificity — it was the one actually winning the cascade
-   and re-enabling native selection there, overriding the user-select:none
-   just set on them above. Dropped both from this list; see the FIX
-   comments on .msg-bubble and .status-viewer-body p for why. */
-.msg-author,
-.msg-time,
-.profile-card-desc,
-.settings-profile-name,
-.settings-profile-email,
-.settings-profile-displayname,
-.auth-title,
-.auth-sub,
-.msg-delivery-status {
-  user-select: text;
-  -webkit-user-select: text;
-}
-
-/* Prevent accidental text selection in chat list */
-.chat-row-name,
-.chat-row-preview,
-.chat-row-time {
-  user-select: none;
-  -webkit-user-select: none;
-}
+
+  function formatFullDate(ts) {
+    return new Date(ts).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  }
+
+  function formatTimeAgo(ts) {
+    if (!ts) return '';
+    const diffMs = Date.now() - new Date(ts).getTime();
+    const min = Math.floor(diffMs / 60000);
+    if (min < 1) return 'now';
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const day = Math.floor(hr / 24);
+    if (day < 7) return `${day}d ago`;
+    return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+
+  function truncate(str, n = 20) {
+    if (!str) return '';
+    return str.length > n ? str.substr(0, n) + '…' : str;
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str ?? '';
+    return div.innerHTML;
+  }
+
+  // ============================================================
+  // LINK DETECTION (chat messages + updates)
+  // ============================================================
+  const COMMON_TLDS = 'com|net|org|io|co|dev|app|edu|gov|mil|info|biz|me|xyz|ai|tv|so|gg|pk|in|uk|us|ca|au|de|fr|jp|nl|ru|br|es|it|ch|se|no|dk|fi|pl|tech|online|store|site|shop|live|news|blog';
+  const URL_REGEX = new RegExp(
+    '\\b(' +
+      'https?://[^\\s<>"\']+' +
+      '|www\\.[a-z0-9-]+(?:\\.[a-z0-9-]+)*(?:/[^\\s<>"\']*)?' +
+      `|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\.(?:${COMMON_TLDS})(?:/[^\\s<>"\']*)?` +
+    ')\\b',
+    'gi'
+  );
+  const TRAILING_PUNCT = /[.,:;!?'")\]]+$/;
+
+  function normalizeUrlHref(raw) {
+    return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  }
+
+  function linkifyText(text) {
+    if (!text) return '';
+    const parts = String(text).split(URL_REGEX);
+    let html = '';
+    for (let i = 0; i < parts.length; i++) {
+      if (i % 2 === 1) {
+        let raw = parts[i];
+        const precededByAt = i > 0 && /@$/.test(parts[i - 1]);
+        if (precededByAt) { html += escapeHtml(raw); continue; }
+        let trail = '';
+        const m = raw.match(TRAILING_PUNCT);
+        if (m) {
+          trail = m[0];
+          raw = raw.slice(0, -trail.length);
+        }
+        if (!raw) { html += escapeHtml(parts[i]); continue; }
+        const safeHref = escapeHtml(normalizeUrlHref(raw));
+        const safeText = escapeHtml(raw);
+        html += `<a href="${safeHref}" rel="noopener" class="msg-link">${safeText}</a>${escapeHtml(trail)}`;
+      } else {
+        html += escapeHtml(parts[i]);
+      }
+    }
+    return html;
+  }
+
+  function firstUrlIn(text) {
+    if (!text) return null;
+    const str = String(text);
+    URL_REGEX.lastIndex = 0;
+    let m;
+    while ((m = URL_REGEX.exec(str))) {
+      if (m.index > 0 && str[m.index - 1] === '@') continue;
+      return normalizeUrlHref(m[0].replace(TRAILING_PUNCT, ''));
+    }
+    return null;
+  }
+
+  let lastOpenedExternalUrl = null;
+  let lastOpenedExternalAt = 0;
+
+  function openExternalLink(url) {
+    if (!url) return;
+    const now = Date.now();
+    if (url === lastOpenedExternalUrl && (now - lastOpenedExternalAt) < 800) return;
+    lastOpenedExternalUrl = url;
+    lastOpenedExternalAt = now;
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  function isImageFile(url) {
+    return !!url && /\.(png|jpe?g|gif|webp|svg)$/i.test(url.split('?')[0]);
+  }
+
+  function isVideoFile(url) {
+    return !!url && /\.(mp4|webm|mov|m4v|ogv)$/i.test(url.split('?')[0]);
+  }
+
+  function isPdfFile(url) {
+    return !!url && /\.pdf$/i.test(url.split('?')[0]);
+  }
+
+  // ============================================================
+  // CLIENT-SIDE IMAGE COMPRESSION (before upload)
+  // ============================================================
+  const IMAGE_COMPRESS_MAX_DIMENSION = 1600;
+  const IMAGE_COMPRESS_QUALITY = 0.82;
+  const IMAGE_COMPRESS_SKIP_UNDER_BYTES = 300 * 1024;
+
+  function isCompressibleImageType(file) {
+    return !!file && !!file.type && file.type.startsWith('image/') &&
+      file.type !== 'image/gif' && file.type !== 'image/svg+xml';
+  }
+
+  function shouldCompressImage(file) {
+    return isCompressibleImageType(file) && file.size > IMAGE_COMPRESS_SKIP_UNDER_BYTES;
+  }
+
+  function compressImageFile(file) {
+    return new Promise((resolve) => {
+      if (!shouldCompressImage(file)) { resolve(file); return; }
+
+      const objectUrl = URL.createObjectURL(file);
+      const img = new Image();
+      const cleanupAndResolve = (result) => {
+        URL.revokeObjectURL(objectUrl);
+        resolve(result);
+      };
+
+      img.onload = () => {
+        try {
+          let { width, height } = img;
+          const longestEdge = Math.max(width, height);
+          if (longestEdge > IMAGE_COMPRESS_MAX_DIMENSION) {
+            const scale = IMAGE_COMPRESS_MAX_DIMENSION / longestEdge;
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) { cleanupAndResolve(file); return; }
+          ctx.drawImage(img, 0, 0, width, height);
+
+          canvas.toBlob((blob) => {
+            if (!blob || blob.size >= file.size) { cleanupAndResolve(file); return; }
+            const newName = (file.name || 'photo').replace(/\.[a-z0-9]+$/i, '') + '.jpg';
+            const compressed = new File([blob], newName, { type: 'image/jpeg', lastModified: Date.now() });
+            cleanupAndResolve(compressed);
+          }, 'image/jpeg', IMAGE_COMPRESS_QUALITY);
+        } catch (e) {
+          console.warn('Image compression failed, sending original file:', e);
+          cleanupAndResolve(file);
+        }
+      };
+      img.onerror = () => cleanupAndResolve(file);
+      img.src = objectUrl;
+    });
+  }
+
+  function getFileNameFromUrl(url) {
+    if (!url) return 'File';
+    try {
+      const path = url.split('?')[0];
+      const last = path.substring(path.lastIndexOf('/') + 1);
+      const decoded = decodeURIComponent(last);
+      return decoded.replace(/^\d{10,}-/, '') || 'File';
+    } catch {
+      return 'File';
+    }
+  }
+
+  function getFileExt(name) {
+    const match = /\.([a-z0-9]+)$/i.exec(name || '');
+    return match ? match[1].toUpperCase() : '';
+  }
+
+  function getFileIconClass(ext) {
+    const e = (ext || '').toLowerCase();
+    if (e === 'pdf') return 'fa-file-pdf';
+    if (['doc', 'docx'].includes(e)) return 'fa-file-word';
+    if (['xls', 'xlsx', 'csv'].includes(e)) return 'fa-file-excel';
+    if (['ppt', 'pptx'].includes(e)) return 'fa-file-powerpoint';
+    if (['zip', 'rar', '7z'].includes(e)) return 'fa-file-zipper';
+    if (['txt', 'md'].includes(e)) return 'fa-file-lines';
+    if (['mp3', 'wav', 'ogg', 'm4a'].includes(e)) return 'fa-file-audio';
+    return 'fa-file';
+  }
+
+  function showError(message) {
+    DOM.authErrorText.textContent = message;
+    DOM.authError.classList.remove('hidden');
+  }
+
+  function hideError() {
+    DOM.authError.classList.add('hidden');
+  }
+
+  function hideAppLoading() {
+    if (DOM.appLoading) DOM.appLoading.classList.add('hidden');
+    if (window.__orbitLoadingFallback) {
+      clearTimeout(window.__orbitLoadingFallback);
+      window.__orbitLoadingFallback = null;
+    }
+  }
+
+  function generateStoragePath(channelId, filename) {
+    const timestamp = Date.now();
+    return CONFIG.UPLOAD.STORAGE_PATH
+      .replace('{channelId}', channelId)
+      .replace('{timestamp}', timestamp)
+      .replace('{filename}', filename);
+  }
+
+  // ============================================================
+  // 6a. REALTIME CONNECTION STATUS BANNER
+  // ============================================================
+  const connectionIssues = new Set();
+  let connectionBannerEl = null;
+
+  function setConnectionIssue(key, hasIssue) {
+    const had = connectionIssues.has(key);
+    if (hasIssue) connectionIssues.add(key);
+    else connectionIssues.delete(key);
+    if (had !== connectionIssues.has(key)) renderConnectionBanner();
+  }
+
+  function renderConnectionBanner() {
+    if (connectionIssues.size === 0) {
+      if (connectionBannerEl) {
+        connectionBannerEl.remove();
+        connectionBannerEl = null;
+      }
+      return;
+    }
+    if (!connectionBannerEl) {
+      connectionBannerEl = document.createElement('div');
+      connectionBannerEl.setAttribute('role', 'status');
+      connectionBannerEl.style.cssText = [
+        'position:fixed', 'left:50%', 'bottom:16px', 'transform:translateX(-50%)',
+        'z-index:99999', 'max-width:min(92vw,440px)',
+        'background:#E24C43', 'color:#fff', 'font:600 12.5px/1.4 -apple-system,system-ui,sans-serif',
+        'padding:10px 14px', 'border-radius:12px',
+        'box-shadow:0 8px 24px -6px rgba(0,0,0,0.35)',
+        'display:flex', 'align-items:center', 'gap:10px',
+      ].join(';');
+      document.body.appendChild(connectionBannerEl);
+    }
+    connectionBannerEl.innerHTML =
+      '<span style="flex:1;">⚠️ Live updates aren\'t connecting — new messages and unread counts may be delayed. Try refreshing the page.</span>' +
+      '<button type="button" aria-label="Dismiss" style="flex-shrink:0;background:rgba(255,255,255,0.18);border:none;color:#fff;width:22px;height:22px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1;">✕</button>';
+    connectionBannerEl.querySelector('button').addEventListener('click', () => {
+      connectionBannerEl.remove();
+      connectionBannerEl = null;
+    });
+  }
+
+  // ============================================================
+  // 6b. SCREEN NAVIGATION
+  // ============================================================
+  const ROOT_TABS = ['chats', 'updates', 'settings'];
+  const SCREEN_EL = {
+    chats: DOM.screenChats,
+    updates: DOM.screenUpdates,
+    settings: DOM.screenSettings,
+    chatDetail: DOM.screenChatDetail,
+    members: DOM.screenMembers,
+    profile: DOM.screenProfile,
+    calendar: DOM.screenCalendar,
+  };
+
+  const CHAT_GROUP_SCREENS = ['chats', 'chatDetail', 'members', 'profile'];
+  const isDesktopLayout = () => window.matchMedia('(min-width: 1024px)').matches;
+
+  function isChatDetailVisible(channelId) {
+    if (!state.currentChannel || String(state.currentChannel.id) !== String(channelId)) return false;
+    if (isDesktopLayout()) {
+      return CHAT_GROUP_SCREENS.includes(state.currentScreen);
+    }
+    return state.currentScreen === 'chatDetail';
+  }
+
+  function updateChatEmptyState() {
+    if (!DOM.screenChatDetail) return;
+    DOM.screenChatDetail.classList.toggle('no-chat', !state.currentChannel);
+  }
+
+  function goToScreen(name) {
+    if (name !== 'chatDetail' && typeof exitMessageSelection === 'function') exitMessageSelection();
+    if (name !== 'updates' && typeof exitStatusSelection === 'function') exitStatusSelection();
+    updateChatEmptyState();
+    const isDesktop = isDesktopLayout();
+    const keepChatsVisible = isDesktop && CHAT_GROUP_SCREENS.includes(name);
+
+    Object.entries(SCREEN_EL).forEach(([key, el]) => {
+      if (!el) return;
+      
+      let shouldBeVisible = false;
+      
+      if (key === name) {
+        shouldBeVisible = true;
+      } else if (isDesktop && key === 'chats' && CHAT_GROUP_SCREENS.includes(name)) {
+        shouldBeVisible = true;
+      } else if (isDesktop && keepChatsVisible && key === 'chats') {
+        shouldBeVisible = true;
+      } else if (isDesktop && key === 'chatDetail' && name === 'chats') {
+        shouldBeVisible = true;
+      }
+      
+      if (shouldBeVisible) {
+        el.classList.remove('hidden');
+        el.style.display = 'flex';
+        el.style.flexDirection = 'column';
+      } else {
+        el.classList.add('hidden');
+        el.style.display = 'none';
+      }
+    });
+    
+    const isRoot = ROOT_TABS.includes(name);
+    const hideNav = !isRoot && !isDesktop;
+    DOM.bottomNav.classList.toggle('hidden', hideNav);
+    
+    if (isDesktop) {
+      DOM.bottomNav.classList.remove('hidden');
+      DOM.bottomNav.style.display = 'flex';
+    }
+    
+    if (isRoot) {
+      state.currentTab = name;
+      DOM.bottomNav.querySelectorAll('.nav-btn').forEach((b) => {
+        b.classList.toggle('active', b.dataset.tab === name);
+      });
+    }
+    
+    state.currentScreen = name;
+
+    if (name === 'settings' && typeof syncNotificationToggleState === 'function') {
+      syncNotificationToggleState();
+    }
+    if (name === 'settings' && state.isAdmin) {
+      loadRegisteredUsersList();
+    }
+
+    if (!isBackNavigation) {
+      pushScreenState(name);
+    }
+  }
+
+  let lastIsDesktop = isDesktopLayout();
+  window.addEventListener('resize', () => {
+    const nowDesktop = isDesktopLayout();
+    if (nowDesktop !== lastIsDesktop) {
+      lastIsDesktop = nowDesktop;
+      if (state.currentScreen) goToScreen(state.currentScreen);
+    }
+  });
+
+  let suppressChatOpenClicksUntil = 0;
+  let suppressStatusOpenClicksUntil = 0;
+
+  // ============================================================
+  // 5i. HISTORY NAVIGATION (mobile back button)
+  // ============================================================
+  let screenHistory = [];
+  let isBackNavigation = false;
+
+  function pushScreenState(screenName) {
+    if (screenHistory.length === 0 || screenHistory[screenHistory.length - 1] !== screenName) {
+      screenHistory.push(screenName);
+      if (history.pushState) {
+        history.pushState({ orbitScreen: screenName }, '', '#' + screenName);
+      }
+    }
+  }
+
+  function closeLightboxIfOpen() {
+    if (state.activeLightbox) {
+      if (typeof state.activeLightbox._lightboxCleanup === 'function') {
+        state.activeLightbox._lightboxCleanup();
+      }
+      state.activeLightbox.remove();
+      state.activeLightbox = null;
+      if (state.currentScreen && history.replaceState) {
+        history.replaceState({ orbitScreen: state.currentScreen }, '', '#' + state.currentScreen);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  function handleBackNavigation(event) {
+    if (closeLightboxIfOpen()) {
+      return;
+    }
+    
+    if (DOM.statusModal && !DOM.statusModal.classList.contains('hidden')) {
+      closeStatusViewer();
+      if (state.currentScreen) pushScreenState(state.currentScreen);
+      return;
+    }
+    
+    // FIX: only force-close the call here while it's full-screen — that's
+    // the state where it would otherwise swallow every back gesture with
+    // no other way out. Once minimized (see setVideoMinimized()) the call
+    // is already out of the way and the composer/chat list are usable, so
+    // back should behave normally (e.g. leave the chat screen) instead of
+    // also disconnecting a call the user deliberately kept running.
+    if (DOM.videoContainer && !DOM.videoContainer.classList.contains('hidden') && !state.videoMinimized) {
+      closeLiveSession();
+      if (state.currentScreen) pushScreenState(state.currentScreen);
+      return;
+    }
+
+    const targetScreen = event.state && event.state.orbitScreen;
+
+    if (targetScreen && SCREEN_EL[targetScreen]) {
+      isBackNavigation = true;
+      const idx = screenHistory.lastIndexOf(targetScreen);
+      screenHistory = idx !== -1 ? screenHistory.slice(0, idx + 1) : [targetScreen];
+      goToScreen(targetScreen);
+      isBackNavigation = false;
+      return;
+    }
+
+    if (state.currentScreen && state.currentScreen !== 'chats') {
+      isBackNavigation = true;
+      goToScreen('chats');
+      isBackNavigation = false;
+    }
+  }
+
+  // ============================================================
+  // 7. AUTHENTICATION
+  // ============================================================
+  async function loginWithUsername(username, password) {
+    const email = generateEmail(username);
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      return data.user;
+    } catch (e) {
+      console.error('Auth error:', e);
+      if (/email not confirmed/i.test(e.message || '')) {
+        throw new Error('This account is waiting on an email confirmation. Ask your admin to turn off "Confirm email" in Supabase.');
+      }
+      throw new Error('Incorrect School ID or password.');
+    }
+  }
+
+  // ============================================================
+  // 8. CHANNELS (CRUD)
+  // ============================================================
+  async function createChannel(name) {
+    if (!name || !name.trim()) return;
+
+    const basePayload = {
+      name: name.trim(),
+      created_by: state.currentUser?.username,
+      created_at: new Date().toISOString()
+    };
+
+    let { data, error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.CHANNELS)
+      .insert(basePayload)
+      .select();
+
+    if (error && /created_by.*schema cache/i.test(error.message || '')) {
+      console.warn('channels.created_by column missing — retrying insert without it.');
+      const { created_by, ...fallbackPayload } = basePayload;
+      ({ data, error } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.CHANNELS)
+        .insert(fallbackPayload)
+        .select());
+    }
+
+    if (error) {
+      alert('Could not create channel: ' + error.message);
+      return;
+    }
+    
+    await renderChannels();
+    if (data && data[0]) {
+      selectChannel(data[0]);
+    }
+  }
+
+  async function loadChannels() {
+    if (!state.currentUser) return [];
+
+    if (state.isAdmin) {
+      state.myMemberships = new Map();
+      const { data, error } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.CHANNELS)
+        .select('*')
+        .order('name');
+
+      if (error) {
+        console.warn('Channels fallback:', error);
+        return [
+          { id: '1', name: 'Math 101' },
+          { id: '2', name: 'Science' },
+          { id: '3', name: 'History' }
+        ];
+      }
+      return data || [];
+    }
+
+    const { data: memberships, error: memberError } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.MEMBERS)
+      .select('id, channel_id')
+      .eq('username', state.currentUser.username);
+
+    if (memberError) {
+      console.warn('Membership lookup failed:', memberError);
+      return [];
+    }
+
+    state.myMemberships = new Map((memberships || []).map((m) => [String(m.channel_id), m.id]));
+
+    const channelIds = (memberships || []).map((m) => m.channel_id);
+    if (!channelIds.length) return [];
+
+    const { data: channels, error: channelError } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.CHANNELS)
+      .select('*')
+      .in('id', channelIds)
+      .order('name');
+
+    if (channelError) {
+      console.warn('Channels fallback:', channelError);
+      return [];
+    }
+    return channels || [];
+  }
+
+  async function loadChannelPreviews(channelIds) {
+    if (!channelIds.length) return {};
+    const { data, error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+      .select('channel_id, content, username, created_at, file_url')
+      .in('channel_id', channelIds)
+      .order('created_at', { ascending: false })
+      .limit(300);
+
+    if (error) {
+      console.warn('Preview lookup failed:', error);
+      return {};
+    }
+    const map = {};
+    (data || []).forEach((m) => {
+      if (!map[m.channel_id]) map[m.channel_id] = m;
+    });
+    return map;
+  }
+
+  let allChannels = [];
+  let allGroupsCache = [];
+  let registeredUserMemberships = new Map();
+  let registeredUsersListHasData = false;
+  let registeredUsersListLoading = false;
+
+  async function renderChannels() {
+    const channels = await loadChannels();
+    allChannels = channels;
+    state.channelPreviews = await loadChannelPreviews(channels.map((c) => c.id));
+    renderChatList(channels);
+
+    if (!state.currentChannel && channels.length) {
+      selectChannel(channels[0], { markSeenNow: isDesktopLayout() });
+    }
+  }
+
+  function renderChatList(channels) {
+    exitChannelSelection();
+    DOM.channelList.innerHTML = '';
+
+    if (!channels || channels.length === 0) {
+      DOM.channelList.innerHTML = state.isAdmin
+        ? '<div class="empty-note">No channels yet — tap + to create one</div>'
+        : '<div class="empty-note">You haven\'t been added to a group yet — ask your admin.</div>';
+      return;
+    }
+
+    channels.forEach((ch) => {
+      const preview = state.channelPreviews[ch.id];
+      const unread = state.unreadByChannel[ch.id] || 0;
+      const previewLinkUrl = preview && preview.content ? firstUrlIn(preview.content) : null;
+      const previewText = preview
+        ? (preview.content
+            ? (previewLinkUrl
+                ? `<a href="${escapeHtml(previewLinkUrl)}" rel="noopener" class="msg-link">${escapeHtml(truncate(preview.content, 42))}</a>`
+                : escapeHtml(truncate(preview.content, 42)))
+            : (preview.file_url ? '📎 Attachment' : ''))
+        : 'No messages yet';
+      const previewAuthor = preview && preview.username ? `${escapeHtml(getDisplayName(preview.username))}: ` : '';
+      const time = preview ? formatTimeAgo(preview.created_at) : '';
+
+      const row = document.createElement('div');
+      row.className = 'chat-row' + (state.currentChannel && state.currentChannel.id === ch.id ? ' active' : '');
+      row.dataset.id = ch.id;
+      row.dataset.name = ch.name.toLowerCase();
+      row.innerHTML = `
+        ${channelAvatarHtml(ch)}
+        <div class="chat-row-body">
+          <div class="chat-row-top">
+            <span class="chat-row-name">${escapeHtml(ch.name)}</span>
+            <span class="chat-row-time">${time}</span>
+          </div>
+          <div class="chat-row-bottom">
+            <span class="chat-row-preview">${previewAuthor}${previewText}</span>
+            ${unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : ''}
+          </div>
+        </div>
+      `;
+      if (state.isAdmin) {
+        row.addEventListener('touchstart', () => startChannelLongPress(row, ch), { passive: true });
+        ['touchend', 'touchmove', 'touchcancel'].forEach((evt) => {
+          row.addEventListener(evt, clearChannelLongPressTimer);
+        });
+        row.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          selectChannelForActions(row, ch);
+        });
+      }
+      row.addEventListener('pointerup', (e) => {
+        if (e.button === 2) return;
+        if (channelLongPressFired) { channelLongPressFired = false; return; }
+        if (e.target.closest('a.msg-link')) return;
+        e.preventDefault();
+        openChannel(ch);
+      });
+      row.addEventListener('click', (e) => {
+        const link = e.target.closest('a.msg-link');
+        if (!link) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openExternalLink(link.getAttribute('href'));
+      });
+      DOM.channelList.appendChild(row);
+    });
+  }
+
+  function highlightActiveChatRow() {
+    if (!DOM.channelList) return;
+    DOM.channelList.querySelectorAll('.chat-row').forEach((row) => {
+      row.classList.toggle('active', !!state.currentChannel && row.dataset.id === String(state.currentChannel.id));
+    });
+  }
+
+  function filterChatList(query) {
+    const q = query.trim().toLowerCase();
+    DOM.channelList.querySelectorAll('.chat-row').forEach((row) => {
+      row.classList.toggle('hidden', !!q && !row.dataset.name.includes(q));
+    });
+  }
+
+  async function openChannel(channel) {
+    suppressChatOpenClicksUntil = Date.now() + 80;
+    selectChannel(channel);
+    goToScreen('chatDetail');
+    requestAnimationFrame(scrollToBottom);
+  }
+
+  async function renameChannel(channelId) {
+    const newName = prompt('New channel name:');
+    if (!newName) return;
+    const { error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.CHANNELS)
+      .update({ name: newName })
+      .eq('id', channelId);
+    if (error) { alert('Rename failed: ' + error.message); return; }
+    if (state.currentChannel?.id === channelId) state.currentChannel.name = newName;
+    await renderChannels();
+  }
+
+  async function deleteChannel(channelId) {
+    if (!confirm('Delete this channel? This also removes its messages and member list. This cannot be undone.')) return;
+    const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.CHANNELS).delete().eq('id', channelId);
+    if (error) { alert('Delete failed: ' + error.message); return; }
+    if (state.currentChannel?.id === channelId) {
+      state.currentChannel = null;
+      teardownMessagesSubscription();
+    }
+    await renderChannels();
+  }
+
+  let channelLongPressTimer = null;
+  let channelLongPressFired = false;
+  let selectedChannel = null;
+
+  function clearChannelLongPressTimer() {
+    if (channelLongPressTimer) { clearTimeout(channelLongPressTimer); channelLongPressTimer = null; }
+  }
+
+  function startChannelLongPress(row, ch) {
+    clearChannelLongPressTimer();
+    channelLongPressTimer = setTimeout(() => {
+      channelLongPressFired = true;
+      selectChannelForActions(row, ch);
+    }, 500);
+  }
+
+  function selectChannelForActions(row, ch) {
+    exitChannelSelection();
+    selectedChannel = ch;
+    row.classList.add('active');
+
+    if (DOM.brandHeader) DOM.brandHeader.classList.add('hidden');
+    if (DOM.channelSelectHeader) DOM.channelSelectHeader.classList.remove('hidden');
+    if (DOM.channelSelectCount) DOM.channelSelectCount.textContent = ch.name;
+  }
+
+  function exitChannelSelection() {
+    if (!selectedChannel) return;
+    selectedChannel = null;
+
+    if (DOM.channelSelectHeader) DOM.channelSelectHeader.classList.add('hidden');
+    if (DOM.brandHeader) DOM.brandHeader.classList.remove('hidden');
+    highlightActiveChatRow();
+  }
+
+  if (DOM.channelSelectCloseBtn) DOM.channelSelectCloseBtn.addEventListener('click', exitChannelSelection);
+
+  if (DOM.channelSelectRenameBtn) {
+    DOM.channelSelectRenameBtn.addEventListener('click', () => {
+      const ch = selectedChannel;
+      exitChannelSelection();
+      if (ch) renameChannel(ch.id);
+    });
+  }
+
+  if (DOM.channelSelectDeleteBtn) {
+    DOM.channelSelectDeleteBtn.addEventListener('click', () => {
+      const ch = selectedChannel;
+      exitChannelSelection();
+      if (ch) deleteChannel(ch.id);
+    });
+  }
+
+  // ============================================================
+  // UNREAD BADGE REFRESH
+  // ============================================================
+  async function refreshUnreadBadges() {
+    if (!state.currentUser) return;
+
+    try {
+      const channelIds = allChannels.map((c) => c.id);
+
+      if (!channelIds.length) {
+        state.unreadByChannel = {};
+        DOM.navChatsBadge.textContent = '0';
+        DOM.navChatsBadge.classList.add('hidden');
+        renderChatList(allChannels);
+        return;
+      }
+
+      const { data: fromOthers, error: msgError } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+        .select('id, channel_id')
+        .in('channel_id', channelIds)
+        .neq('username', state.currentUser.username)
+        .is('deleted_at', null);
+
+      if (msgError) {
+        console.warn('Failed to fetch messages for badge:', msgError);
+        setConnectionIssue('badges', true);
+        return;
+      }
+      setConnectionIssue('badges', false);
+
+      const { data: myReads, error: readsError } = await supabase
+        .from('message_reads')
+        .select('message_id')
+        .eq('username', state.currentUser.username);
+
+      if (readsError) {
+        console.warn('Failed to fetch read receipts for badge:', readsError);
+        setConnectionIssue('badges', true);
+        return;
+      }
+      setConnectionIssue('badges', false);
+
+      const readIds = new Set((myReads || []).map((r) => r.message_id));
+      const counts = {};
+      
+      (fromOthers || []).forEach((row) => {
+        if (!readIds.has(row.id)) {
+          counts[row.channel_id] = (counts[row.channel_id] || 0) + 1;
+        }
+      });
+      
+      state.unreadByChannel = counts;
+
+      const total = Object.values(counts).reduce((a, b) => a + b, 0);
+      DOM.navChatsBadge.textContent = total > 99 ? '99+' : String(total);
+      DOM.navChatsBadge.classList.toggle('hidden', total === 0);
+
+      state.channelPreviews = await loadChannelPreviews(channelIds);
+      renderChatList(allChannels);
+
+      console.log(`🔔 Badge updated: ${total} unread messages`);
+    } catch (e) {
+      console.warn('Error refreshing unread badges:', e);
+    }
+  }
+
+  // ============================================================
+  // GLOBAL CHANNEL-LIST REALTIME
+  // ============================================================
+  let channelListSubscription = null;
+
+  function isKnownChannelId(channelId) {
+    return allChannels.some((c) => String(c.id) === String(channelId));
+  }
+
+  function handleGlobalMessageInsert(msg) {
+    if (!msg || !isKnownChannelId(msg.channel_id)) return;
+
+    const existing = state.channelPreviews[msg.channel_id];
+    if (!existing || new Date(msg.created_at) >= new Date(existing.created_at || 0)) {
+      state.channelPreviews[msg.channel_id] = msg;
+    }
+
+    const isOpenChannel = isChatDetailVisible(msg.channel_id);
+    if (!isOpenChannel && msg.username !== state.currentUser?.username) {
+      state.unreadByChannel[msg.channel_id] = (state.unreadByChannel[msg.channel_id] || 0) + 1;
+      const total = Object.values(state.unreadByChannel).reduce((a, b) => a + b, 0);
+      DOM.navChatsBadge.textContent = total > 99 ? '99+' : String(total);
+      DOM.navChatsBadge.classList.toggle('hidden', total === 0);
+    }
+
+    renderChatList(allChannels);
+  }
+
+  async function expelFromChannel(removedChannelId, { showAlert = true } = {}) {
+    if (!removedChannelId) return;
+    removedChannelId = String(removedChannelId);
+
+    console.log(`🚪 Removed from channel ${removedChannelId}, updating UI.`);
+
+    state.myMemberships.delete(removedChannelId);
+    allChannels = allChannels.filter((c) => String(c.id) !== removedChannelId);
+    delete state.unreadByChannel[removedChannelId];
+    delete state.channelPreviews[removedChannelId];
+
+    const wasOpen = state.currentChannel && String(state.currentChannel.id) === removedChannelId;
+    if (wasOpen) {
+      teardownMessagesSubscription();
+      teardownReadsSubscription();
+      if (scheduleSubscription) {
+        supabase.removeChannel(scheduleSubscription);
+        scheduleSubscription = null;
+      }
+      state.currentChannel = null;
+      state.messages = [];
+      state.currentMembers = [];
+      goToScreen('chats');
+      if (showAlert) alert('You were removed from This Session.');
+    }
+
+    renderChatList(allChannels);
+    await refreshUnreadBadges();
+  }
+
+  async function handleMembershipRemoved(oldRow) {
+    if (!oldRow || !state.currentUser) return;
+
+    let removedChannelId = null;
+    for (const [channelId, membershipId] of state.myMemberships.entries()) {
+      if (String(membershipId) === String(oldRow.id)) {
+        removedChannelId = channelId;
+        break;
+      }
+    }
+    if (!removedChannelId && oldRow.username &&
+        normalizeUsername(oldRow.username) === state.currentUser.username) {
+      removedChannelId = String(oldRow.channel_id);
+    }
+    if (!removedChannelId) return;
+
+    await expelFromChannel(removedChannelId);
+  }
+
+  async function verifyChannelMembership(channelId) {
+    try {
+      const { data, error } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MEMBERS)
+        .select('id')
+        .eq('channel_id', channelId)
+        .eq('username', state.currentUser.username)
+        .maybeSingle();
+
+      if (error) {
+        console.warn('Membership verification failed, allowing send:', error);
+        return true;
+      }
+      return !!data;
+    } catch (e) {
+      console.warn('Membership verification error, allowing send:', e);
+      return true;
+    }
+  }
+
+  function handleAccountDeleted(oldRow) {
+    if (!oldRow || !state.currentUser) return;
+    const matchesById = state.myUserRoleId != null && String(oldRow.id) === String(state.myUserRoleId);
+    const deletedUsername = normalizeUsername(oldRow.username || '');
+    const matchesByUsername = !!deletedUsername && deletedUsername === state.currentUser.username;
+    if (matchesById || matchesByUsername) {
+      console.warn('🚫 Realtime: this account was removed, Signing Out.');
+      forceSignOut('Your account has been removed. You have been Signed Out.');
+    }
+  }
+
+  let channelListReconnectTimer = null;
+  let channelListReconnectAttempts = 0;
+  let channelListIntentionalTeardown = false;
+
+  function scheduleChannelListReconnect() {
+    if (channelListReconnectTimer || !state.currentUser) return;
+    channelListReconnectAttempts += 1;
+    const delay = Math.min(30000, 2000 * Math.pow(2, channelListReconnectAttempts - 1));
+    console.log(`🔁 channel-list-updates reconnect attempt ${channelListReconnectAttempts} in ${delay / 1000}s...`);
+    channelListReconnectTimer = setTimeout(() => {
+      channelListReconnectTimer = null;
+      if (state.currentUser) subscribeToChannelListUpdates();
+    }, delay);
+  }
+
+  function subscribeToChannelListUpdates() {
+    if (channelListReconnectTimer) {
+      clearTimeout(channelListReconnectTimer);
+      channelListReconnectTimer = null;
+    }
+    if (channelListSubscription) {
+      channelListIntentionalTeardown = true;
+      supabase.removeChannel(channelListSubscription);
+      channelListIntentionalTeardown = false;
+      channelListSubscription = null;
+    }
+    if (!state.currentUser) return;
+
+    channelListSubscription = supabase
+      .channel('channel-list-updates')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: CONFIG.SUPABASE.TABLES.MESSAGES,
+      }, (payload) => handleGlobalMessageInsert(payload.new))
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: CONFIG.SUPABASE.TABLES.MEMBERS,
+      }, (payload) => handleMembershipRemoved(payload.old))
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'user_roles',
+      }, (payload) => handleAccountDeleted(payload.old))
+      .subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') {
+          channelListReconnectAttempts = 0;
+          setConnectionIssue('channel-list', false);
+          console.log('✅ Subscribed to channel-list updates');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          if (channelListIntentionalTeardown) return;
+          console.warn(`⚠️ channel-list-updates: ${status}`, err || '');
+          if (channelListSubscription) {
+            channelListSubscription = null;
+            scheduleChannelListReconnect();
+            if (channelListReconnectAttempts >= 5) {
+              setConnectionIssue('channel-list', true);
+            }
+          }
+        }
+      });
+  }
+
+  function unsubscribeFromChannelListUpdates() {
+    if (channelListReconnectTimer) {
+      clearTimeout(channelListReconnectTimer);
+      channelListReconnectTimer = null;
+    }
+    if (channelListSubscription) {
+      channelListIntentionalTeardown = true;
+      supabase.removeChannel(channelListSubscription);
+      channelListIntentionalTeardown = false;
+      channelListSubscription = null;
+    }
+  }
+
+  // ============================================================
+  // CHAT-LIST PREVIEW POLLING FALLBACK
+  // ============================================================
+  let channelPreviewPollTimer = null;
+  const CHANNEL_PREVIEW_POLL_INTERVAL = 12000;
+
+  async function pollChannelPreviews() {
+    if (!state.currentUser || !allChannels.length) return;
+    try {
+      const fresh = await loadChannelPreviews(allChannels.map((c) => c.id));
+      let changed = false;
+      allChannels.forEach((ch) => {
+        const incoming = fresh[ch.id];
+        const existing = state.channelPreviews[ch.id];
+        if (incoming && (!existing || incoming.id !== existing.id)) {
+          changed = true;
+        }
+      });
+      state.channelPreviews = fresh;
+      if (changed) {
+        console.log('🔄 Preview poll found new messages — refreshing chat list.');
+        renderChatList(allChannels);
+        await refreshUnreadBadges();
+      }
+    } catch (e) {
+      console.warn('Channel preview poll failed:', e);
+    }
+  }
+
+  function startChannelPreviewPolling() {
+    stopChannelPreviewPolling();
+    channelPreviewPollTimer = setInterval(pollChannelPreviews, CHANNEL_PREVIEW_POLL_INTERVAL);
+  }
+
+  function stopChannelPreviewPolling() {
+    if (channelPreviewPollTimer) {
+      clearInterval(channelPreviewPollTimer);
+      channelPreviewPollTimer = null;
+    }
+  }
+
+  // ============================================================
+  // DELIVERED / SEEN TRACKING
+  // ============================================================
+  async function markDelivered(channelId) {
+    if (!state.currentUser) return;
+    
+    try {
+      console.log(`📬 Marking messages as delivered for channel ${channelId}`);
+      
+      const { error } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+        .update({ 
+          delivered_at: new Date().toISOString() 
+        })
+        .eq('channel_id', channelId)
+        .neq('username', state.currentUser.username)
+        .is('delivered_at', null);
+        
+      if (error) {
+        console.warn('Failed to mark delivered:', error);
+      } else {
+        console.log('✅ Messages marked as delivered');
+      }
+    } catch (e) {
+      console.warn('Mark delivered error:', e);
+    }
+  }
+
+  async function markSeen(channelId) {
+    if (!state.currentUser || document.hidden) {
+      console.log('⏭️ Skipping markSeen - no user or tab not visible');
+      return;
+    }
+    
+    try {
+      console.log(`👁️ Marking messages as seen for channel ${channelId}`);
+      
+      const { data: unreadMsgs, error: unreadError } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+        .select('id')
+        .eq('channel_id', channelId)
+        .neq('username', state.currentUser.username)
+        .is('deleted_at', null);
+
+      if (unreadError) {
+        console.warn('Failed to get unread messages:', unreadError);
+      } else if (unreadMsgs && unreadMsgs.length) {
+        const rows = unreadMsgs.map((m) => ({
+          message_id: m.id,
+          channel_id: channelId,
+          username: state.currentUser.username,
+        }));
+        const { error: readsError } = await supabase
+          .from('message_reads')
+          .upsert(rows, { onConflict: 'message_id,username', ignoreDuplicates: true });
+        if (readsError) {
+          console.warn('Failed to record read receipts:', readsError);
+          setConnectionIssue('badges', true);
+        } else {
+          console.log(`✅ Recorded ${rows.length} read receipts`);
+          setConnectionIssue('badges', false);
+        }
+      }
+
+      const { error } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+        .update({ 
+          seen_at: new Date().toISOString(),
+          seen_by: state.currentUser.username
+        })
+        .eq('channel_id', channelId)
+        .neq('username', state.currentUser.username)
+        .is('seen_at', null);
+        
+      if (error) {
+        console.warn('Failed to mark seen:', error);
+      } else {
+        console.log('✅ Messages marked as seen');
+      }
+
+      await refreshUnreadBadges();
+      
+    } catch (e) {
+      console.warn('Mark seen error:', e);
+      try {
+        await refreshUnreadBadges();
+      } catch (badgeError) {
+        console.warn('Failed to refresh badge after error:', badgeError);
+      }
+    }
+  }
+
+  // ============================================================
+  // GROUP READ RECEIPTS
+  // ============================================================
+  async function loadMessageReads(channelId) {
+    const { data, error } = await supabase
+      .from('message_reads')
+      .select('message_id, username, seen_at')
+      .eq('channel_id', channelId);
+
+    state.messageReads = new Map();
+    if (error) {
+      console.warn('Failed to load read receipts:', error);
+      return;
+    }
+    (data || []).forEach((row) => {
+      const list = state.messageReads.get(row.message_id) || [];
+      list.push({ username: row.username, seen_at: row.seen_at });
+      state.messageReads.set(row.message_id, list);
+    });
+  }
+
+  function teardownReadsSubscription() {
+    if (!state.readsSubscription) return;
+    supabase.removeChannel(state.readsSubscription);
+    state.readsSubscription = null;
+  }
+
+  function subscribeToMessageReads(channelId) {
+    teardownReadsSubscription();
+    state.readsSubscription = supabase
+      .channel(`message_reads:${channelId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'message_reads',
+        filter: `channel_id=eq.${channelId}`,
+      }, (payload) => {
+        const row = payload.new;
+        const list = state.messageReads.get(row.message_id) || [];
+        if (!list.some((r) => r.username === row.username)) {
+          list.push({ username: row.username, seen_at: row.seen_at });
+          state.messageReads.set(row.message_id, list);
+        }
+      })
+      .subscribe();
+  }
+
+  // ============================================================
+  // SAFE MESSAGE MERGING
+  // ============================================================
+  function mergeMessagesSafely(newMessages, forceScroll) {
+    if (state.isMerging) {
+      console.log('⏳ Merge already in progress, skipping');
+      return;
+    }
+    
+    state.isMerging = true;
+    
+    try {
+      const messagesToAdd = Array.isArray(newMessages) ? newMessages : [newMessages];
+      
+      const messageMap = new Map();
+      
+      state.messages.forEach(msg => {
+        messageMap.set(msg.id, msg);
+      });
+      
+      messagesToAdd.forEach(msg => {
+        if (msg && msg.id) {
+          if (msg.id.startsWith('temp_') || msg.isPending) {
+            const realVersion = messagesToAdd.find(m => 
+              !m.isPending && m.client_id === msg.client_id
+            );
+            if (realVersion) {
+              messageMap.set(realVersion.id, realVersion);
+              messageMap.delete(msg.id);
+              return;
+            }
+          }
+          messageMap.set(msg.id, msg);
+        }
+      });
+      
+      const mergedMessages = Array.from(messageMap.values());
+      
+      mergedMessages.sort((a, b) => {
+        const dateA = new Date(a.created_at || a.createdAt || 0);
+        const dateB = new Date(b.created_at || b.createdAt || 0);
+        return dateA - dateB;
+      });
+      
+      state.messages = mergedMessages;
+      
+      if (state.currentChannel) {
+        saveCachedMessages(state.currentChannel.id, mergedMessages);
+      }
+      
+      scheduleRenderMessages(forceScroll);
+
+      console.log(`✅ Merged ${messagesToAdd.length} messages, total: ${mergedMessages.length}`);
+      
+    } catch (error) {
+      console.error('Error merging messages:', error);
+    } finally {
+      state.isMerging = false;
+    }
+  }
+
+  // ============================================================
+  // CACHED MESSAGES
+  // ============================================================
+  function getCachedMessages(channelId) {
+    try {
+      const cacheKey = `cached_chat_history_${channelId}`;
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        console.log(`📦 Loaded ${parsed.length} cached messages for channel ${channelId}`);
+        return parsed;
+      }
+    } catch (e) {
+      console.warn('Failed to load cached messages:', e);
+    }
+    return null;
+  }
+
+  function saveCachedMessages(channelId, messages) {
+    try {
+      const cacheKey = `cached_chat_history_${channelId}`;
+      const toCache = messages.slice(-50);
+      localStorage.setItem(cacheKey, JSON.stringify(toCache));
+      console.log(`💾 Cached ${toCache.length} messages for channel ${channelId}`);
+    } catch (e) {
+      console.warn('Failed to cache messages:', e);
+    }
+  }
+
+  function clearCachedMessages(channelId) {
+    try {
+      const cacheKey = `cached_chat_history_${channelId}`;
+      localStorage.removeItem(cacheKey);
+    } catch (e) {
+      console.warn('Failed to clear cached messages:', e);
+    }
+  }
+
+  // ============================================================
+  // FETCH FRESH HISTORY
+  // ============================================================
+  async function fetchFreshHistory(channelId) {
+    if (!channelId) return;
+    
+    try {
+      console.log('🔄 Fetching fresh message history...');
+      
+      const { data, error } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+        .select('*')
+        .eq('channel_id', channelId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) {
+        console.warn('Failed to fetch fresh history:', error);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        mergeMessagesSafely(data);
+        console.log(`✅ Fetched ${data.length} fresh messages`);
+      }
+      
+      updateProfileScreen();
+      
+    } catch (error) {
+      console.error('Error fetching fresh history:', error);
+    }
+  }
+
+  // ============================================================
+  // 8b. REALTIME MESSAGE SYNC
+  // ============================================================
+  let reconnectTimer = null;
+  let reconnectAttempts = 0;
+  let isIntentionalTeardown = false;
+
+  function teardownMessagesSubscription() {
+    if (!state.messagesSubscription) return;
+    isIntentionalTeardown = true;
+    supabase.removeChannel(state.messagesSubscription);
+    isIntentionalTeardown = false;
+    state.messagesSubscription = null;
+  }
+
+  function scheduleReconnect(channelId) {
+    if (reconnectTimer) return;
+    if (!state.currentChannel || state.currentChannel.id !== channelId) return;
+
+    reconnectAttempts += 1;
+    const delay = Math.min(30000, 2000 * Math.pow(2, reconnectAttempts - 1));
+    console.log(`🔁 Reconnect attempt ${reconnectAttempts} in ${delay / 1000}s...`);
+
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      if (state.currentChannel && state.currentChannel.id === channelId) {
+        subscribeToMessages(channelId);
+      }
+    }, delay);
+  }
+
+  function subscribeToMessages(channelId) {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+
+    teardownMessagesSubscription();
+
+    let thisChannel;
+
+    thisChannel = supabase
+      .channel(`messages:${channelId}`)
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: CONFIG.SUPABASE.TABLES.MESSAGES, 
+        filter: `channel_id=eq.${channelId}` 
+      }, async (payload) => {
+        const newMessage = payload.new;
+        
+        if (state.messages.some(msg => msg.id === newMessage.id)) {
+          console.log(`✋ Message ${newMessage.id} already exists, skipping`);
+          return;
+        }
+        
+        if (newMessage.client_id) {
+          const optimisticIndex = state.messages.findIndex(m =>
+            m.client_id === newMessage.client_id
+          );
+
+          if (optimisticIndex !== -1) {
+            console.log(`✅ Replacing optimistic message (clientId: ${newMessage.client_id})`);
+            state.messages[optimisticIndex] = newMessage;
+            delete state.messages[optimisticIndex].isPending;
+            state.messages.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+            scheduleRenderMessages();
+            saveCachedMessages(channelId, state.messages);
+
+            if (isKnownChannelId(channelId)) {
+              state.channelPreviews[channelId] = newMessage;
+              renderChatList(allChannels);
+            }
+
+            if (newMessage.username !== state.currentUser?.username) {
+              console.log('🔔 New message from someone else - marking delivered');
+              playNotifySound();
+              if (isChatDetailVisible(channelId)) {
+                await markDelivered(channelId);
+                await markSeen(channelId);
+              }
+            }
+            return;
+          }
+        }
+        
+        console.log(`📥 Adding new message (ID: ${newMessage.id})`);
+        mergeMessagesSafely(newMessage);
+
+        if (isKnownChannelId(channelId)) {
+          state.channelPreviews[channelId] = newMessage;
+          renderChatList(allChannels);
+        }
+
+        await refreshUnreadBadges();
+        
+        if (newMessage.username !== state.currentUser?.username) {
+          console.log('🔔 New message from someone else - marking delivered');
+          playNotifySound();
+          if (isChatDetailVisible(channelId)) {
+            await markDelivered(channelId);
+            await markSeen(channelId);
+          }
+        }
+
+        if (state.inactivityTimer) {
+          clearTimeout(state.inactivityTimer);
+          state.inactivityTimer = null;
+        }
+      })
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: CONFIG.SUPABASE.TABLES.MESSAGES, 
+        filter: `channel_id=eq.${channelId}` 
+      }, (payload) => {
+        const idx = state.messages.findIndex((m) => m.id === payload.new.id);
+        if (idx !== -1) { 
+          state.messages[idx] = payload.new; 
+          scheduleRenderMessages();
+          saveCachedMessages(channelId, state.messages);
+        }
+      })
+      .on('postgres_changes', { 
+        event: 'DELETE', 
+        schema: 'public', 
+        table: CONFIG.SUPABASE.TABLES.MESSAGES, 
+        filter: `channel_id=eq.${channelId}` 
+      }, (payload) => {
+        const initialCount = state.messages.length;
+        state.messages = state.messages.filter((m) => m.id !== payload.old.id);
+        
+        if (state.messages.length < initialCount) {
+          console.log(`🗑️ Message deleted (ID: ${payload.old.id})`);
+          scheduleRenderMessages();
+          saveCachedMessages(channelId, state.messages);
+        }
+      })
+      .on('broadcast', { event: 'typing' }, (payload) => {
+        handleIncomingTyping(channelId, payload.payload);
+      })
+      .on('broadcast', { event: 'stopped_typing' }, (payload) => {
+        handleIncomingStoppedTyping(channelId, payload.payload);
+      })
+      .subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') {
+          reconnectAttempts = 0;
+          state.isChannelActive = true;
+          setConnectionIssue('messages', false);
+          console.log(`✅ Subscribed to channel ${channelId}`);
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          if (isIntentionalTeardown) {
+            console.log(`↩️ Channel ${status} for ${channelId} — intentional teardown, not reconnecting`);
+            return;
+          }
+
+          if (err) console.error(`❌ Channel ${status} for ${channelId}:`, err.message || err);
+          else console.error(`❌ Channel ${status} for ${channelId}`);
+          state.isChannelActive = false;
+
+          if (state.messagesSubscription === thisChannel) {
+            state.messagesSubscription = null;
+            scheduleReconnect(channelId);
+
+            if (reconnectAttempts === 5) {
+              console.warn(
+                '⚠️ Realtime channel has failed to stay connected 5 times in a row. ' +
+                'This usually means Realtime replication is not enabled for the ' +
+                `"${CONFIG.SUPABASE.TABLES.MESSAGES}" table in the Supabase dashboard ` +
+                '(Database → Replication), or a Row Level Security policy is blocking it — ' +
+                'not a transient network issue. Still retrying, but check that config.'
+              );
+              setConnectionIssue('messages', true);
+            }
+          }
+        }
+      });
+
+    state.messagesSubscription = thisChannel;
+  }
+
+  // ============================================================
+  // 8c. REAL-TIME "TYPING…" INDICATOR
+  // ============================================================
+  const typingTimers = new Map();
+
+  function getTypingUsernames(channelId) {
+    const prefix = `${channelId}:`;
+    return [...typingTimers.keys()]
+      .filter((key) => key.startsWith(prefix))
+      .map((key) => key.slice(prefix.length));
+  }
+
+  function handleIncomingTyping(channelId, payload) {
+    if (!payload || !payload.username) return;
+    if (payload.username === state.currentUser?.username) return;
+    const key = `${channelId}:${payload.username}`;
+    if (typingTimers.has(key)) clearTimeout(typingTimers.get(key));
+    typingTimers.set(key, setTimeout(() => {
+      typingTimers.delete(key);
+      renderTypingIndicator(channelId);
+    }, 3000));
+    renderTypingIndicator(channelId);
+  }
+
+  function broadcastStoppedTyping() {
+    if (!state.currentChannel || !state.messagesSubscription || !state.currentUser) return;
+    state.lastTypingBroadcastAt = 0;
+    state.messagesSubscription.send({
+      type: 'broadcast',
+      event: 'stopped_typing',
+      payload: { username: state.currentUser.username },
+    });
+  }
+
+  function handleIncomingStoppedTyping(channelId, payload) {
+    if (!payload || !payload.username) return;
+    if (payload.username === state.currentUser?.username) return;
+    const key = `${channelId}:${payload.username}`;
+    if (!typingTimers.has(key)) return;
+    clearTimeout(typingTimers.get(key));
+    typingTimers.delete(key);
+    renderTypingIndicator(channelId);
+  }
+
+  function renderTypingIndicator(channelId) {
+    if (!state.currentChannel || state.currentChannel.id !== channelId) return;
+    if (!DOM.chatDetailSub) return;
+    const names = getTypingUsernames(channelId).map(getDisplayName);
+    if (names.length === 0) {
+      updateChatDetailSubtitle();
+      return;
+    }
+    DOM.chatDetailSub.textContent = names.length === 1
+      ? `${names[0]} is typing…`
+      : `${names.length} people are typing…`;
+    DOM.chatDetailSub.classList.add('typing-active');
+  }
+
+  function clearTypingIndicator(channelId) {
+    const prefix = `${channelId}:`;
+    [...typingTimers.keys()]
+      .filter((key) => key.startsWith(prefix))
+      .forEach((key) => {
+        clearTimeout(typingTimers.get(key));
+        typingTimers.delete(key);
+      });
+  }
+
+  function broadcastTyping() {
+    if (!state.currentChannel || !state.messagesSubscription || !state.currentUser) return;
+    const now = Date.now();
+    if (now - state.lastTypingBroadcastAt < 2000) return;
+    state.lastTypingBroadcastAt = now;
+    state.messagesSubscription.send({
+      type: 'broadcast',
+      event: 'typing',
+      payload: { username: state.currentUser.username },
+    });
+  }
+
+  // ============================================================
+  // LOAD MESSAGES
+  // ============================================================
+  async function loadMessages(channelId) {
+    if (!channelId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+        .select('*')
+        .eq('channel_id', channelId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) {
+        console.warn('Messages fallback:', error);
+        if (state.messages.length === 0) {
+          state.messages = [{ id: '1', content: 'Welcome to the channel!', username: 'system', created_at: Date.now() }];
+        }
+        renderMessages(true);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        mergeMessagesSafely(data, true);
+        console.log(`📥 Loaded ${data.length} messages from Supabase`);
+      } else if (state.messages.length === 0) {
+        state.messages = [];
+        renderMessages(true);
+      }
+
+      updateProfileScreen();
+    } catch (error) {
+      console.error('Error loading messages:', error);
+      if (state.messages.length === 0) {
+        state.messages = [{ id: '1', content: 'Welcome to the channel!', username: 'system', created_at: Date.now() }];
+        renderMessages(true);
+      }
+    }
+  }
+
+  function ticksHtml(msg) {
+    if (msg.seen_at) return `<span class="msg-ticks seen" title="Seen"><i class="fas fa-check-double"></i></span>`;
+    if (msg.delivered_at) return `<span class="msg-ticks delivered" title="Delivered"><i class="fas fa-check-double"></i></span>`;
+    return `<span class="msg-ticks" title="Sent"><i class="fas fa-check"></i></span>`;
+  }
+
+  // ============================================================
+  // RENDER MESSAGES
+  // ============================================================
+  function messageSignature(msg) {
+    // FIX: root cause of "media that's aged past the 168h auto-expiry
+    // window keeps showing as a live image/video/file instead of the
+    // 'no longer available' placeholder" — renderMessages() below only
+    // rebuilds a message's DOM node when its signature changes (see the
+    // `node.dataset.sig === signature` check). Expiry is purely a function
+    // of "how much time has passed since created_at", so a message that
+    // was already on screen before it expired had an identical signature
+    // before and after crossing the 7-day line — nothing about the
+    // message itself changed, so the diff considered it unchanged and
+    // left the stale (now actually-expired) media bubble in place
+    // indefinitely, even once the underlying file was gone. Folding
+    // isMessageMediaExpired(msg) into the signature means the moment that
+    // boolean flips, the signature changes too, so the next renderMessages()
+    // pass (see startMediaExpiryWatcher() below, which exists specifically
+    // to make sure a pass actually happens) rebuilds this message and shows
+    // the placeholder.
+    return JSON.stringify([
+      msg.content, msg.file_url, msg.reply_to, msg.reply_username, msg.reply_content,
+      msg.username, msg.created_at, msg.seen_at, msg.delivered_at, msg.isPending,
+      msg.deleted_at, msg.deleted_by, isMessageMediaExpired(msg)
+    ]);
+  }
+
+  // ============================================================
+  // PDF THUMBNAIL PREVIEW
+  // ============================================================
+  const pdfThumbCache = new Map();
+  const pdfThumbInFlight = new Map();
+
+  function getPdfThumbnail(url) {
+    if (pdfThumbCache.has(url)) return Promise.resolve(pdfThumbCache.get(url));
+    if (pdfThumbInFlight.has(url)) return pdfThumbInFlight.get(url);
+    if (!window.pdfjsLib) return Promise.resolve(null);
+
+    const promise = pdfjsLib.getDocument(url).promise
+      .then((pdf) => pdf.getPage(1))
+      .then((page) => {
+        const baseViewport = page.getViewport({ scale: 1 });
+        const targetWidth = 360;
+        const scale = targetWidth / baseViewport.width;
+        const viewport = page.getViewport({ scale });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d');
+
+        return page.render({ canvasContext: ctx, viewport }).promise
+          .then(() => canvas.toDataURL('image/jpeg', 0.82));
+      })
+      .then((dataUrl) => {
+        pdfThumbCache.set(url, dataUrl);
+        pdfThumbInFlight.delete(url);
+        return dataUrl;
+      })
+      .catch((err) => {
+        console.warn(`PDF thumbnail failed for ${url}:`, err);
+        pdfThumbCache.set(url, null);
+        pdfThumbInFlight.delete(url);
+        return null;
+      });
+
+    pdfThumbInFlight.set(url, promise);
+    return promise;
+  }
+
+  function stickToBottomOnMediaLoad(mediaEl, eventName, pinToBottom) {
+    if (!mediaEl || !pinToBottom) return;
+    mediaEl.addEventListener(eventName, () => {
+      if (DOM.chatContainer) DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
+    }, { once: true });
+  }
+
+  function hydratePdfThumb(wrapEl, url, pinToBottom) {
+    const thumbEl = wrapEl.querySelector('.msg-pdf-thumb');
+    if (!thumbEl) return;
+    getPdfThumbnail(url).then((dataUrl) => {
+      if (!dataUrl || !thumbEl.isConnected) return;
+      const img = document.createElement('img');
+      img.className = 'msg-media-img';
+      img.alt = 'PDF preview';
+      img.loading = 'lazy';
+      stickToBottomOnMediaLoad(img, 'load', pinToBottom);
+      img.src = dataUrl;
+      thumbEl.innerHTML = '';
+      thumbEl.appendChild(img);
+      thumbEl.classList.add('loaded');
+    });
+  }
+
+  // ============================================================
+  // LINK PREVIEW THUMBNAILS
+  // ============================================================
+  const LINK_PREVIEW_NEGATIVE_TTL_MS = 10 * 60 * 1000;
+  const linkPreviewCache = new Map();
+  const linkPreviewInFlight = new Map();
+
+  function getLinkPreview(url) {
+    const cached = linkPreviewCache.get(url);
+    if (cached) {
+      const stale = cached.value === null && (Date.now() - cached.ts) >= LINK_PREVIEW_NEGATIVE_TTL_MS;
+      if (!stale) return Promise.resolve(cached.value);
+      linkPreviewCache.delete(url);
+    }
+    if (linkPreviewInFlight.has(url)) return linkPreviewInFlight.get(url);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+    const promise = fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`, { signal: controller.signal })
+      .then((res) => {
+        if (!res.ok) {
+          console.warn(`Link preview request for ${url} failed: HTTP ${res.status} ${res.statusText} (Microlink's free tier is rate-limited — this is expected if it's been called a lot recently; it will retry automatically in ${Math.round(LINK_PREVIEW_NEGATIVE_TTL_MS / 60000)} min)`);
+        }
+        return res.json();
+      })
+      .then((json) => {
+        const data = json && json.status === 'success' ? json.data : null;
+        const image = data && data.image && data.image.url;
+        const logo = data && data.logo && data.logo.url;
+        const preview = (data && (image || data.title)) ? {
+          title: data.title || '',
+          image: image || logo || null,
+          siteName: (() => {
+            try { return new URL(url).hostname.replace(/^www\./, ''); }
+            catch { return ''; }
+          })(),
+        } : null;
+        linkPreviewCache.set(url, { value: preview, ts: Date.now() });
+        return preview;
+      })
+      .catch((err) => {
+        console.warn(`Link preview failed for ${url}:`, err);
+        linkPreviewCache.set(url, { value: null, ts: Date.now() });
+        return null;
+      })
+      .finally(() => {
+        clearTimeout(timeoutId);
+        linkPreviewInFlight.delete(url);
+      });
+
+    linkPreviewInFlight.set(url, promise);
+    return promise;
+  }
+
+  function hydrateLinkPreview(slotEl, url, pinToBottom) {
+    if (!slotEl) return;
+    getLinkPreview(url).then((preview) => {
+      if (!preview || !slotEl.isConnected) return;
+      slotEl.classList.remove('hidden');
+      slotEl.innerHTML = `
+        <a href="${escapeHtml(url)}" rel="noopener" class="msg-link-preview">
+          ${preview.image ? `<img class="msg-link-preview-img" src="${escapeHtml(preview.image)}" alt="" loading="lazy">` : ''}
+          <span class="msg-link-preview-body">
+            ${preview.title ? `<span class="msg-link-preview-title">${escapeHtml(truncate(preview.title, 90))}</span>` : ''}
+            <span class="msg-link-preview-site">${escapeHtml(preview.siteName)}</span>
+          </span>
+        </a>
+      `;
+      const img = slotEl.querySelector('img.msg-link-preview-img');
+      if (img) stickToBottomOnMediaLoad(img, 'load', pinToBottom);
+    });
+  }
+
+  const MESSAGE_MEDIA_EXPIRY_MS = 168 * 60 * 60 * 1000;
+
+  function isMessageMediaExpired(msg) {
+    if (!msg || !msg.created_at) return false;
+    return (Date.now() - new Date(msg.created_at).getTime()) >= MESSAGE_MEDIA_EXPIRY_MS;
+  }
+
+  // FIX: the placeholder text below used to read "Can't view this media
+  // because it's no longer on your device" — the media was never on the
+  // viewer's device to begin with (it lived in Supabase Storage), so that
+  // wording was actively misleading about what happened. It's the file
+  // itself that's gone after the 168h retention window, so say that.
+  const MESSAGE_MEDIA_EXPIRED_TEXT = "The file is no longer available for downloading";
+
+  // FIX: root cause of "the expired-media message never shows up, media
+  // just silently stays broken" — isMessageMediaExpired() is a pure
+  // function of the current time vs. created_at, but nothing was ever
+  // re-evaluating it *as time passed*. renderMessages() only runs when
+  // something else changes the message list (a new message arrives, a
+  // read receipt updates, a reconnect happens, etc.), so a chat opened
+  // and then just left sitting (or an already-rendered message nobody
+  // touches again) would never get re-checked once the 7-day mark
+  // actually passed — the DOM kept showing the same image/video/file link
+  // it always had, now pointing at a deleted file, forever. This timer
+  // exists purely to make sure a renderMessages() pass actually happens
+  // periodically while a chat is open, so the messageSignature() change
+  // above (which now flips once isMessageMediaExpired(msg) flips) has a
+  // chance to take effect close to when it actually should. A 60s tick is
+  // more than fine against a 7-day window.
+  const MEDIA_EXPIRY_WATCH_INTERVAL = 60 * 1000;
+  let mediaExpiryWatcherTimer = null;
+
+  function startMediaExpiryWatcher() {
+    stopMediaExpiryWatcher();
+    mediaExpiryWatcherTimer = setInterval(() => {
+      if (!state.currentChannel || !state.messages.length) return;
+      if (!DOM.screenChatDetail || DOM.screenChatDetail.classList.contains('hidden')) return;
+      renderMessages();
+    }, MEDIA_EXPIRY_WATCH_INTERVAL);
+  }
+
+  function stopMediaExpiryWatcher() {
+    if (mediaExpiryWatcherTimer) {
+      clearInterval(mediaExpiryWatcherTimer);
+      mediaExpiryWatcherTimer = null;
+    }
+  }
+
+  function buildMessageEl(msg, signature, pinToBottom, skipEnterAnim) {
+    const isMine = msg.username === state.currentUser?.username;
+    const wrap = document.createElement('div');
+    wrap.className = `msg ${isMine ? 'msg-mine' : 'msg-theirs'}${skipEnterAnim ? ' msg-no-enter-anim' : ''}`;
+    wrap.dataset.id = msg.id;
+    wrap.dataset.role = roleKey(msg.username);
+    wrap.dataset.sig = signature;
+    wrap.dataset.clientId = msg.client_id || '';
+
+    let replyHtml = '';
+    if (msg.reply_to) {
+      replyHtml = `
+        <div class="msg-reply-quote" data-reply-to-id="${escapeHtml(String(msg.reply_to))}" role="button" tabindex="0">
+          <span class="reply-author">${escapeHtml(getDisplayName(msg.reply_username || 'Message'))}</span>
+          <span class="reply-text">${escapeHtml(truncate(msg.reply_content || '', 60))}</span>
+        </div>
+      `;
+    }
+
+    const ticksMarkup = (isMine && !msg.deleted_at) ? ticksHtml(msg) : '';
+    const hasAttachment = !!msg.file_url && !msg.deleted_at;
+    const mediaExpired = hasAttachment && isMessageMediaExpired(msg);
+
+    const linkUrl = (!hasAttachment && msg.content) ? firstUrlIn(msg.content) : null;
+
+    let bubbleHtml = '';
+    if (msg.deleted_at) {
+      bubbleHtml = `<div class="msg-bubble msg-deleted"><i class="fas fa-ban"></i> This message was deleted by Nous Complex admin</div>`;
+    } else if (msg.content) {
+      const inlineTicks = (!hasAttachment && ticksMarkup) ? `<span class="msg-bubble-ticks">${ticksMarkup}</span>` : '';
+      bubbleHtml += `<div class="msg-bubble">${replyHtml}${linkifyText(msg.content)}${inlineTicks}</div>`;
+      if (linkUrl) bubbleHtml += `<div class="msg-link-preview-slot hidden"></div>`;
+    } else if (replyHtml) {
+      const inlineTicks = (!hasAttachment && ticksMarkup) ? `<span class="msg-bubble-ticks">${ticksMarkup}</span>` : '';
+      bubbleHtml += `<div class="msg-bubble">${replyHtml}${inlineTicks}</div>`;
+    }
+    if (hasAttachment) {
+      const cornerTicks = ticksMarkup ? `<span class="msg-corner-ticks">${ticksMarkup}</span>` : '';
+      if (mediaExpired) {
+        const inlineTicks = ticksMarkup ? `<span class="msg-inline-ticks">${ticksMarkup}</span>` : '';
+        bubbleHtml += `
+          <div class="msg-bubble msg-media-expired">
+            <i class="fas fa-file-circle-xmark"></i> ${escapeHtml(MESSAGE_MEDIA_EXPIRED_TEXT)}${inlineTicks}
+          </div>
+        `;
+      } else if (isImageFile(msg.file_url)) {
+        bubbleHtml += `
+          <div class="msg-media-preview" data-media-url="${escapeHtml(msg.file_url)}">
+            <img class="msg-media-img" src="${escapeHtml(msg.file_url)}" alt="Attached image" loading="lazy">
+            <span class="msg-media-expand"><i class="fas fa-expand"></i></span>
+            ${cornerTicks}
+          </div>
+        `;
+      } else if (isVideoFile(msg.file_url)) {
+        bubbleHtml += `
+          <div class="msg-media-preview msg-media-video-wrap">
+            <video class="msg-media-img" src="${escapeHtml(msg.file_url)}" controls preload="metadata"></video>
+            ${cornerTicks}
+          </div>
+        `;
+      } else if (isPdfFile(msg.file_url)) {
+        const fileName = getFileNameFromUrl(msg.file_url);
+        const inlineTicks = ticksMarkup ? `<span class="msg-inline-ticks">${ticksMarkup}</span>` : '';
+        bubbleHtml += `
+          <a href="${escapeHtml(msg.file_url)}" data-file-name="${escapeHtml(fileName)}" target="_blank" rel="noopener" class="msg-doc-card msg-pdf-card">
+            <div class="msg-pdf-thumb"><i class="fas fa-file-pdf"></i></div>
+            <div class="msg-pdf-info-bar">
+              <span class="msg-doc-icon"><i class="fas fa-file-pdf"></i></span>
+              <span class="msg-doc-info">
+                <span class="msg-doc-name">${escapeHtml(fileName)}</span>
+                <span class="msg-doc-ext">PDF</span>
+              </span>
+              <span class="msg-doc-download"><i class="fas fa-download"></i></span>
+              ${inlineTicks}
+            </div>
+          </a>
+        `;
+      } else {
+        const fileName = getFileNameFromUrl(msg.file_url);
+        const ext = getFileExt(fileName);
+        const inlineTicks = ticksMarkup ? `<span class="msg-inline-ticks">${ticksMarkup}</span>` : '';
+        bubbleHtml += `
+          <a href="${escapeHtml(msg.file_url)}" data-file-name="${escapeHtml(fileName)}" target="_blank" rel="noopener" class="msg-doc-card">
+            <span class="msg-doc-icon"><i class="fas ${getFileIconClass(ext)}"></i></span>
+            <span class="msg-doc-info">
+              <span class="msg-doc-name">${escapeHtml(fileName)}</span>
+              <span class="msg-doc-ext">${escapeHtml(ext || 'FILE')}</span>
+            </span>
+            <span class="msg-doc-download"><i class="fas fa-download"></i></span>
+            ${inlineTicks}
+          </a>
+        `;
+      }
+    }
+
+    // FIX: safety net for rows the *old* purge function already nulled
+    // out before this fix — those messages have no file_url, no content,
+    // and no reply left, so nothing above produces any bubble at all
+    // (this is exactly the "just sender name is showing" bug). There's
+    // no way to recover what those rows used to contain (file_url was
+    // the only record of it), but a message can never be sent with
+    // neither text nor a file (see the `if (!content && !file) return;`
+    // guard on the composer's send handler), so any message that still
+    // ends up with a fully empty bubbleHtml here is guaranteed to be one
+    // of these already-purged rows rather than a legitimate empty
+    // message. Show the same placeholder instead of leaving it blank.
+    if (!bubbleHtml) {
+      const inlineTicks = ticksMarkup ? `<span class="msg-inline-ticks">${ticksMarkup}</span>` : '';
+      bubbleHtml = `
+        <div class="msg-bubble msg-media-expired">
+          <i class="fas fa-file-circle-xmark"></i> ${escapeHtml(MESSAGE_MEDIA_EXPIRED_TEXT)}${inlineTicks}
+        </div>
+      `;
+    }
+
+    const displayName = getDisplayName(msg.username);
+    wrap.innerHTML = `
+      ${avatarHtml(msg.username, 'sm')}
+      <div class="msg-body">
+        <div class="msg-meta">
+          <span class="msg-author">${escapeHtml(displayName)}</span>
+          <span class="msg-time">${formatDate(msg.created_at)}</span>
+        </div>
+        ${bubbleHtml}
+      </div>
+    `;
+
+    if (hasAttachment && !mediaExpired && isPdfFile(msg.file_url)) {
+      hydratePdfThumb(wrap, msg.file_url, pinToBottom);
+    } else if (hasAttachment && !mediaExpired && isImageFile(msg.file_url)) {
+      stickToBottomOnMediaLoad(wrap.querySelector('img.msg-media-img'), 'load', pinToBottom);
+    } else if (hasAttachment && !mediaExpired && isVideoFile(msg.file_url)) {
+      stickToBottomOnMediaLoad(wrap.querySelector('video.msg-media-img'), 'loadedmetadata', pinToBottom);
+    }
+
+    if (linkUrl) {
+      hydrateLinkPreview(wrap.querySelector('.msg-link-preview-slot'), linkUrl, pinToBottom);
+    }
+
+    return wrap;
+  }
+
+  let chatNeedsInitialPaint = false;
+
+  function renderMessages(forceScrollBottom) {
+    if (!DOM.chatMessages) return;
+
+    const isInitialPaint = chatNeedsInitialPaint;
+
+    if (!state.messages.length) {
+      DOM.chatMessages.innerHTML = '<div class="empty-note center-text" style="width:100%;">No messages yet — say hello</div>';
+      return;
+    }
+
+    if (!DOM.chatMessages.querySelector('.msg')) {
+      DOM.chatMessages.innerHTML = '';
+    }
+
+    const existingNodes = new Map();
+    const existingByClientId = new Map();
+    DOM.chatMessages.querySelectorAll('.msg, .day-divider').forEach((el) => {
+      if (el.classList.contains('day-divider')) {
+        existingNodes.set(`day:${el.dataset.day}`, el);
+        return;
+      }
+      const key = `msg:${el.dataset.id}`;
+      existingNodes.set(key, el);
+      if (el.dataset.clientId) {
+        existingByClientId.set(`client:${el.dataset.clientId}`, key);
+      }
+    });
+
+    const wasNearBottom = forceScrollBottom || !DOM.chatContainer || (
+      DOM.chatContainer.scrollHeight - DOM.chatContainer.scrollTop - DOM.chatContainer.clientHeight < 80
+    );
+
+    let prevNode = null;
+    let changed = false;
+    let lastDayKey = null;
+
+    state.messages.forEach((msg) => {
+      const dk = dayKey(msg.created_at);
+      if (dk !== lastDayKey) {
+        lastDayKey = dk;
+        const dividerKey = `day:${dk}`;
+        let dividerNode = existingNodes.get(dividerKey);
+        if (dividerNode) {
+          existingNodes.delete(dividerKey);
+        } else {
+          dividerNode = buildDayDivider(dk, formatDayLabel(msg.created_at));
+          changed = true;
+        }
+        const desiredNext = prevNode ? prevNode.nextSibling : DOM.chatMessages.firstChild;
+        if (desiredNext !== dividerNode) {
+          DOM.chatMessages.insertBefore(dividerNode, desiredNext);
+          changed = true;
+        }
+        prevNode = dividerNode;
+      }
+
+      let key = `msg:${msg.id}`;
+      const signature = messageSignature(msg);
+      let node = existingNodes.get(key);
+      let alreadyOnScreen = !!node;
+
+      if (!node && msg.client_id) {
+        const fallbackKey = existingByClientId.get(`client:${msg.client_id}`);
+        if (fallbackKey) {
+          node = existingNodes.get(fallbackKey);
+          key = fallbackKey;
+          alreadyOnScreen = true;
+        }
+      }
+
+      if (node && node.dataset.sig === signature) {
+        existingNodes.delete(key);
+      } else {
+        const freshNode = buildMessageEl(msg, signature, wasNearBottom, isInitialPaint || alreadyOnScreen);
+        if (node) {
+          node.replaceWith(freshNode);
+          existingNodes.delete(key);
+        }
+        node = freshNode;
+        changed = true;
+      }
+
+      const desiredNext = prevNode ? prevNode.nextSibling : DOM.chatMessages.firstChild;
+      if (desiredNext !== node) {
+        DOM.chatMessages.insertBefore(node, desiredNext);
+        changed = true;
+      }
+      prevNode = node;
+    });
+
+    existingNodes.forEach((el) => { el.remove(); changed = true; });
+
+    if (changed && wasNearBottom && DOM.chatContainer) {
+      DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
+    }
+
+    chatNeedsInitialPaint = false;
+
+    reapplySelectionHighlight();
+  }
+
+  let renderMessagesQueued = false;
+  let renderMessagesForceScroll = false;
+
+  function scheduleRenderMessages(forceScrollBottom) {
+    if (forceScrollBottom) renderMessagesForceScroll = true;
+    if (renderMessagesQueued) return;
+    renderMessagesQueued = true;
+    requestAnimationFrame(() => {
+      renderMessagesQueued = false;
+      const force = renderMessagesForceScroll;
+      renderMessagesForceScroll = false;
+      renderMessages(force);
+    });
+  }
+
+  function scrollToBottom() {
+    if (DOM.chatContainer) {
+      DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
+    }
+  }
+
+  async function deleteMessage(messageId) {
+    if (!confirm('Delete this message for everyone?')) return;
+
+    const deletedAt = new Date().toISOString();
+    const deletedBy = state.currentUser?.username || 'admin';
+
+    const { data, error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+      .update({
+        content: null,
+        file_url: null,
+        deleted_at: deletedAt,
+        deleted_by: deletedBy,
+      })
+      .eq('id', messageId)
+      .select();
+
+    if (error) { alert('Delete failed: ' + error.message); return; }
+    if (!data || data.length === 0) {
+      alert('Delete failed: the server didn\'t allow this change (likely a permissions/RLS issue) — the message was NOT deleted. Check that the admin-only UPDATE policy on messages is set up correctly (see soft_delete_messages.sql) and that this account\'s role is exactly "admin".');
+      return;
+    }
+
+    const idx = state.messages.findIndex((m) => m.id === messageId);
+    if (idx !== -1) {
+      state.messages[idx] = {
+        ...state.messages[idx],
+        content: null,
+        file_url: null,
+        deleted_at: deletedAt,
+        deleted_by: deletedBy,
+      };
+    }
+    renderMessages();
+    if (state.currentChannel) {
+      saveCachedMessages(state.currentChannel.id, state.messages);
+    }
+  }
+
+  let longPressTimer = null;
+  let selectedMessageId = null;
+
+  function clearLongPressTimer() {
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+  }
+
+  function startLongPress(e) {
+    const bubbleWrap = e.target.closest('.msg');
+    if (!bubbleWrap || !bubbleWrap.dataset.id || bubbleWrap.querySelector('.msg-deleted')) return;
+    if (e.target.closest('.msg-media-preview, .msg-doc-card')) return;
+    clearLongPressTimer();
+    longPressTimer = setTimeout(() => {
+      selectMessageForInfo(bubbleWrap);
+    }, 500);
+  }
+
+  DOM.chatMessages.addEventListener('contextmenu', (e) => {
+    if (e.target.closest('.msg')) e.preventDefault();
+  });
+
+  DOM.chatMessages.addEventListener('touchstart', startLongPress, { passive: true });
+  ['touchend', 'touchmove', 'touchcancel'].forEach((evt) => {
+    DOM.chatMessages.addEventListener(evt, clearLongPressTimer);
+  });
+
+  DOM.chatMessages.addEventListener('click', (e) => {
+    if (Date.now() < suppressChatOpenClicksUntil) return;
+    if (!isDesktopLayout()) return;
+    const bubbleWrap = e.target.closest('.msg');
+    if (!bubbleWrap || !bubbleWrap.dataset.id) return;
+    if (bubbleWrap.querySelector('.msg-deleted')) return;
+    if (e.target.closest('.msg-media-preview, .msg-doc-card')) return;
+    if (e.target.closest('a.msg-link, a.msg-link-preview')) return;
+    selectMessageForInfo(bubbleWrap);
+  });
+
+  function selectMessageForInfo(bubbleWrap) {
+    const msg = state.messages.find((m) => m.id === bubbleWrap.dataset.id);
+    if (!msg || msg.deleted_at) return;
+    const isMine = msg.username === state.currentUser?.username;
+
+    exitMessageSelection();
+    selectedMessageId = bubbleWrap.dataset.id;
+    bubbleWrap.classList.add('msg-selected');
+
+    if (DOM.chatDetailHeader) DOM.chatDetailHeader.classList.add('hidden');
+    if (DOM.msgSelectHeader) DOM.msgSelectHeader.classList.remove('hidden');
+    if (DOM.msgSelectCount) DOM.msgSelectCount.textContent = '1 selected';
+
+    if (DOM.msgSelectCopyBtn) DOM.msgSelectCopyBtn.classList.toggle('hidden', !msg.content);
+    if (DOM.msgSelectDeleteBtn) DOM.msgSelectDeleteBtn.classList.toggle('hidden', !state.isAdmin);
+    if (DOM.msgSelectInfoBtn) DOM.msgSelectInfoBtn.classList.toggle('hidden', !isMine);
+  }
+
+  function exitMessageSelection() {
+    if (!selectedMessageId) return;
+    const prev = DOM.chatMessages.querySelector('.msg-selected');
+    if (prev) prev.classList.remove('msg-selected');
+    selectedMessageId = null;
+
+    if (DOM.msgSelectHeader) DOM.msgSelectHeader.classList.add('hidden');
+    if (DOM.chatDetailHeader) DOM.chatDetailHeader.classList.remove('hidden');
+  }
+
+  function reapplySelectionHighlight() {
+    if (!selectedMessageId) return;
+    const el = DOM.chatMessages.querySelector(`.msg[data-id="${CSS.escape(selectedMessageId)}"]`);
+    if (el) el.classList.add('msg-selected');
+  }
+
+  function getSelectedMessage() {
+    return state.messages.find((m) => m.id === selectedMessageId) || null;
+  }
+
+  if (DOM.msgSelectCloseBtn) DOM.msgSelectCloseBtn.addEventListener('click', exitMessageSelection);
+
+  if (DOM.msgSelectInfoBtn) {
+    DOM.msgSelectInfoBtn.addEventListener('click', () => {
+      const msg = getSelectedMessage();
+      exitMessageSelection();
+      if (msg) openMessageInfoModal(msg);
+    });
+  }
+
+  if (DOM.msgSelectReplyBtn) {
+    DOM.msgSelectReplyBtn.addEventListener('click', () => {
+      const msg = getSelectedMessage();
+      exitMessageSelection();
+      startReplyTo(msg);
+    });
+  }
+
+  if (DOM.msgSelectCopyBtn) {
+    DOM.msgSelectCopyBtn.addEventListener('click', async () => {
+      const msg = getSelectedMessage();
+      exitMessageSelection();
+      if (!msg || !msg.content) return;
+      try {
+        await navigator.clipboard.writeText(msg.content);
+      } catch (e) {
+        console.warn('Clipboard write failed:', e);
+        alert('Could not copy automatically — your browser blocked clipboard access.');
+      }
+    });
+  }
+
+  if (DOM.msgSelectDeleteBtn) {
+    DOM.msgSelectDeleteBtn.addEventListener('click', () => {
+      const msg = getSelectedMessage();
+      exitMessageSelection();
+      if (msg) deleteMessage(msg.id);
+    });
+  }
+
+  if (DOM.msgSelectForwardBtn) {
+    DOM.msgSelectForwardBtn.addEventListener('click', () => {
+      const msg = getSelectedMessage();
+      exitMessageSelection();
+      if (msg) openForwardPicker(msg);
+    });
+  }
+
+  function openForwardPicker(msg) {
+    const targets = allChannels.filter((c) => !state.currentChannel || c.id !== state.currentChannel.id);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-card">
+        <div class="modal-title"><i class="fas fa-share"></i> Forward to</div>
+        <div class="forward-channel-list">
+          ${targets.length
+            ? targets.map((c) => `
+                <button class="forward-channel-row" data-channel-id="${escapeHtml(String(c.id))}">
+                  <i class="fas fa-hashtag" style="color:var(--chat-accent);"></i>
+                  <span class="forward-channel-name">${escapeHtml(c.name)}</span>
+                </button>
+              `).join('')
+            : `<div class="empty-note">No other channels to forward to</div>`}
+        </div>
+        <button class="btn-secondary msg-info-close" style="width:100%;">Cancel</button>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('.msg-info-close').addEventListener('click', close);
+
+    overlay.querySelectorAll('.forward-channel-row').forEach((row) => {
+      row.addEventListener('click', async () => {
+        close();
+        await forwardMessageToChannel(msg, row.dataset.channelId);
+      });
+    });
+  }
+
+  async function forwardMessageToChannel(msg, targetChannelId) {
+    if (!state.currentUser) return;
+    // FIX: forwarding an already-expired attachment used to carry its
+    // (now purged) file_url straight into the new message row. The new
+    // message gets a fresh created_at, so isMessageMediaExpired() sees it
+    // as brand new and buildMessageEl tries to render it as live media —
+    // pointing at either the EXPIRED_MARKER sentinel or a deleted storage
+    // object, i.e. a broken link, instead of correctly showing nothing/
+    // the expired placeholder. Don't carry forward a file_url that's
+    // already past its expiry window.
+    const forwardableFileUrl = (msg.file_url && !isMessageMediaExpired(msg)) ? msg.file_url : null;
+    const payload = {
+      channel_id: targetChannelId,
+      username: state.currentUser.username,
+      content: msg.content || '',
+      file_url: forwardableFileUrl,
+      client_id: `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    };
+    const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.MESSAGES).insert(payload);
+    if (error) {
+      console.error('Forward failed:', error);
+      alert('Forward failed: ' + error.message);
+      return;
+    }
+    const targetName = allChannels.find((c) => String(c.id) === String(targetChannelId))?.name || 'the channel';
+    alert(`Forwarded to ${targetName}.`);
+  }
+
+  function openMessageInfoModal(msg) {
+    const reads = (state.messageReads.get(msg.id) || [])
+      .slice()
+      .sort((a, b) => new Date(a.seen_at) - new Date(b.seen_at));
+    const readUsernames = new Set(reads.map((r) => r.username));
+
+    const others = state.currentMembers.filter((m) => m.username !== state.currentUser?.username);
+    const delivered = [];
+    const notDelivered = [];
+    others.forEach((m) => {
+      if (readUsernames.has(m.username)) return;
+      if (state.onlineUsers.has((m.username || '').toLowerCase())) {
+        delivered.push(m.username);
+      } else {
+        notDelivered.push(m.username);
+      }
+    });
+
+    const rowHtml = (username, timeHtml) => `
+      <div class="msg-info-row">
+        ${avatarHtml(username, 'sm')}
+        <span class="msg-info-name">${escapeHtml(getDisplayName(username))}</span>
+        ${timeHtml}
+      </div>
+    `;
+
+    const readRows = reads.length
+      ? reads.map((r) => rowHtml(r.username, `<span class="msg-info-time">${escapeHtml(formatFullDate(r.seen_at))}</span>`)).join('')
+      : `<div class="empty-note">No one yet</div>`;
+
+    const deliveredRows = delivered.length
+      ? delivered.map((u) => rowHtml(u, `<span class="msg-info-time">Delivered</span>`)).join('')
+      : `<div class="empty-note">No one in this state</div>`;
+
+    const notDeliveredRows = notDelivered.length
+      ? notDelivered.map((u) => rowHtml(u, `<span class="msg-info-time msg-info-notdelivered">Not delivered</span>`)).join('')
+      : `<div class="empty-note">No one in this state</div>`;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-card">
+        <div class="modal-title"><i class="fas fa-circle-info"></i> Message info</div>
+        <div class="msg-info-section-label">Seen (${reads.length})</div>
+        <div class="msg-info-list">${readRows}</div>
+        <div class="msg-info-section-label">Delivered, not seen (${delivered.length})</div>
+        <div class="msg-info-list">${deliveredRows}</div>
+        <div class="msg-info-section-label">Not delivered (${notDelivered.length})</div>
+        <div class="msg-info-list">${notDeliveredRows}</div>
+        <button class="btn-secondary msg-info-close" style="width:100%; margin-top:14px;">Close</button>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('.msg-info-close').addEventListener('click', close);
+  }
+
+  function startReplyTo(msg) {
+    if (!msg) return;
+    state.replyingTo = msg;
+    DOM.replyPreviewAuthor.textContent = getDisplayName(msg.username);
+    DOM.replyPreviewText.textContent = msg.content || (msg.file_url ? 'Attached file' : '');
+    DOM.replyPreview.classList.remove('hidden');
+    DOM.messageInput.focus();
+  }
+
+  function jumpToMessage(id) {
+    if (!id) return;
+    const target = DOM.chatMessages.querySelector(`.msg[data-id="${cssEscape(id)}"]`);
+    if (!target) {
+      showToast("Original message isn't loaded");
+      return;
+    }
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.classList.add('msg-highlight');
+    setTimeout(() => target.classList.remove('msg-highlight'), 1500);
+  }
+
+  function cssEscape(value) {
+    if (window.CSS && typeof CSS.escape === 'function') return CSS.escape(String(value));
+    return String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+  }
+
+  function showToast(message) {
+    const existing = document.querySelector('.toast');
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2200);
+  }
+
+  DOM.chatMessages.addEventListener('click', (e) => {
+    if (Date.now() < suppressChatOpenClicksUntil) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    const replyQuote = e.target.closest('.msg-reply-quote[data-reply-to-id]');
+    if (replyQuote) {
+      jumpToMessage(replyQuote.dataset.replyToId);
+      return;
+    }
+
+    const mediaPreview = e.target.closest('.msg-media-preview:not(.msg-media-video-wrap)');
+    if (mediaPreview) {
+      openImageLightbox(mediaPreview.dataset.mediaUrl);
+      return;
+    }
+
+    const docCard = e.target.closest('.msg-doc-card');
+    if (docCard) {
+      e.preventDefault();
+      const url = docCard.getAttribute('href');
+      const fileName = docCard.dataset.fileName || getFileNameFromUrl(url);
+      openDocViewer(url, fileName);
+      return;
+    }
+
+    const sharedLink = e.target.closest('a.msg-link, a.msg-link-preview');
+    if (sharedLink) {
+      e.preventDefault();
+      e.stopPropagation();
+      openExternalLink(sharedLink.getAttribute('href'));
+      return;
+    }
+  });
+
+  DOM.chatMessages.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const replyQuote = e.target.closest('.msg-reply-quote[data-reply-to-id]');
+    if (replyQuote) {
+      e.preventDefault();
+      jumpToMessage(replyQuote.dataset.replyToId);
+    }
+  });
+
+  function openDocViewer(url, fileName) {
+    if (!url) return;
+    const canPreviewInline = isPdfFile(url);
+    const overlay = document.createElement('div');
+    overlay.className = 'lightbox-overlay doc-viewer-overlay';
+    overlay.innerHTML = `
+      <div class="doc-viewer-panel">
+        <div class="doc-viewer-header">
+          <span class="doc-viewer-name">${escapeHtml(fileName)}</span>
+          <div class="doc-viewer-actions">
+            <button type="button" class="icon-btn doc-viewer-download" title="Download" aria-label="Download"><i class="fas fa-download"></i></button>
+            <button type="button" class="icon-btn doc-viewer-close" title="Close" aria-label="Close"><i class="fas fa-times"></i></button>
+          </div>
+        </div>
+        <div class="doc-viewer-body">
+          ${canPreviewInline
+            ? `<iframe class="doc-viewer-frame" src="${escapeHtml(url)}" title="${escapeHtml(fileName)}"></iframe>`
+            : `<div class="doc-viewer-no-preview"><i class="fas fa-file"></i><p>Preview isn't available for this file type.</p></div>`
+          }
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    state.activeLightbox = overlay;
+
+    const close = () => {
+      if (state.activeLightbox === overlay) state.activeLightbox = null;
+      overlay.remove();
+    };
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('.doc-viewer-close').addEventListener('click', close);
+    overlay.querySelector('.doc-viewer-download').addEventListener('click', () => downloadAttachment(url, fileName));
+  }
+
+  async function downloadAttachment(url, fileName) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = fileName || 'file';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    } catch (e) {
+      console.warn('Blob download failed, falling back to a direct link:', e);
+      window.open(url, '_blank', 'noopener');
+    }
+  }
+
+  function openImageLightbox(url, mediaList, startIndex) {
+    if (!url) return;
+    const gallery = Array.isArray(mediaList) ? mediaList.filter(Boolean) : [];
+    const hasGallery = gallery.length > 1;
+    let index = hasGallery
+      ? (Number.isInteger(startIndex) && startIndex >= 0 && startIndex < gallery.length ? startIndex : Math.max(0, gallery.indexOf(url)))
+      : 0;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'lightbox-overlay';
+    overlay.innerHTML = `
+      <button class="lightbox-close" aria-label="Close"><i class="fas fa-times"></i></button>
+      ${hasGallery ? `
+        <button class="lightbox-nav lightbox-prev" aria-label="Previous image"><i class="fas fa-chevron-left"></i></button>
+        <button class="lightbox-nav lightbox-next" aria-label="Next image"><i class="fas fa-chevron-right"></i></button>
+      ` : ''}
+      <div class="lightbox-spinner" aria-hidden="true"></div>
+      <img class="lightbox-img" src="${escapeHtml(hasGallery ? gallery[index] : url)}" alt="Attached image, full size">
+    `;
+    document.body.appendChild(overlay);
+
+    state.activeLightbox = overlay;
+
+    const imgEl = overlay.querySelector('.lightbox-img');
+    const spinnerEl = overlay.querySelector('.lightbox-spinner');
+
+    const showSpinner = () => { imgEl.classList.add('loading'); if (spinnerEl) spinnerEl.classList.remove('hidden'); };
+    const hideSpinner = () => { imgEl.classList.remove('loading'); if (spinnerEl) spinnerEl.classList.add('hidden'); };
+    imgEl.addEventListener('load', hideSpinner);
+    imgEl.addEventListener('error', () => {
+      hideSpinner();
+      imgEl.classList.add('hidden');
+      let brokenEl = overlay.querySelector('.lightbox-broken');
+      if (!brokenEl) {
+        brokenEl = document.createElement('div');
+        brokenEl.className = 'lightbox-broken';
+        brokenEl.innerHTML = '<i class="fas fa-image"></i><span>Couldn\'t load this media</span>';
+        overlay.appendChild(brokenEl);
+      }
+      brokenEl.classList.remove('hidden');
+    });
+    if (imgEl.complete && imgEl.naturalWidth > 0) hideSpinner(); else showSpinner();
+
+    const showAt = (newIndex) => {
+      if (!hasGallery) return;
+      index = ((newIndex % gallery.length) + gallery.length) % gallery.length;
+      const brokenEl = overlay.querySelector('.lightbox-broken');
+      if (brokenEl) brokenEl.classList.add('hidden');
+      imgEl.classList.remove('hidden');
+      showSpinner();
+      imgEl.src = gallery[index];
+    };
+    const showNext = () => showAt(index + 1);
+    const showPrev = () => showAt(index - 1);
+
+    const onKeydown = (e) => {
+      if (e.key === 'Escape') { close(); return; }
+      if (!hasGallery) return;
+      if (e.key === 'ArrowRight') showNext();
+      else if (e.key === 'ArrowLeft') showPrev();
+    };
+    document.addEventListener('keydown', onKeydown);
+
+    const close = () => {
+      if (state.activeLightbox === overlay) {
+        state.activeLightbox = null;
+      }
+      document.removeEventListener('keydown', onKeydown);
+      overlay.remove();
+    };
+    overlay._lightboxCleanup = () => document.removeEventListener('keydown', onKeydown);
+
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('.lightbox-close').addEventListener('click', close);
+
+    if (hasGallery) {
+      overlay.querySelector('.lightbox-prev').addEventListener('click', (e) => { e.stopPropagation(); showPrev(); });
+      overlay.querySelector('.lightbox-next').addEventListener('click', (e) => { e.stopPropagation(); showNext(); });
+
+      let touchStartX = null;
+      let touchStartY = null;
+      const SWIPE_THRESHOLD = 40;
+      overlay.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+      }, { passive: true });
+      overlay.addEventListener('touchend', (e) => {
+        if (touchStartX === null) return;
+        const touch = e.changedTouches[0];
+        const dx = touch.clientX - touchStartX;
+        const dy = touch.clientY - touchStartY;
+        touchStartX = null;
+        touchStartY = null;
+        if (Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy)) {
+          if (dx < 0) showNext(); else showPrev();
+        }
+      }, { passive: true });
+    }
+  }
+
+  DOM.replyPreviewCancel.addEventListener('click', () => {
+    state.replyingTo = null;
+    DOM.replyPreview.classList.add('hidden');
+  });
+
+  // ============================================================
+  // 9. SEND MESSAGE
+  // ============================================================
+  let isSendingMessage = false;
+
+  async function sendMessage(content, file) {
+    if (isSendingMessage) {
+      console.log('✋ Send already in progress, ignoring duplicate call');
+      return false;
+    }
+    if (!state.currentChannel || !state.currentUser) {
+      alert('Please select a channel first.');
+      return false;
+    }
+
+    isSendingMessage = true;
+    if (DOM.sendMsgBtn) DOM.sendMsgBtn.disabled = true;
+    let tempId = null;
+
+    try {
+      if (!state.isAdmin) {
+        const stillMember = await verifyChannelMembership(state.currentChannel.id);
+        if (!stillMember) {
+          await expelFromChannel(state.currentChannel.id);
+          return false;
+        }
+      }
+
+      let fileUrl = null;
+
+      if (file) {
+        const uploadFile = await compressImageFile(file);
+
+        if (uploadFile.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
+          alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
+          return false;
+        }
+
+        const path = generateStoragePath(state.currentChannel.id, uploadFile.name);
+
+        try {
+          const { error } = await supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).upload(path, uploadFile);
+          if (error) throw error;
+
+          const { data: urlData } = supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).getPublicUrl(path);
+          fileUrl = urlData.publicUrl;
+
+          DOM.fileUploadStatus.textContent = `📎 ${uploadFile.name} uploaded`;
+          DOM.fileUploadStatus.classList.remove('hidden');
+          setTimeout(() => DOM.fileUploadStatus.classList.add('hidden'), 4000);
+        } catch (e) {
+          console.error('Upload error:', e);
+          alert(`File upload failed: ${e.message}`);
+          return false;
+        }
+      }
+
+      const replyPayload = state.replyingTo
+        ? {
+            reply_to: state.replyingTo.id,
+            reply_username: state.replyingTo.username,
+            reply_content: state.replyingTo.content || (state.replyingTo.file_url ? '📎 Attached file' : '')
+          }
+        : {};
+
+      const clientId = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      const newMessage = {
+        channel_id: state.currentChannel.id,
+        username: state.currentUser.username,
+        content: content || '',
+        file_url: fileUrl,
+        client_id: clientId,
+        ...replyPayload,
+      };
+
+      tempId = `temp_${clientId}`;
+      const lastKnownMessage = state.messages[state.messages.length - 1];
+      const lastKnownTs = lastKnownMessage ? new Date(lastKnownMessage.created_at || 0).getTime() : 0;
+      const optimisticTs = Math.max(Date.now(), (Number.isFinite(lastKnownTs) ? lastKnownTs : 0) + 1);
+      const optimisticMessage = {
+        id: tempId,
+        ...newMessage,
+        created_at: new Date(optimisticTs).toISOString(),
+        isPending: true
+      };
+
+      mergeMessagesSafely(optimisticMessage, true);
+      console.log(`✉️ Message added (optimistic, clientId: ${clientId})`);
+
+      const { error, data } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+        .insert(newMessage)
+        .select();
+
+      if (error) {
+        console.error('Send error:', error);
+        alert('Failed to send message.');
+        state.messages = state.messages.filter((m) => m.id !== tempId);
+        renderMessages();
+        console.log('❌ Message rolled back');
+        return false;
+      } else if (data && data[0]) {
+        const realMessage = data[0];
+
+        const index = state.messages.findIndex((m) => m.id === tempId);
+        if (index !== -1) {
+          state.messages[index] = realMessage;
+          delete state.messages[index].isPending;
+          state.messages.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+          renderMessages(true);
+          console.log(`✅ Message replaced: ${tempId} → ${realMessage.id}`);
+        } else {
+          mergeMessagesSafely(realMessage);
+        }
+
+        state.channelPreviews = await loadChannelPreviews(allChannels.map((c) => c.id));
+        renderChatList(allChannels);
+
+        if (state.currentChannel) {
+          saveCachedMessages(state.currentChannel.id, state.messages);
+        }
+      }
+
+      state.replyingTo = null;
+      DOM.replyPreview.classList.add('hidden');
+      return true;
+    } catch (err) {
+      console.error('Send error (network/exception):', err);
+      alert('Failed to send message.');
+      if (tempId) {
+        state.messages = state.messages.filter((m) => m.id !== tempId);
+        renderMessages();
+        console.log('❌ Message rolled back (exception)');
+      }
+      return false;
+    } finally {
+      isSendingMessage = false;
+      if (DOM.sendMsgBtn) DOM.sendMsgBtn.disabled = false;
+    }
+  }
+
+  // ============================================================
+  // 7b. PRESENCE (who's online)
+  // ============================================================
+  let presenceChannel = null;
+
+  function setupPresence() {
+    if (!state.currentUser) return;
+    presenceChannel = supabase.channel('presence:orbit', {
+      config: { presence: { key: state.currentUser.username.toLowerCase() } },
+    });
+
+    presenceChannel
+      .on('presence', { event: 'sync' }, () => {
+        const s = presenceChannel.presenceState();
+        state.onlineUsers = new Set(Object.keys(s));
+        renderMembers();
+        updateChatDetailSubtitle();
+        updateProfileMeta();
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await presenceChannel.track({ username: state.currentUser.username, online_at: new Date().toISOString() });
+        }
+      });
+  }
+
+  function teardownPresence() {
+    if (presenceChannel) {
+      supabase.removeChannel(presenceChannel);
+      presenceChannel = null;
+    }
+    state.onlineUsers = new Set();
+  }
+
+  // ============================================================
+  // 8d. GROUP MEMBER MANAGEMENT
+  // ============================================================
+  async function loadMembers(channelId) {
+    const { data, error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.MEMBERS)
+      .select('*')
+      .eq('channel_id', channelId)
+      .order('username');
+
+    if (error) {
+      state.currentMembers = [];
+      DOM.channelMembersList.innerHTML = '<div class="empty-note">Could not load members</div>';
+      return;
+    }
+    
+    state.currentMembers = (data || []).map(member => ({
+      ...member,
+      role: member.role || getRoleFromUsername(member.username)
+    }));
+    
+    renderMembers();
+    updateChatDetailSubtitle();
+    updateProfileMeta();
+  }
+
+  let memberLetterAnchors = {};
+
+  const MEMBER_ROLE_ORDER = ['admin', 'teacher', 'student'];
+  const MEMBER_ROLE_LABEL = { admin: 'Admins', teacher: 'Teachers', student: 'Students' };
+
+  function renderMembers() {
+    DOM.adminAddMemberRow.classList.toggle('hidden', !state.isAdmin);
+
+    const query = (DOM.memberSearchInput.value || '').trim().toLowerCase();
+    const members = [...state.currentMembers]
+      .filter((m) => !query || m.username.toLowerCase().includes(query) || getDisplayName(m.username).toLowerCase().includes(query))
+      .sort((a, b) => {
+        const roleDiff = MEMBER_ROLE_ORDER.indexOf(a.role) - MEMBER_ROLE_ORDER.indexOf(b.role);
+        if (roleDiff !== 0) return roleDiff;
+        return a.username.localeCompare(b.username);
+      });
+
+    if (!members.length) {
+      DOM.channelMembersList.innerHTML = `<div class="empty-note">${state.currentChannel ? 'No members yet' : 'Select a channel'}</div>`;
+      DOM.alphaIndex.innerHTML = '';
+      return;
+    }
+
+    let html = '';
+    let lastRole = '';
+    let lastLetter = '';
+    let anchorIdx = 0;
+    memberLetterAnchors = {};
+    members.forEach((m) => {
+      if (m.role !== lastRole) {
+        html += `<div class="member-group-letter member-role-header">${MEMBER_ROLE_LABEL[m.role] || escapeHtml(m.role)}</div>`;
+        lastRole = m.role;
+        lastLetter = '';
+      }
+      const displayName = getDisplayName(m.username);
+      const letter = displayName.charAt(0).toUpperCase();
+      if (letter !== lastLetter) {
+        const anchorId = `memberLetter-${anchorIdx++}`;
+        html += `<div class="member-group-letter" id="${anchorId}">${letter}</div>`;
+        if (!(letter in memberLetterAnchors)) memberLetterAnchors[letter] = anchorId;
+        lastLetter = letter;
+      }
+      const online = state.onlineUsers.has(m.username.toLowerCase());
+      html += `
+        <div class="member-row" id="member-${m.id}">
+          ${avatarHtml(m.username, 'sm')}
+          <div style="flex:1; min-width:0;">
+            <div class="member-name">${escapeHtml(displayName)}</div>
+            <div class="member-status${online ? ' online' : ''}"><span class="dot"></span>${online ? 'Active now' : 'Offline'}</div>
+          </div>
+          <span class="role-chip role-${m.role}-chip member-role-chip">${escapeHtml(m.role)}</span>
+          ${state.isAdmin ? `
+            <button class="icon-btn member-remove-btn" style="width:26px;height:26px;" title="Remove from group" data-remove-member="${m.id}">
+              <i class="fas fa-xmark" style="font-size:11px;"></i>
+            </button>` : ''}
+        </div>
+      `;
+    });
+    DOM.channelMembersList.innerHTML = html;
+
+    DOM.channelMembersList.querySelectorAll('[data-remove-member]').forEach((btn) => {
+      btn.addEventListener('click', () => removeMember(btn.dataset.removeMember));
+    });
+
+    const present = new Set(members.map((m) => getDisplayName(m.username).charAt(0).toUpperCase()));
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+    DOM.alphaIndex.innerHTML = alphabet.map((l) => `<span data-letter="${l}" class="${present.has(l) ? '' : 'hidden'}">${l}</span>`).join('');
+    DOM.alphaIndex.querySelectorAll('span').forEach((span) => {
+      span.addEventListener('click', () => {
+        const anchorId = memberLetterAnchors[span.dataset.letter];
+        const target = anchorId && document.getElementById(anchorId);
+        if (target) target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      });
+    });
+  }
+
+  async function addMemberToChannel(username, role) {
+    username = normalizeUsername(username);
+    if (!username || !state.currentChannel) { alert('Enter a username and select a channel.'); return; }
+
+    const registeredRoles = await getUserRoles(username);
+    if (!registeredRoles || registeredRoles.length === 0) {
+      alert(`No account exists for "${username}". Create it first from Settings → Add teacher or student, then add them here.`);
+      return;
+    }
+
+    const { error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.MEMBERS)
+      .upsert(
+        { 
+          channel_id: state.currentChannel.id, 
+          username, 
+          role: role || 'student', 
+          added_by: state.currentUser.username 
+        },
+        { onConflict: 'channel_id,username' }
+      );
+
+    if (error) { alert('Could not add member: ' + error.message); return; }
+
+    await loadMembers(state.currentChannel.id);
+    loadRegisteredUsersList();
+  }
+
+  async function removeMember(memberId) {
+    if (!confirm('Remove this person from the group?')) return;
+    const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.MEMBERS).delete().eq('id', memberId);
+    if (error) { alert('Remove failed: ' + error.message); return; }
+    await loadMembers(state.currentChannel.id);
+    loadRegisteredUsersList();
+  }
+
+  // ============================================================
+  // 8e. CLASS SCHEDULING
+  // ============================================================
+  let scheduleSubscription = null;
+
+  const MAX_SESSION_DURATION_MINUTES = 8 * 60;
+
+  let scheduleExpiryTimer = null;
+  const SCHEDULE_EXPIRY_WATCHDOG_MAX_MS = 20 * 24 * 60 * 60 * 1000;
+
+  function clearScheduleExpiryTimer() {
+    if (scheduleExpiryTimer) {
+      clearTimeout(scheduleExpiryTimer);
+      scheduleExpiryTimer = null;
+    }
+  }
+
+  async function loadSchedule(channelId) {
+    const { data, error } = await supabase
+      .from('class_schedule')
+      .select('*')
+      .eq('channel_id', channelId)
+      .gte('scheduled_time', new Date(Date.now() - MAX_SESSION_DURATION_MINUTES * 60000).toISOString())
+      .order('scheduled_time', { ascending: true })
+      .limit(50);
+
+    clearScheduleExpiryTimer();
+
+    if (error) {
+      state.currentSchedule = null;
+      DOM.scheduleBanner.classList.add('hidden');
+      updateLiveButtonState();
+      return;
+    }
+
+    const now = Date.now();
+    const current = (data || []).find((row) => {
+      const endsAt = new Date(row.scheduled_time).getTime() + (row.duration_minutes || 45) * 60000;
+      return endsAt > now;
+    });
+
+    if (state.videoActive && state.activeCallScheduleId) {
+      const stillCurrent = current && String(current.id) === String(state.activeCallScheduleId);
+      if (!stillCurrent) {
+        closeLiveSession('This live session has ended.');
+      }
+    }
+
+    if (!current) {
+      state.currentSchedule = null;
+      DOM.scheduleBanner.classList.add('hidden');
+      updateLiveButtonState();
+      return;
+    }
+    state.currentSchedule = current;
+    renderScheduleBanner(current);
+    updateLiveButtonState();
+
+    const startsAt = new Date(current.scheduled_time).getTime();
+    const endsAt = startsAt + (current.duration_minutes || 45) * 60000;
+    const msUntilStart = startsAt - now;
+    const msUntilEnd = endsAt - now;
+    const msUntilNextBoundary = msUntilStart > 0 ? msUntilStart : msUntilEnd;
+    if (msUntilNextBoundary > 0 && msUntilNextBoundary <= SCHEDULE_EXPIRY_WATCHDOG_MAX_MS) {
+      scheduleExpiryTimer = setTimeout(() => loadSchedule(channelId), msUntilNextBoundary + 500);
+    }
+  }
+
+  function renderScheduleBanner(schedule) {
+    const start = new Date(schedule.scheduled_time);
+    const end = new Date(start.getTime() + (schedule.duration_minutes || 45) * 60000);
+    const startFormatted = start.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const endFormatted = end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    DOM.scheduleBannerText.textContent = `Class with ${getDisplayName(schedule.teacher_username)} scheduled for ${startFormatted}–${endFormatted}`;
+    DOM.scheduleBanner.classList.remove('hidden');
+  }
+
+  // ============================================================
+  // FIX: TEACHER "JOIN LIVE SESSION" VS "START LIVE SESSION"
+  // The issue was that getLiveButtonMode() wasn't properly
+  // distinguishing between teachers and other users, or the
+  // teacher's role wasn't being correctly loaded.
+  // ============================================================
+  function getLiveButtonMode() {
+    const schedule = state.currentSchedule;
+    if (!schedule || !state.currentUser) return 'hidden';
+
+    const now = Date.now();
+    const startsAt = new Date(schedule.scheduled_time).getTime();
+    const endsAt = startsAt + (schedule.duration_minutes || 45) * 60000;
+    const isWithinWindow = now >= startsAt && now < endsAt;
+    if (!isWithinWindow) return 'hidden';
+
+    const currentUsername = normalizeUsername(state.currentUser.username);
+    const teacherUsername = normalizeUsername(schedule.teacher_username);
+    const isConcernedTeacher = currentUsername === teacherUsername;
+    const isLive = schedule.is_live === true;
+
+    // FIX: Teachers should see 'start' if they are the scheduled teacher
+    // (regardless of whether is_live is true or false - they can start it)
+    if (isConcernedTeacher) {
+      console.log(`🎓 Teacher ${currentUsername} is the scheduled teacher → showing 'start'`);
+      return 'start';
+    }
+
+    // Admins can start a session if no one has started it yet
+    if (state.isAdmin && !isLive) {
+      console.log(`👑 Admin ${currentUsername} is starting the session → showing 'start'`);
+      return 'start';
+    }
+
+    // Admins can join if the session is already live
+    if (state.isAdmin && isLive) {
+      console.log(`👑 Admin ${currentUsername} is joining an active session → showing 'join'`);
+      return 'join';
+    }
+
+    // Anyone else can join if the session is live
+    if (isLive) {
+      console.log(`👤 ${currentUsername} is joining an active session → showing 'join'`);
+      return 'join';
+    }
+
+    console.log(`🔒 ${currentUsername} has no access to this session → hidden`);
+    return 'hidden';
+  }
+
+  function updateLiveButtonState() {
+    if (!DOM.joinLiveBtn) return;
+    const mode = getLiveButtonMode();
+    const isInactive = mode === 'hidden';
+
+    DOM.joinLiveBtn.disabled = isInactive;
+    DOM.joinLiveBtn.classList.toggle('btn-live-pill-dead', isInactive);
+    DOM.joinLiveBtn.setAttribute('aria-disabled', String(isInactive));
+
+    if (DOM.liveBtnText) {
+      // FIX: root cause of "teacher sees Join Live Session on the grey/
+      // disabled button instead of Start Live Session" — getLiveButtonMode()
+      // correctly returns 'hidden' (button stays disabled/grey) for the
+      // whole stretch BEFORE the scheduled start time, for every viewer
+      // including the concerned teacher — that's correct, it's not time
+      // yet. But the label used to be driven off that same 'hidden' mode
+      // and just fell back to 'Join Live Session' whenever mode wasn't
+      // exactly 'start' — so the teacher's own upcoming session showed
+      // "Join" (implying someone else has to start it) right up until the
+      // instant it became clickable. The label is now decided
+      // independently of whether the button is currently clickable: a
+      // schedule that exists and belongs to this user (or any admin) is
+      // always labelled "Start Live Session", grey/disabled or not; it
+      // only ever reads "Join Live Session" for someone who isn't the one
+      // who starts it.
+      let label = 'Join Live Session';
+      if (mode === 'start') {
+        label = 'Start Live Session';
+      } else {
+        const schedule = state.currentSchedule;
+        if (schedule && state.currentUser) {
+          const currentUsername = normalizeUsername(state.currentUser.username);
+          const teacherUsername = normalizeUsername(schedule.teacher_username);
+          const isConcernedTeacher = currentUsername === teacherUsername;
+          if (isConcernedTeacher || state.isAdmin) {
+            label = 'Start Live Session';
+          }
+        }
+      }
+      DOM.liveBtnText.textContent = label;
+    }
+
+    DOM.joinLiveBtn.title = isInactive
+      ? (state.currentSchedule ? 'This live session hasn\'t started yet.' : 'No live session is scheduled for this group yet')
+      : '';
+  }
+
+  function subscribeToSchedule(channelId) {
+    if (scheduleSubscription) {
+      supabase.removeChannel(scheduleSubscription);
+      scheduleSubscription = null;
+    }
+    scheduleSubscription = supabase
+      .channel(`schedule:${channelId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'class_schedule', filter: `channel_id=eq.${channelId}` }, () => {
+        loadSchedule(channelId);
+        loadGroupScheduleList(channelId);
+      })
+      .subscribe();
+  }
+
+  let groupScheduleEditingId = null;
+  let groupScheduleCache = new Map();
+  let groupScheduleLoading = new Set();
+
+  async function loadGroupScheduleList(channelId) {
+    if (!DOM.groupScheduleList) return;
+    if (groupScheduleLoading.has(channelId)) return;
+    groupScheduleLoading.add(channelId);
+
+    const cachedRows = groupScheduleCache.get(channelId);
+    if (cachedRows) {
+      renderGroupScheduleRows(channelId, cachedRows);
+    } else {
+      DOM.groupScheduleList.innerHTML = '<div class="empty-note">Loading…</div>';
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('class_schedule')
+        .select('*')
+        .eq('channel_id', channelId)
+        .gte('scheduled_time', new Date(Date.now() - MAX_SESSION_DURATION_MINUTES * 60000).toISOString())
+        .order('scheduled_time', { ascending: true })
+        .limit(30);
+
+      if (!state.currentChannel || String(state.currentChannel.id) !== String(channelId)) return;
+
+      if (error) {
+        console.warn('loadGroupScheduleList failed:', error);
+        if (!cachedRows) DOM.groupScheduleList.innerHTML = '<div class="empty-note">Could not load the schedule.</div>';
+        return;
+      }
+
+      groupScheduleCache.set(channelId, data || []);
+      renderGroupScheduleRows(channelId, data || []);
+    } finally {
+      groupScheduleLoading.delete(channelId);
+    }
+  }
+
+  function renderGroupScheduleRows(channelId, rows) {
+    if (!DOM.groupScheduleList) return;
+    if (!state.currentChannel || String(state.currentChannel.id) !== String(channelId)) return;
+
+    const now = Date.now();
+    const upcoming = (rows || []).filter((row) => {
+      const endsAt = new Date(row.scheduled_time).getTime() + (row.duration_minutes || 45) * 60000;
+      return endsAt > now;
+    });
+
+    if (groupScheduleEditingId && !upcoming.some((row) => String(row.id) === String(groupScheduleEditingId))) {
+      groupScheduleEditingId = null;
+    }
+
+    if (!upcoming.length) {
+      DOM.groupScheduleList.innerHTML = '<div class="empty-note">No live sessions scheduled yet.</div>';
+      return;
+    }
+
+    DOM.groupScheduleList.innerHTML = upcoming.map((row) => groupScheduleItemHtml(row)).join('');
+
+    if (!state.isAdmin) return;
+
+    DOM.groupScheduleList.querySelectorAll('.gs-edit-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        groupScheduleEditingId = btn.dataset.id;
+        renderGroupScheduleRows(channelId, groupScheduleCache.get(channelId) || []);
+      });
+    });
+    DOM.groupScheduleList.querySelectorAll('.gs-edit-cancel').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        groupScheduleEditingId = null;
+        renderGroupScheduleRows(channelId, groupScheduleCache.get(channelId) || []);
+      });
+    });
+    DOM.groupScheduleList.querySelectorAll('.gs-edit-save').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const row = btn.closest('.group-schedule-item');
+        const ok = await updateScheduledSession(
+          btn.dataset.id,
+          row.querySelector('.gs-edit-date').value,
+          row.querySelector('.gs-edit-start').value,
+          row.querySelector('.gs-edit-duration').value
+        );
+        if (!ok) return;
+        groupScheduleEditingId = null;
+        loadGroupScheduleList(channelId);
+      });
+    });
+    DOM.groupScheduleList.querySelectorAll('.gs-delete-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const ok = await deleteScheduledSession(btn.dataset.id);
+        if (ok) loadGroupScheduleList(channelId);
+      });
+    });
+    DOM.groupScheduleList.querySelectorAll('.group-schedule-item-end-btn').forEach((btn) => {
+      btn.addEventListener('click', () => endScheduledSessionNow(btn.dataset.id));
+    });
+  }
+
+  function groupScheduleItemHtml(row) {
+    if (state.isAdmin && groupScheduleEditingId && String(groupScheduleEditingId) === String(row.id)) {
+      return groupScheduleEditRowHtml(row);
+    }
+
+    const start = new Date(row.scheduled_time);
+    const durationMinutes = row.duration_minutes || 45;
+    const end = new Date(start.getTime() + durationMinutes * 60000);
+    const isLiveNow = Date.now() >= start.getTime() && Date.now() < end.getTime();
+    const dateLabel = start.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+    const timeLabel = `${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+    const adminActions = state.isAdmin ? `
+      <div class="group-schedule-item-actions">
+        ${isLiveNow ? `<button type="button" class="group-schedule-item-end-btn" data-id="${row.id}" title="End this live session now for everyone"><i class="fas fa-ban"></i> End now</button>` : ''}
+        <button type="button" class="icon-btn gs-edit-btn" data-id="${row.id}" title="Edit"><i class="fas fa-pen"></i></button>
+        <button type="button" class="icon-btn gs-delete-btn" data-id="${row.id}" title="Delete"><i class="fas fa-trash" style="color:var(--danger);"></i></button>
+      </div>
+    ` : '';
+
+    return `
+      <div class="group-schedule-item${isLiveNow ? ' is-live' : ''}">
+        <div class="group-schedule-item-date">
+          <span class="group-schedule-item-date-label">${escapeHtml(dateLabel)}${isLiveNow ? ' <span class="calendar-live-dot" title="Live now"></span>' : ''}</span>
+          <span class="group-schedule-item-time-label">${escapeHtml(timeLabel)}</span>
+        </div>
+        <div class="group-schedule-item-teacher"><i class="fas fa-chalkboard-user"></i> ${escapeHtml(getDisplayName(row.teacher_username))}</div>
+        ${adminActions}
+      </div>
+    `;
+  }
+
+  function groupScheduleEditRowHtml(row) {
+    const start = new Date(row.scheduled_time);
+    const pad = (n) => String(n).padStart(2, '0');
+    const dateVal = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
+    const timeVal = `${pad(start.getHours())}:${pad(start.getMinutes())}`;
+
+    return `
+      <div class="group-schedule-item is-editing">
+        <div class="group-schedule-edit-fields">
+          <input type="date" class="field-sm gs-edit-date" value="${dateVal}">
+          <input type="time" class="field-sm gs-edit-start" value="${timeVal}">
+          <input type="number" min="5" max="${MAX_SESSION_DURATION_MINUTES}" step="5" class="field-sm gs-edit-duration" value="${row.duration_minutes || 45}" title="Duration (minutes)">
+        </div>
+        <div class="group-schedule-edit-actions">
+          <button type="button" class="btn-admin-sm gs-edit-save" data-id="${row.id}"><i class="fas fa-check"></i> Save</button>
+          <button type="button" class="btn-admin-sm gs-edit-cancel"><i class="fas fa-xmark"></i> Cancel</button>
+        </div>
+      </div>
+    `;
+  }
+
+  async function updateScheduledSession(id, dateStr, startTimeStr, durationMinutes) {
+    if (!dateStr || !startTimeStr) { alert('Pick a date and start time.'); return false; }
+    const duration = Math.round(Number(durationMinutes));
+    if (!Number.isFinite(duration) || duration <= 0) { alert('Enter a valid duration.'); return false; }
+    if (duration > MAX_SESSION_DURATION_MINUTES) {
+      alert(`A single session can't be longer than ${MAX_SESSION_DURATION_MINUTES / 60} hours.`);
+      return false;
+    }
+    const start = new Date(`${dateStr}T${startTimeStr}`);
+    if (Number.isNaN(start.getTime())) { alert('That date/time couldn\'t be understood.'); return false; }
+
+    const { error } = await supabase
+      .from('class_schedule')
+      .update({ scheduled_time: start.toISOString(), duration_minutes: duration, is_live: false })
+      .eq('id', id);
+
+    if (error) { alert('Could not update the session: ' + error.message); return false; }
+    return true;
+  }
+
+  async function deleteScheduledSession(id) {
+    if (!confirm('Delete this scheduled session? This can\'t be undone.')) return false;
+    const { error } = await supabase.from('class_schedule').delete().eq('id', id);
+    if (error) { alert('Could not delete: ' + error.message); return false; }
+    return true;
+  }
+
+  async function endScheduledSessionNow(id, scheduledTimeIso) {
+    if (!confirm('End this live session now for everyone in the group?')) return;
+    const startedAt = scheduledTimeIso ? new Date(scheduledTimeIso).getTime() : null;
+    let duration = startedAt
+      ? Math.max(1, Math.ceil((Date.now() - startedAt) / 60000))
+      : null;
+
+    if (duration === null) {
+      const { data, error } = await supabase.from('class_schedule').select('scheduled_time').eq('id', id).maybeSingle();
+      if (error || !data) { alert('Could not find that session.'); return; }
+      duration = Math.max(1, Math.ceil((Date.now() - new Date(data.scheduled_time).getTime()) / 60000));
+    }
+
+    const { error } = await supabase.from('class_schedule').update({ duration_minutes: duration, is_live: false }).eq('id', id);
+    if (error) { alert('Could not end the session: ' + error.message); return; }
+  }
+
+  const MAX_SCHEDULE_OCCURRENCES = 200;
+  let scheduleCalendarViewMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  let scheduleSelectedDates = new Set();
+  let schedulePerDateOverrides = new Map();
+  let scheduleCalendarChannelId = null;
+
+  function scheduleDateKey(d) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  function resetScheduleSelection() {
+    scheduleSelectedDates = new Set();
+    schedulePerDateOverrides = new Map();
+    scheduleCalendarViewMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  }
+
+  function renderScheduleCalendar() {
+    if (!DOM.scheduleCalGrid || !DOM.scheduleCalMonthLabel) return;
+    const year = scheduleCalendarViewMonth.getFullYear();
+    const month = scheduleCalendarViewMonth.getMonth();
+    DOM.scheduleCalMonthLabel.textContent = scheduleCalendarViewMonth.toLocaleDateString([], { month: 'long', year: 'numeric' });
+
+    const startWeekday = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const todayKey = scheduleDateKey(new Date());
+    const todayMidnight = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
+
+    let cellsHtml = '';
+    for (let i = 0; i < startWeekday; i++) {
+      cellsHtml += '<span class="schedule-cal-cell is-empty"></span>';
+    }
+    for (let day = 1; day <= daysInMonth; day++) {
+      const cellDate = new Date(year, month, day);
+      const key = scheduleDateKey(cellDate);
+      const isPast = cellDate.getTime() < todayMidnight;
+      const isSelected = scheduleSelectedDates.has(key);
+      const isToday = key === todayKey;
+      cellsHtml += `<button type="button" class="schedule-cal-cell${isSelected ? ' is-selected' : ''}${isToday ? ' is-today' : ''}" data-date="${key}"${isPast ? ' disabled' : ''}>${day}</button>`;
+    }
+    DOM.scheduleCalGrid.innerHTML = cellsHtml;
+
+    DOM.scheduleCalGrid.querySelectorAll('.schedule-cal-cell[data-date]').forEach((cell) => {
+      cell.addEventListener('click', () => toggleScheduleDate(cell.dataset.date));
+    });
+  }
+
+  function toggleScheduleDate(dateKey) {
+    if (scheduleSelectedDates.has(dateKey)) {
+      scheduleSelectedDates.delete(dateKey);
+      schedulePerDateOverrides.delete(dateKey);
+    } else if (scheduleSelectedDates.size < MAX_SCHEDULE_OCCURRENCES) {
+      scheduleSelectedDates.add(dateKey);
+    } else {
+      alert(`You can schedule at most ${MAX_SCHEDULE_OCCURRENCES} dates at once.`);
+      return;
+    }
+    renderScheduleCalendar();
+    renderScheduleSelectedDates();
+    renderSchedulePerDateList();
+  }
+
+  function scheduleDateLabel(dateKey) {
+    return new Date(`${dateKey}T00:00:00`).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+
+  function renderScheduleSelectedDates() {
+    if (!DOM.scheduleSelectedDates) return;
+    if (!scheduleSelectedDates.size) {
+      DOM.scheduleSelectedDates.innerHTML = '<span class="empty-note">Tap dates above to schedule a session on each.</span>';
+      return;
+    }
+    const sorted = Array.from(scheduleSelectedDates).sort();
+    DOM.scheduleSelectedDates.innerHTML = sorted.map((key) => `
+      <span class="schedule-date-chip">
+        ${escapeHtml(scheduleDateLabel(key))}
+        <button type="button" class="schedule-date-chip-remove" data-date="${key}" aria-label="Remove ${escapeHtml(scheduleDateLabel(key))}"><i class="fas fa-xmark"></i></button>
+      </span>
+    `).join('');
+
+    DOM.scheduleSelectedDates.querySelectorAll('.schedule-date-chip-remove').forEach((btn) => {
+      btn.addEventListener('click', () => toggleScheduleDate(btn.dataset.date));
+    });
+  }
+
+  function computeScheduleEndLabel(startTimeStr, durationMinutes) {
+    if (!startTimeStr || !durationMinutes) return '—';
+    const [h, m] = startTimeStr.split(':').map(Number);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return '—';
+    const end = new Date(2000, 0, 1, h, m + durationMinutes);
+    return end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function updateScheduleEndPreview() {
+    if (!DOM.scheduleEndPreview) return;
+    const duration = parseInt(DOM.scheduleDurationInput.value, 10);
+    DOM.scheduleEndPreview.textContent = computeScheduleEndLabel(DOM.scheduleStartTimeInput.value, duration);
+  }
+
+  function renderSchedulePerDateList() {
+    if (!DOM.schedulePerDateList) return;
+    const sameTime = !DOM.scheduleSameTimeCheckbox || DOM.scheduleSameTimeCheckbox.checked;
+    DOM.schedulePerDateList.classList.toggle('hidden', sameTime);
+    if (sameTime) return;
+
+    if (!scheduleSelectedDates.size) {
+      DOM.schedulePerDateList.innerHTML = '<div class="empty-note">Select dates on the calendar above first.</div>';
+      return;
+    }
+
+    const defaultStart = DOM.scheduleStartTimeInput.value || '09:00';
+    const defaultDuration = parseInt(DOM.scheduleDurationInput.value, 10) || 45;
+    const sorted = Array.from(scheduleSelectedDates).sort();
+
+    DOM.schedulePerDateList.innerHTML = sorted.map((key) => {
+      const override = schedulePerDateOverrides.get(key) || { start: defaultStart, duration: defaultDuration };
+      return `
+        <div class="schedule-per-date-row" data-date="${key}">
+          <span class="schedule-per-date-label">${escapeHtml(scheduleDateLabel(key))}</span>
+          <input type="time" class="field-sm schedule-per-date-start" data-date="${key}" value="${escapeHtml(override.start)}">
+          <input type="number" min="5" max="${MAX_SESSION_DURATION_MINUTES}" step="5" class="field-sm schedule-per-date-duration" data-date="${key}" value="${override.duration}" title="Duration (minutes)">
+          <span class="schedule-per-date-end" data-date="${key}">Ends ${escapeHtml(computeScheduleEndLabel(override.start, override.duration))}</span>
+        </div>
+      `;
+    }).join('');
+
+    DOM.schedulePerDateList.querySelectorAll('.schedule-per-date-start, .schedule-per-date-duration').forEach((input) => {
+      input.addEventListener('input', () => {
+        const key = input.dataset.date;
+        const row = input.closest('.schedule-per-date-row');
+        const startVal = row.querySelector('.schedule-per-date-start').value || defaultStart;
+        const durationVal = parseInt(row.querySelector('.schedule-per-date-duration').value, 10) || defaultDuration;
+        schedulePerDateOverrides.set(key, { start: startVal, duration: durationVal });
+        row.querySelector('.schedule-per-date-end').textContent = `Ends ${computeScheduleEndLabel(startVal, durationVal)}`;
+      });
+    });
+  }
+
+  async function setClassSchedule(teacherUsername, occurrences) {
+    if (!state.currentChannel) { alert('Select a channel first.'); return false; }
+    teacherUsername = normalizeUsername(teacherUsername);
+    if (!teacherUsername) { alert('Enter a teacher username.'); return false; }
+    if (!occurrences || !occurrences.length) { alert('Tap at least one date on the calendar.'); return false; }
+
+    const registeredRole = state.roleCache[teacherUsername.toLowerCase()];
+    if (registeredRole !== CONFIG.AUTH.ROLES.TEACHER) {
+      alert(`"${teacherUsername}" isn't a registered teacher account. Create it first from Settings → Add teacher or student.`);
+      return false;
+    }
+
+    const rows = [];
+    for (const occ of occurrences) {
+      if (!occ.start) { alert(`Enter a start time for ${scheduleDateLabel(occ.dateKey)}.`); return false; }
+      const duration = Math.round(Number(occ.duration));
+      if (!Number.isFinite(duration) || duration <= 0) {
+        alert(`Enter a valid duration for ${scheduleDateLabel(occ.dateKey)}.`);
+        return false;
+      }
+      if (duration > MAX_SESSION_DURATION_MINUTES) {
+        alert(`A single session can't be longer than ${MAX_SESSION_DURATION_MINUTES / 60} hours (${scheduleDateLabel(occ.dateKey)}).`);
+        return false;
+      }
+      const start = new Date(`${occ.dateKey}T${occ.start}`);
+      if (Number.isNaN(start.getTime())) {
+        alert(`That date/time couldn't be understood for ${scheduleDateLabel(occ.dateKey)}.`);
+        return false;
+      }
+      rows.push({
+        channel_id: state.currentChannel.id,
+        teacher_username: teacherUsername,
+        scheduled_time: start.toISOString(),
+        duration_minutes: duration,
+        set_by: state.currentUser.username,
+      });
+    }
+
+    const { error } = await supabase.from('class_schedule').insert(rows);
+
+    if (error) { alert('Could not set schedule: ' + error.message); return false; }
+    alert(
+      rows.length === 1
+        ? `✅ Class time set for ${teacherUsername}`
+        : `✅ ${rows.length} sessions scheduled for ${teacherUsername}.`
+    );
+    await loadSchedule(state.currentChannel.id);
+    return true;
+  }
+
+  // ============================================================
+  // 8f. ADMIN — ALL-GROUPS LIVE SESSIONS CALENDAR
+  // ============================================================
+  let calendarSubscription = null;
+  let calendarHasData = false;
+  let calendarLoadInFlight = false;
+
+  async function loadAllSchedules() {
+    if (calendarLoadInFlight) return;
+    calendarLoadInFlight = true;
+
+    if (DOM.calendarList && !calendarHasData) {
+      DOM.calendarList.innerHTML = '<div class="empty-note">Loading schedule…</div>';
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('class_schedule')
+        .select('*')
+        .gte('scheduled_time', new Date(Date.now() - 60 * 60 * 1000).toISOString())
+        .order('scheduled_time', { ascending: true });
+
+      if (error) {
+        console.warn('loadAllSchedules failed:', error);
+        if (DOM.calendarList && !calendarHasData) {
+          DOM.calendarList.innerHTML = '<div class="empty-note">Could not load the schedule.</div>';
+        }
+        return;
+      }
+      calendarHasData = true;
+      renderCalendarList(data || []);
+    } finally {
+      calendarLoadInFlight = false;
+    }
+  }
+
+  function renderCalendarList(rows) {
+    if (!DOM.calendarList) return;
+
+    if (!rows.length) {
+      DOM.calendarList.innerHTML = '<div class="empty-note">No live sessions scheduled in any group yet.</div>';
+      return;
+    }
+
+    const channelNameById = new Map(allChannels.map((c) => [String(c.id), c.name]));
+
+    const dayOrder = [];
+    const dayGroups = new Map();
+    rows.forEach((row) => {
+      const dateKey = new Date(row.scheduled_time).toDateString();
+      if (!dayGroups.has(dateKey)) {
+        dayGroups.set(dateKey, []);
+        dayOrder.push(dateKey);
+      }
+      dayGroups.get(dateKey).push(row);
+    });
+
+    const todayKey = new Date().toDateString();
+    const tomorrowKey = new Date(Date.now() + 24 * 60 * 60 * 1000).toDateString();
+
+    DOM.calendarList.innerHTML = dayOrder.map((dateKey) => {
+      const dayRows = dayGroups.get(dateKey);
+      let dayLabel;
+      if (dateKey === todayKey) dayLabel = 'Today';
+      else if (dateKey === tomorrowKey) dayLabel = 'Tomorrow';
+      else dayLabel = new Date(dayRows[0].scheduled_time).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+
+      return `
+        <div class="calendar-day-group">
+          <div class="calendar-day-label">${escapeHtml(dayLabel)}</div>
+          ${dayRows.map((row) => calendarItemHtml(row, channelNameById)).join('')}
+        </div>
+      `;
+    }).join('');
+
+    DOM.calendarList.querySelectorAll('.calendar-item-link').forEach((el) => {
+      el.addEventListener('click', () => {
+        const channel = allChannels.find((c) => String(c.id) === el.dataset.channelId);
+        if (!channel) { alert('That group no longer exists.'); return; }
+        selectChannel(channel);
+        goToScreen('profile');
+      });
+    });
+    DOM.calendarList.querySelectorAll('.calendar-item-delete').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const ok = await deleteScheduledSession(btn.dataset.id);
+        if (ok) loadAllSchedules();
+      });
+    });
+    DOM.calendarList.querySelectorAll('.calendar-item-end').forEach((btn) => {
+      btn.addEventListener('click', () => endScheduledSessionNow(btn.dataset.id));
+    });
+  }
+
+  function calendarItemHtml(row, channelNameById) {
+    const start = new Date(row.scheduled_time);
+    const durationMinutes = row.duration_minutes || 45;
+    const end = new Date(start.getTime() + durationMinutes * 60000);
+    const startLabel = start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const endLabel = end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const groupName = channelNameById.get(String(row.channel_id)) || 'Unknown group';
+    const isLiveNow = Date.now() >= start.getTime() && Date.now() < end.getTime();
+
+    return `
+      <div class="calendar-item${isLiveNow ? ' is-live' : ''}">
+        <button type="button" class="calendar-item-link" data-channel-id="${escapeHtml(String(row.channel_id))}">
+          <div class="calendar-item-time">
+            <span class="calendar-item-time-start">${startLabel}</span>
+            <span class="calendar-item-time-end">${endLabel}</span>
+          </div>
+          <div class="calendar-item-text">
+            <div class="calendar-item-group">${escapeHtml(groupName)}</div>
+            <div class="calendar-item-teacher"><i class="fas fa-chalkboard-user"></i> ${escapeHtml(getDisplayName(row.teacher_username))}</div>
+          </div>
+          <div class="calendar-item-duration">${isLiveNow ? '<span class="calendar-live-dot" title="Live now"></span>' : ''}${durationMinutes}m</div>
+        </button>
+        <div class="calendar-item-admin-actions">
+          ${isLiveNow ? `<button type="button" class="icon-btn calendar-item-end" data-id="${row.id}" title="End this live session now for everyone"><i class="fas fa-ban" style="color:var(--danger);"></i></button>` : ''}
+          <button type="button" class="icon-btn calendar-item-delete" data-id="${row.id}" title="Delete"><i class="fas fa-trash" style="color:var(--danger);"></i></button>
+        </div>
+      </div>
+    `;
+  }
+
+  let calendarLiveRefreshInterval = null;
+
+  function subscribeToAllSchedules() {
+    if (calendarSubscription) {
+      supabase.removeChannel(calendarSubscription);
+      calendarSubscription = null;
+    }
+    calendarSubscription = supabase
+      .channel('schedule:all')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'class_schedule' }, () => loadAllSchedules())
+      .subscribe();
+
+    if (calendarLiveRefreshInterval) clearInterval(calendarLiveRefreshInterval);
+    calendarLiveRefreshInterval = setInterval(() => loadAllSchedules(), 30000);
+  }
+
+  function unsubscribeFromAllSchedules() {
+    if (calendarSubscription) {
+      supabase.removeChannel(calendarSubscription);
+      calendarSubscription = null;
+    }
+    if (calendarLiveRefreshInterval) {
+      clearInterval(calendarLiveRefreshInterval);
+      calendarLiveRefreshInterval = null;
+    }
+  }
+
+  // ============================================================
+  // 8a. CHANNEL DESCRIPTION
+  // ============================================================
+  function loadChannelDescription(channelId) {
+    if (!channelId || !state.currentChannel || state.currentChannel.id !== channelId) return;
+
+    const fallback = `Group workspace for ${state.currentChannel?.name || 'this group'}. Share updates, chat with the group, and join live sessions together.`;
+    const desc = state.currentChannel.description || fallback;
+    DOM.profileChannelDesc.textContent = desc;
+    DOM.channelDescInput.value = state.currentChannel.description || '';
+
+    DOM.adminDescEdit.classList.toggle('hidden', !state.isAdmin);
+  }
+
+  async function updateChannelDescription(channelId, description) {
+    if (!channelId) { alert('Select a channel first.'); return; }
+    if (!description) { alert('Enter a description.'); return; }
+
+    const { error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.CHANNELS)
+      .update({ description: description })
+      .eq('id', channelId);
+
+    if (error) { alert('Could not update description: ' + error.message); return; }
+
+    if (state.currentChannel && state.currentChannel.id === channelId) {
+      state.currentChannel.description = description;
+    }
+    loadChannelDescription(channelId);
+    alert('Description updated successfully!');
+  }
+
+  // ============================================================
+  // 13. PROFILE & SHARED MEDIA SCREEN
+  // ============================================================
+  function updateProfileMeta() {
+    if (!state.currentChannel) return;
+    const total = state.currentMembers.length;
+    const online = state.currentMembers.filter((m) => state.onlineUsers.has((m.username || '').toLowerCase())).length;
+    DOM.profileChannelMeta.textContent = total ? `${total} member${total === 1 ? '' : 's'} · ${online} online` : '';
+  }
+
+  function updateProfileScreen() {
+    if (!state.currentChannel) return;
+    DOM.profileChannelName.textContent = state.currentChannel.name;
+    loadChannelDescription(state.currentChannel.id);
+    updateProfileMeta();
+    loadGroupScheduleList(state.currentChannel.id);
+
+    if (DOM.scheduleCalGrid && scheduleCalendarChannelId !== state.currentChannel.id) {
+      scheduleCalendarChannelId = state.currentChannel.id;
+      resetScheduleSelection();
+      renderScheduleCalendar();
+      renderScheduleSelectedDates();
+      renderSchedulePerDateList();
+    }
+
+    const media = state.messages.filter((m) => isImageFile(m.file_url) && !isMessageMediaExpired(m));
+    if (!media.length) {
+      DOM.sharedMediaGrid.innerHTML = '<div class="empty-note">No shared media yet</div>';
+      DOM.profileSeeAllMedia.classList.add('hidden');
+      return;
+    }
+    const showAll = DOM.sharedMediaGrid.dataset.showAll === 'true';
+    const shown = showAll ? media : media.slice(-6);
+    state.sharedMediaUrls = shown.map((m) => m.file_url);
+    DOM.sharedMediaGrid.innerHTML = shown.map((m, i) => `<img src="${escapeHtml(m.file_url)}" data-media-url="${escapeHtml(m.file_url)}" data-media-index="${i}" alt="Shared media" loading="lazy" style="cursor:pointer;">`).join('');
+    DOM.profileSeeAllMedia.classList.toggle('hidden', media.length <= 6);
+  }
+
+  // ============================================================
+  // 10. STATUS UPDATES
+  // ============================================================
+  async function loadStatuses() {
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.STATUSES)
+      .select('*')
+      .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (error) {
+      state.statuses = [{ id: '1', content: 'Welcome to Nous Complex Orbit!', username: 'admin', created_at: Date.now() }];
+    } else {
+      state.statuses = data || [];
+    }
+    await loadStatusViews(state.statuses.map((s) => s.id));
+    subscribeToStatusViews();
+    renderStatuses();
+    updateStatusNavBadge();
+  }
+
+  function updateStatusNavBadge() {
+    if (!DOM.navUpdatesBadge || !state.currentUser) return;
+    const me = state.currentUser.username;
+    const hasUnseen = state.statuses.some((st) => {
+      if (normalizeUsername(st.username) === me) return false;
+      const viewers = state.statusViews.get(st.id) || [];
+      return !viewers.some((v) => v.username === me);
+    });
+    DOM.navUpdatesBadge.classList.toggle('hidden', !hasUnseen);
+  }
+
+  // ============================================================
+  // 10b. UPDATE (STATUS) READ RECEIPTS — "seen by"
+  // ============================================================
+  async function loadStatusViews(statusIds) {
+    state.statusViews = new Map();
+    if (!statusIds || !statusIds.length) return;
+
+    const { data, error } = await supabase
+      .from('status_views')
+      .select('status_id, username, viewed_at')
+      .in('status_id', statusIds);
+
+    if (error) {
+      console.warn('Failed to load status views (create a `status_views` table with SELECT/INSERT policies if missing):', error);
+      return;
+    }
+    (data || []).forEach((row) => {
+      const list = state.statusViews.get(row.status_id) || [];
+      list.push({ username: row.username, viewed_at: row.viewed_at });
+      state.statusViews.set(row.status_id, list);
+    });
+  }
+
+  function teardownStatusViewsSubscription() {
+    if (!state.statusViewsSubscription) return;
+    supabase.removeChannel(state.statusViewsSubscription);
+    state.statusViewsSubscription = null;
+  }
+
+  function subscribeToStatusViews() {
+    teardownStatusViewsSubscription();
+    state.statusViewsSubscription = supabase
+      .channel('status_views:all')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'status_views',
+      }, (payload) => {
+        const row = payload.new;
+        const list = state.statusViews.get(row.status_id) || [];
+        if (!list.some((r) => r.username === row.username)) {
+          list.push({ username: row.username, viewed_at: row.viewed_at });
+          state.statusViews.set(row.status_id, list);
+          renderStatuses();
+        }
+      })
+      .subscribe();
+  }
+
+  async function recordStatusView(status) {
+    if (!status || !state.currentUser) return;
+    if (normalizeUsername(status.username) === state.currentUser.username) return;
+
+    const row = { status_id: status.id, username: state.currentUser.username, viewed_at: new Date().toISOString() };
+    const { error } = await supabase
+      .from('status_views')
+      .upsert(row, { onConflict: 'status_id,username', ignoreDuplicates: true });
+
+    if (error) {
+      console.warn('Failed to record status view (create a `status_views` table with an INSERT policy if missing):', error);
+      return;
+    }
+
+    const list = state.statusViews.get(status.id) || [];
+    if (!list.some((r) => r.username === row.username)) {
+      list.push({ username: row.username, viewed_at: row.viewed_at });
+      state.statusViews.set(status.id, list);
+      if (state.isAdmin) renderStatuses();
+      updateStatusNavBadge();
+    }
+  }
+
+  function openStatusInfoModal(status) {
+    if (!status) return;
+    const views = (state.statusViews.get(status.id) || [])
+      .slice()
+      .sort((a, b) => new Date(a.viewed_at) - new Date(b.viewed_at));
+    const seenUsernames = new Set(views.map((v) => v.username));
+
+    const posterKey = normalizeUsername(status.username);
+    const allOtherUsers = Object.keys(state.roleCache)
+      .filter((u) => u !== posterKey)
+      .sort((a, b) => getDisplayName(a).localeCompare(getDisplayName(b)));
+    const notSeen = allOtherUsers.filter((u) => !seenUsernames.has(u));
+
+    const rowHtml = (username, timeHtml) => `
+      <div class="msg-info-row">
+        ${avatarHtml(username, 'sm')}
+        <span class="msg-info-name">${escapeHtml(getDisplayName(username))}</span>
+        ${timeHtml}
+      </div>
+    `;
+
+    const seenRows = views.length
+      ? views.map((v) => rowHtml(v.username, `<span class="msg-info-time">${escapeHtml(formatFullDate(v.viewed_at))}</span>`)).join('')
+      : `<div class="empty-note">No one yet</div>`;
+
+    const notSeenRows = notSeen.length
+      ? notSeen.map((u) => rowHtml(u, `<span class="msg-info-time msg-info-notdelivered">Not seen</span>`)).join('')
+      : `<div class="empty-note">Everyone has seen this</div>`;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-card">
+        <div class="modal-title"><i class="fas fa-eye"></i> Seen by</div>
+        <div class="msg-info-section-label">Seen (${views.length})</div>
+        <div class="msg-info-list">${seenRows}</div>
+        <div class="msg-info-section-label">Not seen yet (${notSeen.length})</div>
+        <div class="msg-info-list">${notSeenRows}</div>
+        <button class="btn-secondary msg-info-close" style="width:100%; margin-top:14px;">Close</button>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('.msg-info-close').addEventListener('click', close);
+  }
+
+  function renderStatuses() {
+    exitStatusSelection();
+    DOM.statusTray.innerHTML = '';
+
+    if (!state.statuses.length) {
+      DOM.statusTray.innerHTML = '<div class="empty-note">No updates yet</div>';
+    } else {
+      state.statuses.forEach((st) => {
+        const item = document.createElement('div');
+        item.className = 'update-row';
+        item.dataset.id = st.id;
+        const displayName = getDisplayName(st.username);
+        const statusPreviewLinkUrl = st.content ? firstUrlIn(st.content) : null;
+        const preview = st.content
+          ? (statusPreviewLinkUrl
+              ? `<a href="${escapeHtml(statusPreviewLinkUrl)}" rel="noopener" class="msg-link">${escapeHtml(truncate(st.content, 46))}</a>`
+              : escapeHtml(truncate(st.content, 46)))
+          : (st.media_url ? '<i class="fas fa-camera"></i> Photo/video' : '');
+        const seenCount = (state.statusViews.get(st.id) || []).length;
+        const seenBadge = state.isAdmin
+          ? `<span class="update-row-seen"><i class="fas fa-eye"></i> ${seenCount}</span>`
+          : '';
+        item.innerHTML = `
+          ${avatarHtml(st.username)}
+          <div class="update-row-body">
+            <div class="update-row-name">${escapeHtml(displayName)}</div>
+            <div class="update-row-preview">${preview}</div>
+          </div>
+          <div class="update-row-time">
+            ${formatTimeAgo(st.created_at)}
+            ${seenBadge}
+          </div>
+        `;
+        if (state.isAdmin) {
+          item.addEventListener('touchstart', () => startStatusLongPress(item, st), { passive: true });
+          ['touchend', 'touchmove', 'touchcancel'].forEach((evt) => {
+            item.addEventListener(evt, clearStatusLongPressTimer);
+          });
+          item.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            selectStatusForActions(item, st);
+          });
+        }
+        item.addEventListener('pointerup', (e) => {
+          if (e.button === 2) return;
+          if (statusLongPressFired) { statusLongPressFired = false; return; }
+          if (e.target.closest('a.msg-link')) return;
+          e.preventDefault();
+          showStatusModal(st);
+        });
+        item.addEventListener('click', (e) => {
+          const link = e.target.closest('a.msg-link');
+          if (!link) return;
+          e.preventDefault();
+          e.stopPropagation();
+          openExternalLink(link.getAttribute('href'));
+        });
+        DOM.statusTray.appendChild(item);
+      });
+    }
+
+    const shouldShow = state.isAdmin && CONFIG.FEATURES.ENABLE_STATUS_UPDATES;
+    DOM.statusAddBtn.classList.toggle('hidden', !shouldShow);
+    if (DOM.postStatusFab) DOM.postStatusFab.classList.add('hidden');
+  }
+
+  async function deleteStatus(statusId) {
+    if (!confirm('Delete this status update?')) return;
+    const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.STATUSES).delete().eq('id', statusId);
+    if (error) { alert('Delete failed: ' + error.message); return; }
+    await loadStatuses();
+  }
+
+  let statusLongPressTimer = null;
+  let statusLongPressFired = false;
+  let selectedStatus = null;
+
+  function clearStatusLongPressTimer() {
+    if (statusLongPressTimer) { clearTimeout(statusLongPressTimer); statusLongPressTimer = null; }
+  }
+
+  function startStatusLongPress(row, st) {
+    clearStatusLongPressTimer();
+    statusLongPressTimer = setTimeout(() => {
+      statusLongPressFired = true;
+      selectStatusForActions(row, st);
+    }, 500);
+  }
+
+  function selectStatusForActions(row, st) {
+    exitStatusSelection();
+    selectedStatus = st;
+    row.classList.add('active');
+
+    if (DOM.updatesScreenHeader) DOM.updatesScreenHeader.classList.add('hidden');
+    if (DOM.statusSelectHeader) DOM.statusSelectHeader.classList.remove('hidden');
+    if (DOM.statusSelectCount) DOM.statusSelectCount.textContent = getDisplayName(st.username);
+  }
+
+  function exitStatusSelection() {
+    if (!selectedStatus) return;
+    selectedStatus = null;
+
+    if (DOM.statusSelectHeader) DOM.statusSelectHeader.classList.add('hidden');
+    if (DOM.updatesScreenHeader) DOM.updatesScreenHeader.classList.remove('hidden');
+    DOM.statusTray.querySelectorAll('.update-row.active').forEach((r) => r.classList.remove('active'));
+  }
+
+  if (DOM.statusSelectCloseBtn) DOM.statusSelectCloseBtn.addEventListener('click', exitStatusSelection);
+
+  if (DOM.statusSelectInfoBtn) {
+    DOM.statusSelectInfoBtn.addEventListener('click', () => {
+      const st = selectedStatus;
+      exitStatusSelection();
+      if (st) openStatusInfoModal(st);
+    });
+  }
+
+  if (DOM.statusSelectDeleteBtn) {
+    DOM.statusSelectDeleteBtn.addEventListener('click', () => {
+      const st = selectedStatus;
+      exitStatusSelection();
+      if (st) deleteStatus(st.id);
+    });
+  }
+
+  function generateStatusStoragePath(username, filename) {
+    const ext = (filename.split('.').pop() || 'dat').toLowerCase();
+    const rand = Math.random().toString(36).slice(2, 8);
+    return `status/${username}/${Date.now()}-${rand}.${ext}`;
+  }
+
+  const STATUS_EXPIRY_MS = {
+    '1h': 60 * 60 * 1000,
+    '6h': 6 * 60 * 60 * 1000,
+    '24h': 24 * 60 * 60 * 1000,
+    '3d': 3 * 24 * 60 * 60 * 1000,
+    '7d': 7 * 24 * 60 * 60 * 1000,
+    never: null,
+  };
+
+  async function postStatus({ content, file, expiryKey }) {
+    if (!state.currentUser) return;
+
+    let mediaUrl = null;
+    if (file) {
+      const uploadFile = await compressImageFile(file);
+
+      if (uploadFile.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
+        alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
+        return;
+      }
+      const path = generateStatusStoragePath(state.currentUser.username, uploadFile.name);
+      try {
+        const { error: uploadError } = await supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).upload(path, uploadFile);
+        if (uploadError) throw uploadError;
+        const { data: urlData } = supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).getPublicUrl(path);
+        mediaUrl = urlData.publicUrl;
+      } catch (e) {
+        console.error('Status media upload error:', e);
+        alert(`Media upload failed: ${e.message || 'unknown error — check console for details.'}`);
+        return;
+      }
+    }
+
+    const ms = STATUS_EXPIRY_MS[expiryKey];
+    const expiresAt = ms ? new Date(Date.now() + ms).toISOString() : null;
+
+    const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.STATUSES).insert({
+      username: state.currentUser.username,
+      content: content || '',
+      media_url: mediaUrl,
+      expires_at: expiresAt,
+      created_at: new Date().toISOString(),
+    });
+    if (error) { console.error('Status error:', error); alert('Failed to post status: ' + error.message); return; }
+    await loadStatuses();
+  }
+
+  function openStatusComposer() {
+    if (!CONFIG.FEATURES.ENABLE_STATUS_UPDATES) { alert('Status updates are disabled.'); return; }
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="modal-card">
+        <h3 class="modal-title"><i class="fas fa-bullhorn"></i> Post an update</h3>
+        <textarea id="statusComposeText" class="field" rows="3" placeholder="Write something..." style="resize:vertical; margin-bottom:10px;"></textarea>
+
+        <label class="section-label" style="display:block; margin-bottom:6px;">Photo or video (optional)</label>
+        <input id="statusComposeFile" type="file" accept="image/*,video/*" class="field" style="margin-bottom:4px;">
+        <div id="statusComposeFileName" class="modal-body" style="margin:2px 0 10px; font-size:12.5px;"></div>
+
+        <label class="section-label" style="display:block; margin-bottom:6px;">Expires</label>
+        <select id="statusComposeExpiry" class="field" style="margin-bottom:16px;">
+          <option value="1h">In 1 hour</option>
+          <option value="6h">In 6 hours</option>
+          <option value="24h" selected>In 24 hours</option>
+          <option value="3d">In 3 days</option>
+          <option value="7d">In 7 days</option>
+          <option value="never">Never</option>
+        </select>
+
+        <div style="display:flex; gap:10px;">
+          <button id="statusComposeCancel" class="btn btn-ghost" style="flex:1;">Cancel</button>
+          <button id="statusComposePost" class="btn btn-primary" style="flex:1;"><i class="fas fa-paper-plane"></i> Post</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const textEl = modal.querySelector('#statusComposeText');
+    const fileEl = modal.querySelector('#statusComposeFile');
+    const fileNameEl = modal.querySelector('#statusComposeFileName');
+    const expiryEl = modal.querySelector('#statusComposeExpiry');
+
+    fileEl.addEventListener('change', () => {
+      fileNameEl.textContent = fileEl.files[0] ? `📎 ${fileEl.files[0].name}` : '';
+    });
+
+    const close = () => modal.remove();
+    modal.querySelector('#statusComposeCancel').addEventListener('click', close);
+    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+
+    modal.querySelector('#statusComposePost').addEventListener('click', async () => {
+      const content = textEl.value.trim();
+      const file = fileEl.files[0] || null;
+      if (!content && !file) { alert('Add some text or a photo/video first.'); return; }
+
+      const postBtn = modal.querySelector('#statusComposePost');
+      postBtn.disabled = true;
+      postBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Posting...';
+
+      await postStatus({ content, file, expiryKey: expiryEl.value });
+      close();
+    });
+  }
+
+  let statusProgressValue = 0;
+  let statusPaused = false;
+  let statusMediaLoading = false;
+  let statusMediaLoadingSafetyTimer = null;
+  let currentStatusVideoEl = null;
+
+  function showStatusModal(status) {
+    suppressStatusOpenClicksUntil = Date.now() + 80;
+
+    recordStatusView(status);
+
+    setAvatarEl(DOM.statusViewerAvatar, status.username, 'sm status-viewer-avatar');
+    DOM.statusModalTitle.textContent = getDisplayName(status.username);
+    DOM.statusModalTime.textContent = formatFullDate(status.created_at);
+    DOM.statusModalContent.innerHTML = linkifyText(status.content || '');
+
+    if (DOM.statusLinkPreview) {
+      const statusLinkUrl = firstUrlIn(status.content);
+      if (statusLinkUrl) {
+        DOM.statusLinkPreview.innerHTML = '';
+        hydrateLinkPreview(DOM.statusLinkPreview, statusLinkUrl, false);
+      } else {
+        DOM.statusLinkPreview.classList.add('hidden');
+        DOM.statusLinkPreview.innerHTML = '';
+      }
+    }
+
+    statusMediaLoading = !!status.media_url;
+    if (statusMediaLoadingSafetyTimer) { clearTimeout(statusMediaLoadingSafetyTimer); statusMediaLoadingSafetyTimer = null; }
+    currentStatusVideoEl = null;
+
+    const removeMediaSpinner = () => {
+      const spinnerEl = DOM.statusModalMedia.querySelector('.status-media-spinner');
+      if (spinnerEl) spinnerEl.remove();
+    };
+    const markMediaReady = () => { statusMediaLoading = false; removeMediaSpinner(); };
+    const markMediaBroken = () => {
+      statusMediaLoading = false;
+      DOM.statusModalMedia.innerHTML = '<div class="status-media-broken"><i class="fas fa-image"></i><span>Couldn\'t load this media</span></div>';
+    };
+
+    if (status.media_url && isVideoFile(status.media_url)) {
+      DOM.statusModalMedia.innerHTML = `<video src="${escapeHtml(status.media_url)}" autoplay playsinline></video>`;
+      const videoEl = DOM.statusModalMedia.querySelector('video');
+      videoEl.muted = false;
+      videoEl.volume = 1;
+      videoEl.addEventListener('loadeddata', markMediaReady, { once: true });
+      videoEl.addEventListener('error', markMediaBroken, { once: true });
+      const statusVideoPlayPromise = videoEl.play();
+      if (statusVideoPlayPromise && typeof statusVideoPlayPromise.catch === 'function') {
+        statusVideoPlayPromise.catch(() => {
+          videoEl.muted = true;
+          videoEl.play().catch(() => {});
+        });
+      }
+      DOM.statusModalMedia.insertAdjacentHTML('beforeend', '<div class="status-media-spinner" aria-hidden="true"></div>');
+
+      currentStatusVideoEl = videoEl;
+      videoEl.addEventListener('timeupdate', () => {
+        if (videoEl.duration) {
+          DOM.statusProgress.style.width = Math.min((videoEl.currentTime / videoEl.duration) * 100, 100) + '%';
+        }
+      });
+      videoEl.addEventListener('ended', closeStatusViewer);
+    } else if (status.media_url) {
+      DOM.statusModalMedia.innerHTML = `<img src="${escapeHtml(status.media_url)}" alt="Status media">`;
+      const imgEl = DOM.statusModalMedia.querySelector('img');
+      if (imgEl.complete && imgEl.naturalWidth > 0) {
+        markMediaReady();
+      } else {
+        imgEl.addEventListener('load', markMediaReady, { once: true });
+        imgEl.addEventListener('error', markMediaBroken, { once: true });
+        DOM.statusModalMedia.insertAdjacentHTML('beforeend', '<div class="status-media-spinner" aria-hidden="true"></div>');
+      }
+    } else {
+      DOM.statusModalMedia.innerHTML = '';
+    }
+    if (statusMediaLoading) {
+      statusMediaLoadingSafetyTimer = setTimeout(() => { statusMediaLoading = false; removeMediaSpinner(); }, 8000);
+    }
+
+    if (DOM.statusViewerBody) {
+      DOM.statusViewerBody.classList.toggle('has-media', !!status.media_url);
+    }
+
+    DOM.statusProgress.style.width = '0%';
+    DOM.statusModal.classList.remove('hidden');
+
+    statusProgressValue = 0;
+    statusPaused = false;
+    updateStatusPauseIcon();
+    if (state.progressInterval) clearInterval(state.progressInterval);
+
+    if (!currentStatusVideoEl) {
+      state.progressInterval = setInterval(() => {
+        if (statusPaused || statusMediaLoading) return;
+        statusProgressValue += 1.2;
+        if (statusProgressValue >= 100) {
+          clearInterval(state.progressInterval);
+          state.progressInterval = null;
+          DOM.statusModal.classList.add('hidden');
+        }
+        DOM.statusProgress.style.width = Math.min(statusProgressValue, 100) + '%';
+      }, 50);
+    }
+  }
+
+  function toggleStatusPause() {
+    statusPaused = !statusPaused;
+    if (currentStatusVideoEl) {
+      if (statusPaused) {
+        currentStatusVideoEl.pause();
+      } else {
+        currentStatusVideoEl.play().catch(() => {});
+      }
+    }
+    updateStatusPauseIcon();
+  }
+
+  function updateStatusPauseIcon() {
+    if (!DOM.statusPauseBtn) return;
+    DOM.statusPauseBtn.innerHTML = statusPaused ? '<i class="fas fa-play"></i>' : '<i class="fas fa-pause"></i>';
+    DOM.statusPauseBtn.title = statusPaused ? 'Resume' : 'Pause';
+  }
+
+  function closeStatusViewer() {
+    DOM.statusModal.classList.add('hidden');
+    if (state.progressInterval) { clearInterval(state.progressInterval); state.progressInterval = null; }
+    if (statusMediaLoadingSafetyTimer) { clearTimeout(statusMediaLoadingSafetyTimer); statusMediaLoadingSafetyTimer = null; }
+    statusMediaLoading = false;
+    statusPaused = false;
+    if (currentStatusVideoEl) {
+      currentStatusVideoEl.pause();
+      currentStatusVideoEl = null;
+    }
+    DOM.statusModalMedia.innerHTML = '';
+    if (state.currentScreen && history.replaceState) {
+      history.replaceState({ orbitScreen: state.currentScreen }, '', '#' + state.currentScreen);
+    }
+  }
+
+  // ============================================================
+  // 11. VIDEO / PLUGNMEET
+  // ============================================================
+  async function getLiveJoinUrl() {
+    const { data, error } = await supabase.functions.invoke(CONFIG.PLUGNMEET.EDGE_FUNCTION, {
+      body: {
+        schedule_id: state.currentSchedule ? state.currentSchedule.id : null,
+        channel_id: state.currentChannel ? state.currentChannel.id : null,
+      },
+    });
+    if (error || !data?.join_url) {
+      const serverMessage = data?.error || error?.message || 'Unknown error';
+      throw new Error(serverMessage);
+    }
+    return data.join_url;
+  }
+
+  let liveSessionAutoCloseTimer = null;
+
+  function clearLiveSessionAutoCloseTimer() {
+    if (liveSessionAutoCloseTimer) {
+      clearTimeout(liveSessionAutoCloseTimer);
+      liveSessionAutoCloseTimer = null;
+    }
+  }
+
+  // FIX: root cause of "user can't see the buttons for minimizing/
+  // maximizing in live meeting so they can text in group when needed" —
+  // this is the piece that never existed. Minimizing only ever meant
+  // closeLiveSession() below, which sets videoIframe.src = '' and tears
+  // the call down completely — there was no way to shrink #videoContainer
+  // out of the way while keeping the meeting connected. This toggles the
+  // .video-panel-minimized class (styles.css positions/resizes the panel
+  // into a small corner pip instead of covering the whole screen) without
+  // touching videoIframe.src or state.videoActive at all, so the call
+  // keeps running in the background and #chatContainer/.composer
+  // underneath become reachable again. Wired to #minimizeVideoBtn below.
+  function setVideoMinimized(minimized) {
+    state.videoMinimized = !!minimized;
+    DOM.videoContainer.classList.toggle('video-panel-minimized', state.videoMinimized);
+    if (DOM.minimizeVideoBtn) {
+      DOM.minimizeVideoBtn.innerHTML = state.videoMinimized
+        ? '<i class="fas fa-expand"></i>'
+        : '<i class="fas fa-compress"></i>';
+      DOM.minimizeVideoBtn.title = state.videoMinimized
+        ? 'Expand call'
+        : 'Minimize call (keep chatting)';
+    }
+  }
+
+  function closeLiveSession(message) {
+    const wasActive = state.videoActive;
+    clearLiveSessionAutoCloseTimer();
+    DOM.videoContainer.classList.add('hidden');
+    DOM.videoIframe.src = '';
+    state.videoActive = false;
+    state.activeCallScheduleId = null;
+    state.activeCallIsHost = false;
+    setVideoMinimized(false);
+    if (DOM.endLiveSessionBtn) DOM.endLiveSessionBtn.classList.add('hidden');
+    if (message && wasActive) alert(message);
+  }
+
+  async function endLiveSessionForEveryone() {
+    if (!state.activeCallScheduleId) { closeLiveSession(); return; }
+    if (!confirm('End this live session now for everyone in the group?')) return;
+
+    const startedAt = state.currentSchedule && String(state.currentSchedule.id) === String(state.activeCallScheduleId)
+      ? new Date(state.currentSchedule.scheduled_time).getTime()
+      : Date.now();
+    const elapsedMinutes = Math.max(1, Math.ceil((Date.now() - startedAt) / 60000));
+
+    const { error } = await supabase
+      .from('class_schedule')
+      .update({ duration_minutes: elapsedMinutes, is_live: false })
+      .eq('id', state.activeCallScheduleId);
+
+    if (error) { alert('Could not end the session: ' + error.message); return; }
+    closeLiveSession('You ended this live session for everyone.');
+  }
+
+  async function joinLiveClass() {
+    if (!state.currentUser || !state.currentChannel) { alert('Please select a channel first.'); return; }
+
+    const mode = getLiveButtonMode();
+    if (mode === 'hidden') { return; }
+
+    if (mode === 'start' && state.currentSchedule && !state.currentSchedule.is_live) {
+      const { error: liveError } = await supabase
+        .from('class_schedule')
+        .update({ is_live: true })
+        .eq('id', state.currentSchedule.id);
+      if (liveError) {
+        console.warn('Could not mark session live:', liveError);
+      } else {
+        state.currentSchedule.is_live = true;
+      }
+    }
+
+    if (CONFIG.FEATURES.ENABLE_ATTENDANCE_LOGGING) {
+      try {
+        await supabase.from(CONFIG.SUPABASE.TABLES.ATTENDANCE).insert({
+          student_name: state.currentUser.username,
+          channel_id: state.currentChannel.id,
+          join_time: new Date().toISOString(),
+          status: 'Present',
+        });
+      } catch (e) {
+        console.warn('Attendance log skipped:', e);
+      }
+    }
+
+    let liveUrl;
+    DOM.joinLiveBtn.disabled = true;
+    try {
+      liveUrl = await getLiveJoinUrl();
+    } catch (e) {
+      console.error('Could not get PlugNmeet join URL:', e);
+      alert('Could not start the video call: ' + e.message);
+      updateLiveButtonState();
+      return;
+    }
+
+    DOM.videoContainer.classList.remove('hidden');
+    setVideoMinimized(false);
+    DOM.videoIframe.src = liveUrl;
+    state.videoActive = true;
+    state.activeCallScheduleId = state.currentSchedule ? state.currentSchedule.id : null;
+    state.activeCallIsHost = mode === 'start';
+    updateLiveButtonState();
+    if (DOM.endLiveSessionBtn) {
+      DOM.endLiveSessionBtn.classList.toggle('hidden', !(state.isAdmin && state.activeCallScheduleId));
+    }
+
+    clearLiveSessionAutoCloseTimer();
+    if (state.currentSchedule) {
+      const endsAt = new Date(state.currentSchedule.scheduled_time).getTime() + (state.currentSchedule.duration_minutes || 45) * 60000;
+      const msRemaining = endsAt - Date.now();
+      if (msRemaining <= 0) {
+        closeLiveSession('⏰ This session\'s scheduled time is already up.');
+      } else {
+        liveSessionAutoCloseTimer = setTimeout(() => {
+          closeLiveSession('⏰ This session\'s scheduled time is up — the call has been closed.');
+        }, msRemaining);
+      }
+    }
+  }
+
+  // ============================================================
+  // 12. ADMIN FUNCTIONS
+  // ============================================================
+
+  async function exportAttendance() {
+    const { data, error } = await supabase.from(CONFIG.SUPABASE.TABLES.ATTENDANCE).select('*');
+    if (error) { alert('No attendance data found.'); return; }
+
+    let csv = 'Student,Channel,Join Time,Status\n';
+    data.forEach(r => csv += `${r.student_name},${r.channel_id},${r.join_time},${r.status}\n`);
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'attendance_log.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  async function requestMediaPermissions() {
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      console.log('Media permissions granted.');
+    } catch (e) {
+      const modal = document.createElement('div');
+      modal.className = 'modal-overlay';
+      modal.innerHTML = `
+        <div class="modal-card">
+          <h3 class="modal-title"><i class="fas fa-triangle-exclamation" style="color:var(--role-admin); font-size:14px;"></i> Permissions required</h3>
+          <p class="modal-body">Camera and microphone access are blocked. Allow permissions in your browser settings, then reload the page.</p>
+          <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-ghost btn-block">Got it</button>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    }
+  }
+
+  // ============================================================
+  // 7c. ADMIN: USER MANAGEMENT
+  // ============================================================
+
+  async function loadRegisteredUsersList() {
+    if (!DOM.registeredUsersListView || !state.isAdmin) return;
+
+    if (registeredUsersListLoading) return;
+    registeredUsersListLoading = true;
+
+    if (registeredUsersListHasData) {
+      renderRegisteredUsersList();
+    } else {
+      DOM.registeredUsersListView.innerHTML = '<div class="empty-note">Loading users…</div>';
+    }
+
+    try {
+      await loadRoleCache();
+
+      const [membersRes, channelsRes] = await Promise.all([
+        supabase.from(CONFIG.SUPABASE.TABLES.MEMBERS).select('username, channel_id, role'),
+        supabase.from(CONFIG.SUPABASE.TABLES.CHANNELS).select('id, name').order('name'),
+      ]);
+
+      if (membersRes.error || channelsRes.error) {
+        console.warn('Could not load user assignments:', membersRes.error || channelsRes.error);
+        if (!registeredUsersListHasData) {
+          DOM.registeredUsersListView.innerHTML = '<div class="empty-note">Could not load users</div>';
+        }
+        return;
+      }
+
+      allGroupsCache = channelsRes.data || [];
+      const channelNameById = new Map(allGroupsCache.map((c) => [String(c.id), c.name]));
+
+      const memberships = new Map();
+      (membersRes.data || []).forEach((m) => {
+        const key = (m.username || '').toLowerCase();
+        if (!key) return;
+        const entry = {
+          channelId: String(m.channel_id),
+          channelName: channelNameById.get(String(m.channel_id)) || 'Unknown session',
+          role: m.role || 'student',
+        };
+        if (!memberships.has(key)) memberships.set(key, []);
+        memberships.get(key).push(entry);
+      });
+
+      registeredUserMemberships = memberships;
+      registeredUsersListHasData = true;
+      renderRegisteredUsersList();
+    } finally {
+      registeredUsersListLoading = false;
+    }
+  }
+
+  function renderRegisteredUsersList() {
+    if (!DOM.registeredUsersListView) return;
+
+    const query = ((DOM.manageUserSearch && DOM.manageUserSearch.value) || '').trim().toLowerCase();
+    const usernames = Object.keys(state.roleCache)
+      .filter((u) => !query || u.includes(query))
+      .sort();
+
+    if (!usernames.length) {
+      DOM.registeredUsersListView.innerHTML = `<div class="empty-note">${query ? 'No matching users' : 'No registered users'}</div>`;
+      return;
+    }
+
+    const unassigned = [];
+    const assigned = [];
+    usernames.forEach((u) => {
+      const memberships = registeredUserMemberships.get(u) || [];
+      (memberships.length ? assigned : unassigned).push(u);
+    });
+
+    const renderRow = (username) => {
+      const memberships = registeredUserMemberships.get(username) || [];
+      const groupsLabel = memberships.length
+        ? escapeHtml(memberships.map((m) => m.channelName).join(', '))
+        : 'No groups yet';
+      const role = state.roleCache[username];
+      const displayName = getDisplayName(username);
+      return `
+        <div class="registered-user-row" data-username="${escapeHtml(username)}">
+          ${avatarHtml(username, 'sm')}
+          <div class="registered-user-info">
+            <div class="registered-user-name">${escapeHtml(displayName)} <span class="member-display-name">(${escapeHtml(username)})</span></div>
+            <div class="registered-user-groups${memberships.length ? '' : ' unassigned'}">${groupsLabel}</div>
+          </div>
+          <span class="role-chip role-${roleKey(username)}-chip member-role-chip">${escapeHtml(role || 'student')}</span>
+          <button class="icon-btn registered-user-manage-btn" data-manage-groups="${escapeHtml(username)}" title="Manage groups" aria-label="Manage groups">
+            <i class="fas fa-layer-group"></i>
+          </button>
+        </div>
+      `;
+    };
+
+    const section = (label, iconClass, users, labelClass) => {
+      if (!users.length) return '';
+      return `
+        <div class="registered-user-section">
+          <div class="registered-user-section-label${labelClass ? ' ' + labelClass : ''}">
+            <i class="fas ${iconClass}"></i> ${label} <span class="registered-user-count">(${users.length})</span>
+          </div>
+          <div class="registered-user-rows">${users.map(renderRow).join('')}</div>
+        </div>
+      `;
+    };
+
+    DOM.registeredUsersListView.innerHTML =
+      section('Unassigned', 'fa-triangle-exclamation', unassigned, 'unassigned-label') +
+      section('Assigned', 'fa-users', assigned, '');
+
+    DOM.registeredUsersListView.querySelectorAll('.registered-user-row').forEach((row) => {
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('[data-manage-groups]')) return;
+        const username = row.dataset.username;
+        DOM.manageUserSearch.value = username;
+        loadUserForEdit(username);
+      });
+    });
+
+    DOM.registeredUsersListView.querySelectorAll('[data-manage-groups]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openGroupAssignmentModal(btn.dataset.manageGroups);
+      });
+    });
+  }
+
+  async function openGroupAssignmentModal(username) {
+    username = normalizeUsername(username);
+    if (!username || !state.isAdmin) return;
+
+    if (!allGroupsCache.length) {
+      const { data, error } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.CHANNELS)
+        .select('id, name')
+        .order('name');
+      if (!error) allGroupsCache = data || [];
+    }
+
+    if (!allGroupsCache.length) {
+      alert('No groups/sessions exist yet — create one first from Settings → Create New Session.');
+      return;
+    }
+
+    const existingMemberships = registeredUserMemberships.get(username) || [];
+    const membershipByChannel = new Map(existingMemberships.map((m) => [m.channelId, m]));
+    const defaultRole = getRoleFromUsername(username) === CONFIG.AUTH.ROLES.TEACHER ? 'teacher' : 'student';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="modal-card group-assign-modal">
+        <h3 class="modal-title"><i class="fas fa-layer-group" style="color:var(--role-admin); font-size:14px;"></i> Groups for ${escapeHtml(getDisplayName(username))}</h3>
+        <p class="modal-body" style="margin:8px 0 12px;">Check every session this user belongs to, and set their role in each one.</p>
+        <div class="group-assign-list">
+          ${allGroupsCache.map((ch) => {
+            const existing = membershipByChannel.get(String(ch.id));
+            const checked = !!existing;
+            const role = existing ? existing.role : defaultRole;
+            return `
+              <label class="group-assign-row">
+                <input type="checkbox" class="group-assign-check" data-channel-id="${escapeHtml(String(ch.id))}" ${checked ? 'checked' : ''}>
+                <span class="group-assign-name">${escapeHtml(ch.name)}</span>
+                <select class="field-sm group-assign-role" data-channel-id="${escapeHtml(String(ch.id))}">
+                  <option value="student" ${role === 'student' ? 'selected' : ''}>Student</option>
+                  <option value="teacher" ${role === 'teacher' ? 'selected' : ''}>Teacher</option>
+                </select>
+              </label>
+            `;
+          }).join('')}
+        </div>
+        <div style="display:flex; gap:8px; margin-top:16px;">
+          <button id="groupAssignCancelBtn" class="btn-secondary" style="flex:1;">Cancel</button>
+          <button id="groupAssignSaveBtn" class="btn-primary" style="flex:1;">Save</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const close = () => modal.remove();
+    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+    modal.querySelector('#groupAssignCancelBtn').addEventListener('click', close);
+
+    modal.querySelector('#groupAssignSaveBtn').addEventListener('click', async () => {
+      const saveBtn = modal.querySelector('#groupAssignSaveBtn');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+
+      const toUpsert = [];
+      const toRemoveChannelIds = [];
+
+      modal.querySelectorAll('.group-assign-check').forEach((checkbox) => {
+        const channelId = checkbox.dataset.channelId;
+        const roleSelect = modal.querySelector(`.group-assign-role[data-channel-id="${CSS.escape(channelId)}"]`);
+        if (checkbox.checked) {
+          toUpsert.push({
+            channel_id: channelId,
+            username,
+            role: roleSelect ? roleSelect.value : defaultRole,
+            added_by: state.currentUser.username,
+          });
+        } else if (membershipByChannel.has(channelId)) {
+          toRemoveChannelIds.push(channelId);
+        }
+      });
+
+      try {
+        if (toUpsert.length) {
+          const { error: upsertError } = await supabase
+            .from(CONFIG.SUPABASE.TABLES.MEMBERS)
+            .upsert(toUpsert, { onConflict: 'channel_id,username' });
+          if (upsertError) throw upsertError;
+        }
+        if (toRemoveChannelIds.length) {
+          const { error: deleteError } = await supabase
+            .from(CONFIG.SUPABASE.TABLES.MEMBERS)
+            .delete()
+            .eq('username', username)
+            .in('channel_id', toRemoveChannelIds);
+          if (deleteError) throw deleteError;
+        }
+
+        close();
+        if (state.currentChannel) await loadMembers(state.currentChannel.id);
+        await loadRegisteredUsersList();
+      } catch (e) {
+        console.error('Group assignment error:', e);
+        alert('Could not save group assignments: ' + (e.message || e));
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save';
+      }
+    });
+  }
+
+  function showUserEditForm() {
+    if (DOM.registeredUsersListWrap) DOM.registeredUsersListWrap.classList.add('hidden');
+    DOM.userEditForm.style.display = 'flex';
+  }
+
+  function closeUserEditForm() {
+    DOM.userEditForm.style.display = 'none';
+    DOM.editUsername.value = '';
+    DOM.editDisplayName.value = '';
+    DOM.editNewUsername.value = '';
+    DOM.editPassword.value = '';
+    if (DOM.registeredUsersListWrap) DOM.registeredUsersListWrap.classList.remove('hidden');
+  }
+
+  async function loadUserForEdit(username) {
+    username = normalizeUsername(username);
+    if (!username) { alert('Enter a username to search for.'); return; }
+
+    const { data: roleData, error: roleError } = await supabase
+      .from('user_roles')
+      .select('username, role, display_name')
+      .eq('username', username)
+      .maybeSingle();
+
+    if (roleError || !roleData) {
+      alert(`User "${username}" not found.`);
+      closeUserEditForm();
+      return;
+    }
+
+    DOM.editUsername.value = roleData.username;
+    DOM.editDisplayName.value = roleData.display_name || roleData.username;
+    DOM.editNewUsername.value = roleData.username;
+    DOM.editRole.value = roleData.role;
+    DOM.editPassword.value = '';
+    showUserEditForm();
+  }
+
+  async function callAdminUpdateUserFunction(targetUsername, { newEmail, newPassword } = {}) {
+    if (!newEmail && !newPassword) return { error: null };
+    const { data, error } = await supabase.functions.invoke('admin-update-user', {
+      body: {
+        targetUsername,
+        newEmail: newEmail || undefined,
+        newPassword: newPassword || undefined,
+      },
+    });
+    if (error) return { error };
+    if (data && data.error) return { error: new Error(data.error) };
+    return { error: null };
+  }
+
+  async function updateUserAccount(username, newUsername, newDisplayName, newRole, newPassword) {
+    username = normalizeUsername(username);
+    newUsername = normalizeUsername(newUsername);
+    
+    if (!username) { alert('Current username is required.'); return; }
+    
+    try {
+      if (newUsername && newUsername !== username) {
+        const { error: roleError, count } = await supabase
+          .from('user_roles')
+          .update({
+            username: newUsername,
+            role: newRole,
+            display_name: newDisplayName || newUsername
+          }, { count: 'exact' })
+          .eq('username', username);
+
+        if (roleError) {
+          if (roleError.code === '23505' || /duplicate key/i.test(roleError.message || '')) {
+            throw new Error(`Username "${newUsername}" is already taken by another user.`);
+          }
+          throw roleError;
+        }
+        if (count === 0) {
+          throw new Error(`User "${username}" not found (already renamed or deleted?).`);
+        }
+        
+        const { error: authError } = await callAdminUpdateUserFunction(username, {
+          newEmail: generateEmail(newUsername),
+        });
+        if (authError) throw authError;
+        
+        await supabase.from(CONFIG.SUPABASE.TABLES.MEMBERS)
+          .update({ username: newUsername })
+          .eq('username', username);
+        
+        await supabase.from(CONFIG.SUPABASE.TABLES.MESSAGES)
+          .update({ username: newUsername })
+          .eq('username', username);
+        
+        await supabase.from(CONFIG.SUPABASE.TABLES.STATUSES)
+          .update({ username: newUsername })
+          .eq('username', username);
+        
+        await supabase.from('class_schedule')
+          .update({ teacher_username: newUsername })
+          .eq('teacher_username', username);
+        
+        delete state.roleCache[username];
+        delete state.displayNameCache[username];
+        state.roleCache[newUsername] = newRole;
+        state.displayNameCache[newUsername] = newDisplayName || newUsername;
+
+        if (newPassword && newPassword.length > 0) {
+          const { error: passError } = await callAdminUpdateUserFunction(newUsername, { newPassword });
+          if (passError) throw passError;
+        }
+      } else {
+        const { error: roleError } = await supabase
+          .from('user_roles')
+          .update({ 
+            role: newRole,
+            display_name: newDisplayName || username
+          })
+          .eq('username', username);
+        if (roleError) throw roleError;
+        state.roleCache[username] = newRole;
+        state.displayNameCache[username] = newDisplayName || username;
+
+        if (newPassword && newPassword.length > 0) {
+          const { error: passError } = await callAdminUpdateUserFunction(username, { newPassword });
+          if (passError) throw passError;
+        }
+      }
+      
+      alert('User updated successfully!');
+      closeUserEditForm();
+      DOM.manageUserSearch.value = '';
+      populateRegisteredUsersDatalist();
+      await loadRoleCache();
+      await loadRegisteredUsersList();
+
+    } catch (e) {
+      console.error('Update user error:', e);
+      alert('Could not update user: ' + (e.message || e));
+    }
+  }
+
+  async function callAdminDeleteUserFunction(targetUsername, removeData) {
+    const { data, error } = await supabase.rpc('admin_delete_user', {
+      target_username: targetUsername,
+      remove_data: removeData,
+    });
+    if (error) return { error };
+    return { error: null, data };
+  }
+
+  function openDeleteUserChoiceModal(username) {
+    return new Promise((resolve) => {
+      const modal = document.createElement('div');
+      modal.className = 'modal-overlay';
+      modal.innerHTML = `
+        <div class="modal-card">
+          <h3 class="modal-title"><i class="fas fa-trash" style="color:var(--danger);"></i> Delete "${escapeHtml(username)}"</h3>
+          <p class="modal-body" style="margin-bottom:16px;">
+            This removes their login and role permanently. Choose what happens to the messages, statuses, and schedule entries they created:
+          </p>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <button id="deleteUserKeepDataBtn" class="btn-secondary" style="width:100%;">
+              Delete user only — keep their messages
+            </button>
+            <button id="deleteUserWipeDataBtn" class="btn-danger" style="width:100%;">
+              Delete user and all their chat data
+            </button>
+            <button id="deleteUserCancelBtn" class="btn-secondary" style="width:100%;">
+              Cancel
+            </button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+
+      const cleanup = (result) => { modal.remove(); resolve(result); };
+      modal.querySelector('#deleteUserKeepDataBtn').addEventListener('click', () => cleanup(false));
+      modal.querySelector('#deleteUserWipeDataBtn').addEventListener('click', () => cleanup(true));
+      modal.querySelector('#deleteUserCancelBtn').addEventListener('click', () => cleanup(null));
+      modal.addEventListener('click', (e) => { if (e.target === modal) cleanup(null); });
+    });
+  }
+
+  async function deleteUserAccount(username) {
+    username = normalizeUsername(username);
+    if (!username) { alert('No user selected.'); return; }
+
+    const removeData = await openDeleteUserChoiceModal(username);
+    if (removeData === null) return;
+
+    try {
+      const { error: authError } = await callAdminDeleteUserFunction(username, removeData);
+      if (authError) throw authError;
+      
+      delete state.roleCache[username];
+      delete state.displayNameCache[username];
+      alert(removeData ? 'User and their data deleted successfully!' : 'User deleted — their messages were kept.');
+      closeUserEditForm();
+      DOM.manageUserSearch.value = '';
+      populateRegisteredUsersDatalist();
+      await loadRoleCache();
+      await loadRegisteredUsersList();
+
+    } catch (e) {
+      console.error('Delete user error:', e);
+      alert('Could not delete user: ' + (e.message || e));
+    }
+  }
+
+  // ============================================================
+  // 5g. INACTIVITY DISCONNECTION MANAGEMENT
+  // ============================================================
+  function setupInactivityManager() {
+    cleanupInactivityManager();
+
+    function resetInactivityTimer() {
+      if (state.inactivityTimer) {
+        clearTimeout(state.inactivityTimer);
+        state.inactivityTimer = null;
+      }
+      
+      const needsReconnect = state.isTabFocused && state.currentChannel && (
+        !state.messagesSubscription ||
+        state.messagesSubscription.state === 'closed' ||
+        state.messagesSubscription.state === 'errored'
+      );
+      if (needsReconnect) {
+        console.log("🔄 User active! Reconnecting...");
+        subscribeToMessages(state.currentChannel.id);
+      }
+
+      state.inactivityTimer = setTimeout(() => {
+        if (state.messagesSubscription && state.isTabFocused) {
+          console.log("⏰ 5 min idle. Disconnecting to save resources.");
+          teardownMessagesSubscription();
+          state.isChannelActive = false;
+          console.log("💤 Channel disconnected. Will reconnect when active.");
+        }
+      }, state.INACTIVITY_TIMEOUT);
+    }
+
+    resetInactivityTimer();
+
+    const activityEvents = ['mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+    activityEvents.forEach(event => {
+      window.addEventListener(event, resetInactivityTimer);
+    });
+
+    state.connectionWatchdog = setInterval(() => {
+      if (!state.currentChannel) return;
+
+      const sub = state.messagesSubscription;
+      const isDead = !sub || sub.state === 'closed' || sub.state === 'errored';
+
+      if (isDead && !reconnectTimer) {
+        console.log('🩺 Watchdog: connection unhealthy, reconnecting...', sub ? sub.state : 'no subscription');
+        subscribeToMessages(state.currentChannel.id);
+      }
+    }, 20000);
+
+    state._inactivityCleanup = function() {
+      if (state.inactivityTimer) {
+        clearTimeout(state.inactivityTimer);
+        state.inactivityTimer = null;
+      }
+      if (state.connectionWatchdog) {
+        clearInterval(state.connectionWatchdog);
+        state.connectionWatchdog = null;
+      }
+      activityEvents.forEach(event => {
+        window.removeEventListener(event, resetInactivityTimer);
+      });
+    };
+
+    console.log('⏱️ Inactivity manager initialized');
+  }
+
+  function cleanupInactivityManager() {
+    if (state._inactivityCleanup) {
+      state._inactivityCleanup();
+      state._inactivityCleanup = null;
+    }
+    if (state.inactivityTimer) {
+      clearTimeout(state.inactivityTimer);
+      state.inactivityTimer = null;
+    }
+    console.log('⏱️ Inactivity manager cleaned up');
+  }
+
+  // ============================================================
+  // 5h. TAB FOCUS MANAGER
+  // ============================================================
+  function setupTabFocusManager() {
+    cleanupTabFocusManager();
+
+    if (state.currentChannel) {
+      state.tabChannel = supabase.channel(`tab-focus-${state.currentChannel.id}`);
+      state.tabChannel.subscribe();
+    }
+
+    const handleVisibilityChange = async () => {
+      if (document.hidden) {
+        console.log("🔴 Tab hidden. Keeping message connection alive for background notifications.");
+        state.isTabFocused = false;
+
+        if (state.tabChannel) {
+          await supabase.removeChannel(state.tabChannel);
+          state.tabChannel = null;
+        }
+      } else {
+        console.log("🟢 Tab focused again! Reconnecting...");
+        state.isTabFocused = true;
+        
+        if (!state.tabChannel && state.currentChannel) {
+          state.tabChannel = supabase.channel(`tab-focus-${state.currentChannel.id}`);
+          state.tabChannel.subscribe();
+        }
+        
+        if (!state.messagesSubscription && state.currentChannel) {
+          subscribeToMessages(state.currentChannel.id);
+        }
+
+        if (state.currentUser) {
+          subscribeToChannelListUpdates();
+          try {
+            state.channelPreviews = await loadChannelPreviews(allChannels.map((c) => c.id));
+            renderChatList(allChannels);
+          } catch (e) {
+            console.warn('Failed to refresh chat list previews on refocus:', e);
+          }
+        }
+
+        if (state.currentChannel && !state.isRefreshing) {
+          state.isRefreshing = true;
+          console.log("📥 Catching up on messages missed while tab was inactive...");
+          try {
+            const reopenedChannel = state.currentChannel;
+            if (!state.isAdmin) {
+              const stillMember = await verifyChannelMembership(reopenedChannel.id);
+              if (!stillMember) {
+                await expelFromChannel(reopenedChannel.id);
+                return;
+              }
+            }
+
+            await fetchFreshHistory(state.currentChannel.id);
+            console.log("✅ Catch-up complete!");
+
+            if (isChatDetailVisible(state.currentChannel.id)) {
+              await markDelivered(state.currentChannel.id);
+              await markSeen(state.currentChannel.id);
+            }
+          } catch (e) {
+            console.warn('Catch-up failed:', e);
+          } finally {
+            state.isRefreshing = false;
+          }
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    state._tabFocusCleanup = function() {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (state.tabChannel) {
+        supabase.removeChannel(state.tabChannel);
+        state.tabChannel = null;
+      }
+    };
+
+    console.log('📋 Tab focus manager initialized');
+  }
+
+  function cleanupTabFocusManager() {
+    if (state._tabFocusCleanup) {
+      state._tabFocusCleanup();
+      state._tabFocusCleanup = null;
+    }
+    if (state.tabChannel) {
+      supabase.removeChannel(state.tabChannel);
+      state.tabChannel = null;
+    }
+    console.log('📋 Tab focus manager cleaned up');
+  }
+
+  // ============================================================
+  // SELECT CHANNEL
+  // ============================================================
+  async function selectChannel(channel, { markSeenNow = true } = {}) {
+    if (typeof exitMessageSelection === 'function') exitMessageSelection();
+    chatNeedsInitialPaint = true;
+    if (state.currentChannel && state.currentChannel.id !== channel.id) {
+      clearTypingIndicator(state.currentChannel.id);
+    }
+    state.currentChannel = channel;
+    updateChatEmptyState();
+    highlightActiveChatRow();
+
+    const cachedMessages = getCachedMessages(channel.id);
+    state.messages = cachedMessages || [];
+    renderMessages(true);
+    if (cachedMessages) {
+      console.log(`⚡ Instant load: ${cachedMessages.length} messages from cache`);
+    }
+
+    const messagesReady = loadMessages(channel.id).then(() => subscribeToMessages(channel.id));
+    const membersReady = loadMembers(channel.id);
+    const readsReady = loadMessageReads(channel.id).then(() => subscribeToMessageReads(channel.id));
+    const scheduleReady = loadSchedule(channel.id).then(() => subscribeToSchedule(channel.id));
+
+    await Promise.all([messagesReady, membersReady, readsReady, scheduleReady]);
+
+    updateChatDetailHeader();
+    updateProfileScreen();
+
+    if (markSeenNow) {
+      markDelivered(channel.id).then(() => markSeen(channel.id));
+    } else {
+      refreshUnreadBadges();
+    }
+
+    setupInactivityManager();
+    setupTabFocusManager();
+  }
+
+  function updateChatDetailHeader() {
+    if (!state.currentChannel) return;
+    DOM.chatDetailName.textContent = state.currentChannel.name;
+    updateChatDetailSubtitle();
+  }
+
+  function updateChatDetailSubtitle() {
+    if (!state.currentChannel) return;
+    if (getTypingUsernames(state.currentChannel.id).length > 0) return;
+    if (DOM.chatDetailSub) DOM.chatDetailSub.classList.remove('typing-active');
+    const total = state.currentMembers.length;
+    const online = state.currentMembers.filter((m) => state.onlineUsers.has((m.username || '').toLowerCase())).length;
+    DOM.chatDetailSub.textContent = total ? `${total} member${total === 1 ? '' : 's'} · ${online} online` : '';
+  }
+
+  // ============================================================
+  // 14. LOGIN FLOW
+  // ============================================================
+  async function completeLogin(username, user) {
+    console.log('🔐 Completing login for:', username);
+
+    hideAppLoading();
+    DOM.authCard.classList.add('hidden');
+    DOM.dashboard.classList.remove('hidden');
+
+    screenHistory = [];
+    goToScreen('chats');
+
+    // FIX: Ensure role cache is loaded BEFORE setting user state
+    // This is critical for teachers to be properly detected
+    await loadRoleCache();
+    
+    const role = getRoleFromUsername(username);
+    const key = roleKey(username);
+    const displayName = getDisplayName(username);
+
+    state.currentUser = { id: user.id, username: username, email: user.email, role: role };
+    state.isAdmin = role === CONFIG.AUTH.ROLES.ADMIN;
+    state.isTeacher = role === CONFIG.AUTH.ROLES.TEACHER || state.isAdmin;
+
+    console.log(`👤 User role: ${role}, isTeacher: ${state.isTeacher}, isAdmin: ${state.isAdmin}`);
+
+    try {
+      const { data: ownRoleRow, error: ownRoleError } = await supabase
+        .from('user_roles')
+        .select('id')
+        .eq('username', username)
+        .maybeSingle();
+      state.myUserRoleId = ownRoleError ? null : (ownRoleRow ? ownRoleRow.id : null);
+    } catch (e) {
+      console.warn('Could not capture own user_roles id:', e);
+      state.myUserRoleId = null;
+    }
+
+    DOM.userBadge.textContent = displayName;
+    DOM.userBadge.className = `role-chip role-${key}-chip`;
+
+    setAvatarEl(DOM.settingsAvatar, username, 'lg');
+    DOM.settingsName.textContent = displayName;
+    DOM.settingsEmail.textContent = user.email || generateEmail(username);
+    DOM.settingsDisplayName.textContent = `Username: ${username}`;
+
+    DOM.adminSettingsCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
+    if (DOM.viewCalendarBtn) DOM.viewCalendarBtn.classList.toggle('hidden', !state.isAdmin);
+    DOM.adminProfileSchedule.classList.toggle('hidden', !state.isAdmin);
+
+    if (state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE) {
+      loadRegisteredUsersList();
+    }
+
+    setupPresence();
+    startSessionWatchdog();
+    requestMediaPermissions();
+    await renderChannels();
+    subscribeToChannelListUpdates();
+    startChannelPreviewPolling();
+    startMediaExpiryWatcher();
+    await refreshUnreadBadges();
+    await loadStatuses();
+    
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          console.log('✅ Notification permission granted');
+        }
+      }
+    } catch (e) {
+      console.warn('Notification permission request failed:', e);
+    }
+
+    syncNotificationToggleState();
+
+    console.log('✅ Login complete!');
+  }
+
+  async function handleLogin() {
+    const username = normalizeUsername(DOM.usernameInput.value);
+    const password = DOM.passwordInput.value;
+
+    if (!username || !password) {
+      showError('Enter both your School ID and password.');
+      return;
+    }
+    hideError();
+
+    try {
+      const user = await loginWithUsername(username, password);
+      DOM.passwordInput.value = '';
+      await completeLogin(username, user);
+    } catch (e) {
+      DOM.passwordInput.value = '';
+      showError(e.message || 'Login error. Please try again.');
+    }
+  }
+
+  async function restoreSession() {
+    try {
+      console.log('🔄 Checking for existing session...');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session || !session.user || !session.user.email) {
+        console.log('No active session found');
+        return;
+      }
+
+      const suffix = CONFIG.AUTH.EMAIL_SUFFIX;
+      if (!session.user.email.endsWith(suffix)) {
+        console.log('Session email does not match expected suffix');
+        return;
+      }
+
+      const username = normalizeUsername(session.user.email.slice(0, -suffix.length));
+      console.log('🔄 Restoring session for:', username);
+      await completeLogin(username, session.user);
+    } catch (e) {
+      console.warn('Session restore skipped:', e);
+    } finally {
+      hideAppLoading();
+      if (DOM.dashboard.classList.contains('hidden')) {
+        DOM.authCard.classList.remove('hidden');
+      }
+    }
+  }
+
+  const SESSION_CHECK_INTERVAL = 60000;
+  const SESSION_CHECK_FAILURE_THRESHOLD = 3;
+  let sessionCheckFailures = 0;
+
+  function startSessionWatchdog() {
+    stopSessionWatchdog();
+    sessionCheckFailures = 0;
+    state.sessionWatchdog = setInterval(async () => {
+      if (!state.currentUser) return;
+
+      if (document.hidden || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+        console.log('⏭️ Session watchdog: tab hidden or offline, skipping this check.');
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase.auth.getUser();
+        if (error || !data || !data.user) {
+          sessionCheckFailures += 1;
+          console.warn(`🩺 Session watchdog: check failed (${sessionCheckFailures}/${SESSION_CHECK_FAILURE_THRESHOLD}).`, error);
+
+          if (sessionCheckFailures < SESSION_CHECK_FAILURE_THRESHOLD) return;
+
+          const { error: refreshError } = await supabase.auth.refreshSession();
+          if (refreshError) {
+            console.warn('🚫 Session watchdog: refresh also failed, account/session is really gone — signing out.', refreshError);
+            await forceSignOut('Your account is no longer available. You have been signed out.');
+          } else {
+            console.log('✅ Session watchdog: refresh succeeded — session was just stale, staying signed in.');
+            sessionCheckFailures = 0;
+          }
+        } else {
+          sessionCheckFailures = 0;
+        }
+      } catch (e) {
+        console.warn('Session watchdog check failed (network):', e);
+      }
+    }, SESSION_CHECK_INTERVAL);
+  }
+
+  function stopSessionWatchdog() {
+    if (state.sessionWatchdog) {
+      clearInterval(state.sessionWatchdog);
+      state.sessionWatchdog = null;
+    }
+  }
+
+  async function performSignOutCleanup() {
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch (e) {
+      console.warn('Sign out error:', e);
+    }
+
+    stopSessionWatchdog();
+    teardownMessagesSubscription();
+    teardownReadsSubscription();
+    teardownStatusViewsSubscription();
+    unsubscribeFromChannelListUpdates();
+    stopChannelPreviewPolling();
+    stopMediaExpiryWatcher();
+    if (scheduleSubscription) {
+      supabase.removeChannel(scheduleSubscription);
+      scheduleSubscription = null;
+    }
+    clearScheduleExpiryTimer();
+    unsubscribeFromAllSchedules();
+    teardownPresence();
+    cleanupInactivityManager();
+    cleanupTabFocusManager();
+
+    state.currentUser = null;
+    state.currentChannel = null;
+    state.currentMembers = [];
+    state.isAdmin = false;
+    state.isTeacher = false;
+    state.messages = [];
+    state.statuses = [];
+    state.replyingTo = null;
+    state.isChannelActive = false;
+    state.isTabFocused = true;
+    state.currentSchedule = null;
+    updateLiveButtonState();
+
+    allChannels = [];
+    state.unreadByChannel = {};
+    state.channelPreviews = {};
+    state.messageReads = new Map();
+    state.statusViews = new Map();
+    state.myMemberships = new Map();
+    state.myUserRoleId = null;
+    DOM.navChatsBadge.textContent = '0';
+    DOM.navChatsBadge.classList.add('hidden');
+    if (DOM.navUpdatesBadge) DOM.navUpdatesBadge.classList.add('hidden');
+
+    try {
+      const keys = Object.keys(localStorage);
+      keys.forEach(key => {
+        if (key.startsWith('cached_chat_history_')) {
+          localStorage.removeItem(key);
+        }
+      });
+      console.log('🗑️ Cleared cached messages on logout');
+    } catch (e) {
+      console.warn('Failed to clear cache:', e);
+    }
+
+    DOM.dashboard.classList.add('hidden');
+    closeLiveSession();
+    DOM.authCard.classList.remove('hidden');
+    DOM.usernameInput.value = '';
+    DOM.passwordInput.value = '';
+    hideError();
+    
+    screenHistory = [];
+  }
+
+  async function handleSignOut() {
+    if (!confirm('Sign out?')) return;
+    await performSignOutCleanup();
+  }
+
+  async function forceSignOut(message) {
+    if (!state.currentUser) return;
+    await performSignOutCleanup();
+    if (message) alert(message);
+  }
+
+  // ============================================================
+  // 7a. ADMIN: CREATE TEACHER / STUDENT ACCOUNT
+  // ============================================================
+  async function createUserAccount(username, displayName, role, password) {
+    username = normalizeUsername(username);
+    if (!username) { alert('Enter a username.'); return; }
+    if (!password) { alert('Enter or generate a password.'); return; }
+
+    const email = generateEmail(username);
+
+    try {
+      const { data: signUpData, error: signUpError } = await adminAuthClient.auth.signUp({ email, password });
+      await adminAuthClient.auth.signOut();
+
+      const isAlreadyRegistered =
+        signUpError && /already registered|already exists/i.test(signUpError.message || '');
+
+      if (signUpError && !isAlreadyRegistered) throw signUpError;
+
+      const { error: roleError } = await supabase
+        .from('user_roles')
+        .upsert({ 
+          username, 
+          role, 
+          display_name: displayName || username 
+        }, { onConflict: 'username' });
+      if (roleError) throw roleError;
+
+      const key = username.toLowerCase();
+      state.roleCache[key] = role;
+      state.displayNameCache[key] = displayName || username;
+      populateRegisteredUsersDatalist();
+      renderRegisteredUsersList();
+      DOM.newUserUsername.value = '';
+      DOM.newUserDisplayName.value = '';
+      DOM.newUserPassword.value = '';
+      DOM.newUserRole.value = 'student';
+
+      if (isAlreadyRegistered) {
+        alert(
+          `"${username}" already had an account.\n\n` +
+          `Role set to ${role}, but the password shown here was NOT applied.`
+        );
+      } else if (signUpData && !signUpData.session) {
+        alert(
+          `Account created for "${username}" (${role}).\n\n` +
+          `Turn off "Confirm email" in Supabase → Authentication → Sign In / Providers → Email.`
+        );
+      } else {
+        alert(`Account created for "${username}" (${role}).\n\nPassword: ${password}`);
+      }
+    } catch (e) {
+      console.error('Create user error:', e);
+      alert('Could not create account: ' + (e.message || e));
+    }
+  }
+
+  // ============================================================
+  // 5c. PUSH NOTIFICATIONS
+  // ============================================================
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = atob(base64);
+    return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+  }
+
+  async function syncVapidSubscriptionOnLogin(username) {
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        console.warn('Push notifications not supported on this browser/device.');
+        return { ok: false, reason: 'not_supported' };
+      }
+
+      if (!CONFIG.PUSH || !CONFIG.PUSH.VAPID_PUBLIC_KEY) {
+        console.warn('No VAPID public key configured — push sync skipped.');
+        return { ok: false, reason: 'not_configured' };
+      }
+
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData?.user) {
+        console.warn('Could not get user UUID:', userError);
+        return { ok: false, reason: 'no_auth_user', detail: userError?.message };
+      }
+      
+      const userUuid = userData.user.id;
+      console.log(`🔑 Using user UUID: ${userUuid}`);
+
+      let registration;
+      try {
+        registration = await navigator.serviceWorker.ready;
+      } catch (swErr) {
+        console.error('Service worker never became ready:', swErr);
+        return { ok: false, reason: 'sw_not_ready', detail: swErr?.message };
+      }
+
+      let subscription = await registration.pushManager.getSubscription();
+
+      if (!subscription) {
+        try {
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(CONFIG.PUSH.VAPID_PUBLIC_KEY)
+          });
+        } catch (subErr) {
+          console.error('pushManager.subscribe() failed:', subErr);
+          return { ok: false, reason: 'push_subscribe_failed', detail: subErr?.message };
+        }
+      }
+
+      if (!subscription) {
+        console.warn('Could not create push subscription');
+        return { ok: false, reason: 'push_subscribe_failed' };
+      }
+
+      const subscriptionJson = subscription.toJSON();
+      
+      const { error } = await supabase
+        .from('user_device_tokens')
+        .upsert({
+          user_id: userUuid,
+          subscription_data: subscriptionJson,
+          endpoint: subscriptionJson.endpoint,
+          p256dh: subscriptionJson.keys?.p256dh,
+          auth: subscriptionJson.keys?.auth,
+          username: username,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+
+      if (error) {
+        console.error('Failed to save push subscription to Supabase:', error);
+        return { ok: false, reason: 'db_error', detail: error.message };
+      }
+
+      console.log("✅ VAPID Push Subscription safely stored in Supabase.");
+      return { ok: true };
+
+    } catch (err) {
+      console.error("Failed to sync push configurations:", err);
+      return { ok: false, reason: 'error', detail: err?.message };
+    }
+  }
+
+  async function subscribeToPush() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      console.warn('Push notifications not supported on this browser/device.');
+      return { ok: false, reason: 'not_supported' };
+    }
+    if (!CONFIG.PUSH || !CONFIG.PUSH.VAPID_PUBLIC_KEY) {
+      console.warn('No VAPID public key configured — push notifications disabled.');
+      return { ok: false, reason: 'not_configured' };
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        console.warn('Notification permission not granted.');
+        return { ok: false, reason: 'permission_denied' };
+      }
+
+      return await syncVapidSubscriptionOnLogin(state.currentUser.username);
+    } catch (e) {
+      console.warn('Push subscription failed:', e);
+      return { ok: false, reason: 'error', detail: e?.message };
+    }
+  }
+
+  async function unsubscribeFromPush() {
+    try {
+      if (!('serviceWorker' in navigator)) return;
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        const { data: userData } = await supabase.auth.getUser();
+        if (userData?.user) {
+          await supabase
+            .from('user_device_tokens')
+            .delete()
+            .eq('user_id', userData.user.id);
+        }
+        await subscription.unsubscribe();
+      }
+    } catch (e) {
+      console.warn('Push unsubscribe failed:', e);
+    }
+  }
+
+  const PUSH_FAILURE_MESSAGES = {
+    not_supported: 'Push notifications are not supported on this browser/device.',
+    not_configured: 'Push notifications are not configured for this app yet.',
+    permission_denied: 'Notification permission was not granted. Enable notifications for this site in your browser settings and try again.',
+    no_auth_user: 'Could not verify your account. Try signing out and back in.',
+    sw_not_ready: 'The background service worker never started. Check that sw.js is deployed and registers without errors (see the console).',
+    push_subscribe_failed: 'The browser rejected the push subscription — this usually means the VAPID public key is wrong or missing.',
+    db_error: 'Could not save your notification subscription to the database.',
+    error: 'Something went wrong turning on notifications. Please try again.',
+  };
+
+  async function syncNotificationToggleState() {
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        DOM.notifToggle.checked = false;
+        DOM.notifToggle.disabled = true;
+        return;
+      }
+      DOM.notifToggle.disabled = false;
+
+      if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+        DOM.notifToggle.checked = false;
+        return;
+      }
+
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      DOM.notifToggle.checked = !!subscription;
+    } catch (e) {
+      console.warn('Could not check notification status:', e);
+    }
+  }
+
+  async function setNotificationsEnabled(enabled) {
+    DOM.notifToggle.disabled = true;
+
+    try {
+      if (enabled) {
+        const { ok, reason, detail } = await subscribeToPush();
+
+        DOM.notifToggle.checked = ok;
+        if (!ok) {
+          const base = PUSH_FAILURE_MESSAGES[reason] || PUSH_FAILURE_MESSAGES.error;
+          alert(detail ? `${base}\n\nDetails: ${detail}` : base);
+        }
+      } else {
+        await unsubscribeFromPush();
+        DOM.notifToggle.checked = false;
+      }
+    } finally {
+      DOM.notifToggle.disabled = false;
+    }
+  }
+
+  async function sendVapidNotificationsToOfflineStudents(senderId, messageContent, channelId) {
+    try {
+      if (!CONFIG.PUSH || !CONFIG.PUSH.VAPID_PUBLIC_KEY) {
+        console.log('Push notifications disabled - no VAPID key');
+        return;
+      }
+
+      const { data: members, error: memberError } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MEMBERS)
+        .select('username')
+        .eq('channel_id', channelId)
+        .neq('username', senderId);
+
+      if (memberError) {
+        console.error("Failed to look up channel members:", memberError.message);
+        return;
+      }
+
+      const memberUsernames = (members || []).map((m) => m.username);
+      if (!memberUsernames.length) {
+        console.log('No other channel members to notify');
+        return;
+      }
+
+      const { data: offlineStudents, error: queryError } = await supabase
+        .from('user_device_tokens')
+        .select('username, subscription_data, endpoint')
+        .in('username', memberUsernames);
+
+      if (queryError) {
+        console.error("Failed to lookup student push destinations:", queryError.message);
+        return;
+      }
+
+      if (!offlineStudents || offlineStudents.length === 0) {
+        console.log('No offline students with VAPID subscriptions found');
+        return;
+      }
+
+      const senderName = getDisplayName(senderId);
+      const channelName = state.currentChannel?.name || 'Class';
+
+      const payload = {
+        title: `${senderName} in ${channelName}`,
+        body: messageContent.length > 100 ? messageContent.substring(0, 100) + '…' : messageContent,
+        icon: CONFIG.BRANDING.LOGO.PATH || '/favicon.ico',
+        badge: '/favicon.ico',
+        data: {
+          url: window.location.href,
+          type: 'chat_message',
+          channel_id: channelId,
+          sender: senderId
+        }
+      };
+
+      console.log(`📨 Sending VAPID notifications to ${offlineStudents.length} offline students via Edge Function`);
+
+      const { data, error } = await supabase.functions.invoke('send-push-notifications', {
+        body: {
+          subscriptions: offlineStudents.map(s => s.subscription_data).filter(s => s !== null),
+          payload: payload
+        }
+      });
+
+      if (error) {
+        console.error('Edge Function error:', error);
+        return;
+      }
+
+      console.log('✅ VAPID notifications sent successfully:', data);
+
+    } catch (error) {
+      console.error('Failed to send VAPID notifications:', error);
+    }
+  }
+
+  // ============================================================
+  // 15. EVENT BINDINGS
+  // ============================================================
+  DOM.loginBtn.addEventListener('click', handleLogin);
+  DOM.usernameInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleLogin(); }
+  });
+  DOM.passwordInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleLogin(); }
+  });
+
+  DOM.bottomNav.querySelectorAll('.nav-btn').forEach((btn) => {
+    btn.addEventListener('pointerup', () => goToScreen(btn.dataset.tab));
+  });
+
+  DOM.chatSearchInput.addEventListener('input', () => filterChatList(DOM.chatSearchInput.value));
+
+  DOM.backFromChat.addEventListener('click', () => goToScreen('chats'));
+  DOM.backFromUpdates.addEventListener('click', () => goToScreen('chats'));
+  DOM.chatDetailTitleBtn.addEventListener('click', () => {
+    if (!state.currentChannel) return;
+    updateProfileScreen();
+    goToScreen('profile');
+  });
+
+  DOM.sendMsgBtn.addEventListener('mousedown', (e) => e.preventDefault());
+
+  DOM.sendMsgBtn.addEventListener('click', async () => {
+    const content = DOM.messageInput.value.trim();
+    const file = DOM.fileInput.files[0];
+    if (!content && !file) return;
+    broadcastStoppedTyping();
+
+    DOM.messageInput.value = '';
+    DOM.fileInput.value = '';
+    DOM.filePreview.classList.add('hidden');
+
+    const sent = await sendMessage(content, file);
+
+    if (!sent && content) {
+      DOM.messageInput.value = content;
+    }
+
+    if (state.inactivityTimer) {
+      clearTimeout(state.inactivityTimer);
+      state.inactivityTimer = null;
+    }
+  });
+
+  DOM.messageInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      DOM.sendMsgBtn.click();
+    }
+    if (state.inactivityTimer) {
+      clearTimeout(state.inactivityTimer);
+      state.inactivityTimer = null;
+    }
+  });
+
+  DOM.messageInput.addEventListener('input', () => {
+    broadcastTyping();
+  });
+
+  DOM.messageInput.addEventListener('focus', () => {
+    if (state.inactivityTimer) {
+      clearTimeout(state.inactivityTimer);
+      state.inactivityTimer = null;
+    }
+  });
+
+  DOM.postStatusBtn.addEventListener('click', () => openStatusComposer());
+  if (DOM.postStatusFab) DOM.postStatusFab.addEventListener('click', () => openStatusComposer());
+
+  DOM.joinLiveBtn.addEventListener('click', () => {
+    if (!CONFIG.FEATURES.ENABLE_VIDEO_CONFERENCE) { alert('Video conferencing is disabled.'); return; }
+    if (getLiveButtonMode() === 'hidden') { return; }
+    joinLiveClass();
+  });
+
+  if (DOM.viewCalendarBtn) {
+    DOM.viewCalendarBtn.addEventListener('click', () => {
+      goToScreen('calendar');
+      subscribeToAllSchedules();
+      loadAllSchedules();
+    });
+  }
+
+  if (DOM.backFromCalendar) {
+    DOM.backFromCalendar.addEventListener('click', () => {
+      unsubscribeFromAllSchedules();
+      goToScreen('settings');
+    });
+  }
+
+  DOM.closeVideoBtn.addEventListener('click', () => {
+    if (state.activeCallIsHost) {
+      endLiveSessionForEveryone();
+    } else {
+      closeLiveSession();
+    }
+  });
+
+  if (DOM.endLiveSessionBtn) {
+    DOM.endLiveSessionBtn.addEventListener('click', () => endLiveSessionForEveryone());
+  }
+
+  // FIX: root cause of "user can't see the buttons for minimizing/
+  // maximizing in live meeting so they can text in group when needed" —
+  // #minimizeVideoBtn didn't exist before, so there was nothing to wire
+  // up. This just flips state.videoMinimized via setVideoMinimized() —
+  // same button doubles as "maximize" once minimized (see its icon swap
+  // in setVideoMinimized()) — leaving the call itself completely alone.
+  if (DOM.minimizeVideoBtn) {
+    DOM.minimizeVideoBtn.addEventListener('click', () => {
+      setVideoMinimized(!state.videoMinimized);
+    });
+  }
+
+  DOM.fileInput.addEventListener('change', function() {
+    const file = this.files[0];
+    if (!file) { DOM.filePreview.classList.add('hidden'); return; }
+    if (!isCompressibleImageType(file) && file.size > CONFIG.UPLOAD.MAX_FILE_SIZE) {
+      alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
+      this.value = '';
+      DOM.filePreview.classList.add('hidden');
+      return;
+    }
+    DOM.filePreviewName.textContent = file.name;
+    DOM.filePreview.classList.remove('hidden');
+    
+    if (state.inactivityTimer) {
+      clearTimeout(state.inactivityTimer);
+      state.inactivityTimer = null;
+    }
+  });
+
+  DOM.filePreviewRemove.addEventListener('click', () => {
+    DOM.fileInput.value = '';
+    DOM.filePreview.classList.add('hidden');
+  });
+
+  async function handleCreateChannel() {
+    const name = prompt('Enter new channel name:');
+    if (name) await createChannel(name);
+  }
+  DOM.createChannelBtn.addEventListener('click', handleCreateChannel);
+
+  function toggleAdminPanel(toggleBtn, panelEl) {
+    if (!toggleBtn || !panelEl) return;
+    const willShow = panelEl.classList.contains('hidden');
+    panelEl.classList.toggle('hidden', !willShow);
+    toggleBtn.setAttribute('aria-expanded', willShow ? 'true' : 'false');
+  }
+  if (DOM.addUserToggleBtn) {
+    DOM.addUserToggleBtn.addEventListener('click', () => {
+      toggleAdminPanel(DOM.addUserToggleBtn, DOM.adminCreateUserCard);
+    });
+  }
+  if (DOM.manageUsersToggleBtn) {
+    DOM.manageUsersToggleBtn.addEventListener('click', () => {
+      toggleAdminPanel(DOM.manageUsersToggleBtn, DOM.adminUserManagementCard);
+    });
+  }
+
+  DOM.generatePasswordBtn.addEventListener('click', () => {
+    DOM.newUserPassword.value = generatePassword();
+  });
+  DOM.createUserBtn.addEventListener('click', () => {
+    createUserAccount(
+      DOM.newUserUsername.value.trim(),
+      DOM.newUserDisplayName.value.trim(),
+      DOM.newUserRole.value,
+      DOM.newUserPassword.value.trim()
+    );
+  });
+
+  DOM.loadUserBtn.addEventListener('click', () => {
+    loadUserForEdit(DOM.manageUserSearch.value);
+  });
+
+  if (DOM.closeUserEditBtn) {
+    DOM.closeUserEditBtn.addEventListener('click', () => {
+      closeUserEditForm();
+    });
+  }
+
+  DOM.manageUserSearch.addEventListener('input', () => {
+    renderRegisteredUsersList();
+  });
+
+  DOM.updateUserBtn.addEventListener('click', async () => {
+    const currentUser = DOM.editUsername.value;
+    const newUser = DOM.editNewUsername.value || currentUser;
+    const displayName = DOM.editDisplayName.value || currentUser;
+    const role = DOM.editRole.value;
+    const password = DOM.editPassword.value;
+
+    DOM.updateUserBtn.disabled = true;
+    try {
+      await updateUserAccount(currentUser, newUser, displayName, role, password);
+    } finally {
+      DOM.updateUserBtn.disabled = false;
+    }
+  });
+
+  DOM.deleteUserBtn.addEventListener('click', () => {
+    deleteUserAccount(DOM.editUsername.value);
+  });
+
+  DOM.manageUserGroupsBtn.addEventListener('click', () => {
+    openGroupAssignmentModal(DOM.editUsername.value);
+  });
+
+  DOM.setScheduleBtn.addEventListener('click', async () => {
+    const sameTime = !DOM.scheduleSameTimeCheckbox || DOM.scheduleSameTimeCheckbox.checked;
+    const defaultStart = DOM.scheduleStartTimeInput.value;
+    const defaultDuration = parseInt(DOM.scheduleDurationInput.value, 10);
+
+    const occurrences = Array.from(scheduleSelectedDates).sort().map((dateKey) => {
+      if (sameTime) return { dateKey, start: defaultStart, duration: defaultDuration };
+      const override = schedulePerDateOverrides.get(dateKey);
+      return {
+        dateKey,
+        start: override ? override.start : defaultStart,
+        duration: override ? override.duration : defaultDuration,
+      };
+    });
+
+    const ok = await setClassSchedule(DOM.scheduleTeacherInput.value.trim(), occurrences);
+    if (!ok) return;
+    DOM.scheduleTeacherInput.value = '';
+    DOM.scheduleStartTimeInput.value = '';
+    DOM.scheduleDurationInput.value = '45';
+    if (DOM.scheduleSameTimeCheckbox) DOM.scheduleSameTimeCheckbox.checked = true;
+    resetScheduleSelection();
+    renderScheduleCalendar();
+    renderScheduleSelectedDates();
+    renderSchedulePerDateList();
+    updateScheduleEndPreview();
+  });
+
+  if (DOM.scheduleCalPrevBtn) {
+    DOM.scheduleCalPrevBtn.addEventListener('click', () => {
+      scheduleCalendarViewMonth = new Date(scheduleCalendarViewMonth.getFullYear(), scheduleCalendarViewMonth.getMonth() - 1, 1);
+      renderScheduleCalendar();
+    });
+  }
+  if (DOM.scheduleCalNextBtn) {
+    DOM.scheduleCalNextBtn.addEventListener('click', () => {
+      scheduleCalendarViewMonth = new Date(scheduleCalendarViewMonth.getFullYear(), scheduleCalendarViewMonth.getMonth() + 1, 1);
+      renderScheduleCalendar();
+    });
+  }
+
+  if (DOM.scheduleStartTimeInput && DOM.scheduleDurationInput) {
+    ['input', 'change'].forEach((evt) => {
+      DOM.scheduleStartTimeInput.addEventListener(evt, () => {
+        updateScheduleEndPreview();
+        renderSchedulePerDateList();
+      });
+      DOM.scheduleDurationInput.addEventListener(evt, () => {
+        updateScheduleEndPreview();
+        renderSchedulePerDateList();
+      });
+    });
+  }
+
+  if (DOM.scheduleSameTimeCheckbox) {
+    DOM.scheduleSameTimeCheckbox.addEventListener('change', () => renderSchedulePerDateList());
+  }
+
+  DOM.assignStudentBtn.addEventListener('click', async () => {
+    const username = DOM.assignStudentInput.value.trim();
+    const role = DOM.assignRoleSelect.value;
+    await addMemberToChannel(username, role);
+    DOM.assignStudentInput.value = '';
+  });
+
+  DOM.updateDescBtn.addEventListener('click', () => {
+    if (!state.currentChannel) return;
+    updateChannelDescription(state.currentChannel.id, DOM.channelDescInput.value.trim());
+  });
+
+  DOM.channelDescInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      DOM.updateDescBtn.click();
+    }
+  });
+
+  DOM.backFromMembers.addEventListener('click', () => goToScreen('profile'));
+  DOM.memberSearchInput.addEventListener('input', () => renderMembers());
+  DOM.profileMembersBtn.addEventListener('click', () => {
+    if (!state.currentChannel) { alert('Select a channel first.'); return; }
+    renderMembers();
+    goToScreen('members');
+  });
+
+  DOM.backFromProfile.addEventListener('click', () => goToScreen('chatDetail'));
+  DOM.profileSeeAllMedia.addEventListener('click', (e) => {
+    e.preventDefault();
+    DOM.sharedMediaGrid.dataset.showAll = 'true';
+    updateProfileScreen();
+  });
+
+  DOM.sharedMediaGrid.addEventListener('click', (e) => {
+    const img = e.target.closest('img[data-media-url]');
+    if (img) {
+      const idx = parseInt(img.dataset.mediaIndex, 10);
+      openImageLightbox(img.dataset.mediaUrl, state.sharedMediaUrls, Number.isNaN(idx) ? undefined : idx);
+    }
+  });
+
+  DOM.closeStatusModal.addEventListener('click', closeStatusViewer);
+  DOM.statusModal.addEventListener('click', (e) => {
+    if (Date.now() < suppressStatusOpenClicksUntil) return;
+    if (e.target === DOM.statusModal) closeStatusViewer();
+  });
+  DOM.statusPauseBtn.addEventListener('click', toggleStatusPause);
+
+  if (DOM.statusViewerBody) {
+    DOM.statusViewerBody.addEventListener('click', (e) => {
+      if (Date.now() < suppressStatusOpenClicksUntil) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      const sharedLink = e.target.closest('a.msg-link, a.msg-link-preview');
+      if (sharedLink) {
+        e.preventDefault();
+        e.stopPropagation();
+        openExternalLink(sharedLink.getAttribute('href'));
+      }
+    });
+  }
+
+  DOM.notifToggle.addEventListener('change', () => setNotificationsEnabled(DOM.notifToggle.checked));
+  DOM.darkToggle.addEventListener('change', () => {
+    document.body.classList.toggle('theme-dark', DOM.darkToggle.checked);
+    try { localStorage.setItem('orbit-theme', DOM.darkToggle.checked ? 'dark' : 'light'); } catch (e) { /* ignore */ }
+  });
+  DOM.darkToggle.checked = document.body.classList.contains('theme-dark');
+
+  DOM.signOutBtn.addEventListener('click', handleSignOut);
+
+  // ============================================================
+  // 16. BOOTSTRAP
+  // ============================================================
+  setupLogos();
+
+  if (history.replaceState) {
+    history.replaceState({ orbitScreen: null }, '', location.pathname + location.search);
+  }
+
+  window.addEventListener('popstate', handleBackNavigation);
+
+  restoreSession();
+  console.log('✅ Application initialized successfully.');
+
+})();
