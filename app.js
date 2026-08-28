@@ -262,6 +262,7 @@
     videoIframe: $('videoIframe'),
     videoToolbar: $('videoToolbar'),
     endLiveSessionBtn: $('endLiveSessionBtn'),
+    returnToChatBtn: $('returnToChatBtn'),
     minimizeVideoBtn: $('minimizeVideoBtn'),
     videoResizeHandle: $('videoResizeHandle'),
 
@@ -5042,6 +5043,7 @@
     state.activeCallScheduleId = null;
     setVideoMinimized(false);
     if (DOM.endLiveSessionBtn) DOM.endLiveSessionBtn.classList.add('hidden');
+    if (DOM.returnToChatBtn) DOM.returnToChatBtn.classList.add('hidden');
     // FIX: root cause of "when the meeting is ended by teacher or admin it
     // should show the group chat screen instead of meeting ended screen"
     // (the other half of it) — hiding #videoContainer above already
@@ -5096,6 +5098,26 @@
   // stops throwing — which is itself the signal: any successful read means
   // PlugNmeet just sent us home, so close the overlay and let the group
   // chat underneath show through, same as any other end-of-call path.
+  //
+  // FIX: root cause of "screen is still at [PlugNmeet's own 'Disconnected /
+  // The meeting has ended'] page when the meeting is ended by any teacher
+  // or admin" — even with logout_url configured correctly, this can still
+  // happen, and it's not a bug in this app. Confirmed by reading PlugNmeet's
+  // client source further: it actually has TWO separate disconnect
+  // handlers. A graceful one (NATS "SESSION_ENDED" broadcast — e.g.
+  // someone pressing PlugNmeet's own leave/end control) runs
+  // ConnectNats.ts's endSession(), which shows the "Disconnected" screen
+  // AND schedules the logout_url redirect 3s later. But a raw one (the
+  // underlying LiveKit connection just dropping — reason ROOM_DELETED,
+  // SERVER_SHUTDOWN, STATE_MISMATCH, etc. — see ConnectLivekit.ts's
+  // onDisconnected) shows the exact same "Disconnected" screen text but has
+  // NO redirect logic at all — that code path never reads logout_url,
+  // so nothing sends the iframe anywhere and it just sits there. Which of
+  // the two happens depends on things outside this app (how the session
+  // actually ends server-side, network conditions, the PlugNmeet server's
+  // own version), so this app can't guarantee logout_url always fires —
+  // #returnToChatBtn (see its comment in index.html) is the guaranteed
+  // fallback for exactly that gap.
   const PLUGNMEET_SESSION_ENDED_MARKER = 'liveSessionEnded';
 
   function handleVideoIframeLoad() {
@@ -5183,6 +5205,12 @@
       // started the session does not get it. See endLiveSessionForEveryone().
       DOM.endLiveSessionBtn.classList.toggle('hidden', !(state.isAdmin && state.activeCallScheduleId));
     }
+    // FIX: root cause of getting stuck on PlugNmeet's own "meeting has
+    // ended" screen — unlike #endLiveSessionBtn, this isn't admin-only or
+    // tied to a schedule: anyone in a call can end up looking at that
+    // screen, so everyone gets the recovery button. See its comment in
+    // index.html and the click handler below.
+    if (DOM.returnToChatBtn) DOM.returnToChatBtn.classList.remove('hidden');
 
     clearLiveSessionAutoCloseTimer();
     if (state.currentSchedule) {
@@ -6586,13 +6614,29 @@
   // FIX: root cause of "why is there a cross button when there's a
   // meeting end button available" (per-request follow-up) — the outer X
   // button is gone now. There's no separate "leave my own view" control
-  // in this toolbar at all; leaving a call happens through PlugNmeet's
-  // own leave/end control inside the iframe (see the "PLUGNMEET
-  // SESSION-ENDED DETECTION" section below for how the app notices that
-  // and returns to the chat automatically). "End for Everyone" remains
-  // the one explicit, admin-only control in this outer toolbar.
+  // in this toolbar at all; leaving a call is meant to happen through
+  // PlugNmeet's own leave/end control inside the iframe (see the
+  // "PLUGNMEET SESSION-ENDED DETECTION" section below for how the app
+  // notices that and returns to the chat automatically). "End for
+  // Everyone" remains the one explicit, admin-only control in this outer
+  // toolbar.
   if (DOM.endLiveSessionBtn) {
     DOM.endLiveSessionBtn.addEventListener('click', () => endLiveSessionForEveryone());
+  }
+
+  // FIX: root cause of "screen is still at [PlugNmeet's own 'meeting has
+  // ended'] page when the meeting is ended by any teacher or admin" —
+  // PlugNmeet's own logout_url redirect (above) turns out not to fire on
+  // every disconnect path it has (see the detailed comment above
+  // PLUGNMEET_SESSION_ENDED_MARKER), so it can't be relied on as the ONLY
+  // way back to the chat. #returnToChatBtn is a plain, always-works
+  // fallback: it never has to read anything from inside PlugNmeet's
+  // (possibly stuck) iframe — it just runs the same closeLiveSession()
+  // this app already uses for every other end-of-call path. It only ends
+  // the call for the person clicking it, same as PlugNmeet's own
+  // leave/end control would; it does not affect anyone else's call.
+  if (DOM.returnToChatBtn) {
+    DOM.returnToChatBtn.addEventListener('click', () => closeLiveSession());
   }
 
   // See the "PLUGNMEET SESSION-ENDED DETECTION" section (11b) above —
