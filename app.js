@@ -2154,10 +2154,26 @@
   // RENDER MESSAGES
   // ============================================================
   function messageSignature(msg) {
+    // FIX: root cause of "media that's aged past the 168h auto-expiry
+    // window keeps showing as a live image/video/file instead of the
+    // 'no longer available' placeholder" — renderMessages() below only
+    // rebuilds a message's DOM node when its signature changes (see the
+    // `node.dataset.sig === signature` check). Expiry is purely a function
+    // of "how much time has passed since created_at", so a message that
+    // was already on screen before it expired had an identical signature
+    // before and after crossing the 7-day line — nothing about the
+    // message itself changed, so the diff considered it unchanged and
+    // left the stale (now actually-expired) media bubble in place
+    // indefinitely, even once the underlying file was gone. Folding
+    // isMessageMediaExpired(msg) into the signature means the moment that
+    // boolean flips, the signature changes too, so the next renderMessages()
+    // pass (see startMediaExpiryWatcher() below, which exists specifically
+    // to make sure a pass actually happens) rebuilds this message and shows
+    // the placeholder.
     return JSON.stringify([
       msg.content, msg.file_url, msg.reply_to, msg.reply_username, msg.reply_content,
       msg.username, msg.created_at, msg.seen_at, msg.delivered_at, msg.isPending,
-      msg.deleted_at, msg.deleted_by
+      msg.deleted_at, msg.deleted_by, isMessageMediaExpired(msg)
     ]);
   }
 
@@ -2309,6 +2325,47 @@
     return (Date.now() - new Date(msg.created_at).getTime()) >= MESSAGE_MEDIA_EXPIRY_MS;
   }
 
+  // FIX: the placeholder text below used to read "Can't view this media
+  // because it's no longer on your device" — the media was never on the
+  // viewer's device to begin with (it lived in Supabase Storage), so that
+  // wording was actively misleading about what happened. It's the file
+  // itself that's gone after the 168h retention window, so say that.
+  const MESSAGE_MEDIA_EXPIRED_TEXT = "The file is no longer available for downloading";
+
+  // FIX: root cause of "the expired-media message never shows up, media
+  // just silently stays broken" — isMessageMediaExpired() is a pure
+  // function of the current time vs. created_at, but nothing was ever
+  // re-evaluating it *as time passed*. renderMessages() only runs when
+  // something else changes the message list (a new message arrives, a
+  // read receipt updates, a reconnect happens, etc.), so a chat opened
+  // and then just left sitting (or an already-rendered message nobody
+  // touches again) would never get re-checked once the 7-day mark
+  // actually passed — the DOM kept showing the same image/video/file link
+  // it always had, now pointing at a deleted file, forever. This timer
+  // exists purely to make sure a renderMessages() pass actually happens
+  // periodically while a chat is open, so the messageSignature() change
+  // above (which now flips once isMessageMediaExpired(msg) flips) has a
+  // chance to take effect close to when it actually should. A 60s tick is
+  // more than fine against a 7-day window.
+  const MEDIA_EXPIRY_WATCH_INTERVAL = 60 * 1000;
+  let mediaExpiryWatcherTimer = null;
+
+  function startMediaExpiryWatcher() {
+    stopMediaExpiryWatcher();
+    mediaExpiryWatcherTimer = setInterval(() => {
+      if (!state.currentChannel || !state.messages.length) return;
+      if (!DOM.screenChatDetail || DOM.screenChatDetail.classList.contains('hidden')) return;
+      renderMessages();
+    }, MEDIA_EXPIRY_WATCH_INTERVAL);
+  }
+
+  function stopMediaExpiryWatcher() {
+    if (mediaExpiryWatcherTimer) {
+      clearInterval(mediaExpiryWatcherTimer);
+      mediaExpiryWatcherTimer = null;
+    }
+  }
+
   function buildMessageEl(msg, signature, pinToBottom, skipEnterAnim) {
     const isMine = msg.username === state.currentUser?.username;
     const wrap = document.createElement('div');
@@ -2351,7 +2408,7 @@
         const inlineTicks = ticksMarkup ? `<span class="msg-inline-ticks">${ticksMarkup}</span>` : '';
         bubbleHtml += `
           <div class="msg-bubble msg-media-expired">
-            <i class="fas fa-file-circle-xmark"></i> Can't view this media because it's no longer on your device${inlineTicks}
+            <i class="fas fa-file-circle-xmark"></i> ${escapeHtml(MESSAGE_MEDIA_EXPIRED_TEXT)}${inlineTicks}
           </div>
         `;
       } else if (isImageFile(msg.file_url)) {
@@ -5607,6 +5664,7 @@
     await renderChannels();
     subscribeToChannelListUpdates();
     startChannelPreviewPolling();
+    startMediaExpiryWatcher();
     await refreshUnreadBadges();
     await loadStatuses();
     
@@ -5734,6 +5792,7 @@
     teardownStatusViewsSubscription();
     unsubscribeFromChannelListUpdates();
     stopChannelPreviewPolling();
+    stopMediaExpiryWatcher();
     if (scheduleSubscription) {
       supabase.removeChannel(scheduleSubscription);
       scheduleSubscription = null;
