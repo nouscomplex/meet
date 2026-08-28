@@ -134,7 +134,6 @@
     myUserRoleId: null,
     currentSchedule: null,
     activeCallScheduleId: null,
-    activeCallIsHost: false,
     lastTypingBroadcastAt: 0,
   };
 
@@ -263,7 +262,6 @@
     videoIframe: $('videoIframe'),
     videoToolbar: $('videoToolbar'),
     endLiveSessionBtn: $('endLiveSessionBtn'),
-    closeVideoBtn: $('closeVideoBtn'),
     minimizeVideoBtn: $('minimizeVideoBtn'),
     videoResizeHandle: $('videoResizeHandle'),
 
@@ -5042,7 +5040,6 @@
     DOM.videoIframe.src = '';
     state.videoActive = false;
     state.activeCallScheduleId = null;
-    state.activeCallIsHost = false;
     setVideoMinimized(false);
     if (DOM.endLiveSessionBtn) DOM.endLiveSessionBtn.classList.add('hidden');
     // FIX: root cause of "when the meeting is ended by teacher or admin it
@@ -5058,6 +5055,60 @@
     // small, non-blocking banner that fades on its own, so landing back
     // on the chat is immediate and the notice doesn't gate it.
     if (message && wasActive) showToast(message);
+  }
+
+  // ============================================================
+  // 11b. PLUGNMEET SESSION-ENDED DETECTION
+  // ============================================================
+  // FIX: root cause of "by pressing the plugnmeet red button [...] when it
+  // shows the meeting has ended it should return into group instead of
+  // being sticky on the meeting ended screen" — leaving now happens
+  // through PlugNmeet's OWN leave/end control, inside its iframe (see the
+  // removal of #closeVideoBtn above). That's a cross-origin page we have
+  // no DOM access to at all, so the app previously had no way to know
+  // that happened — #videoContainer just stayed open, full-screen, over
+  // whatever PlugNmeet renders once you disconnect (its own "the session
+  // has ended" placeholder), with nothing to bring the chat back.
+  //
+  // PlugNmeet's own client does navigate itself away after a disconnect —
+  // confirmed by reading its source (mynaparrot/plugNmeet-client,
+  // ConnectNats.ts): a few seconds after ANY disconnect (room ended, kicked,
+  // or the participant just clicking PlugNmeet's own leave button), it runs
+  // `window.location.href = meta.logoutUrl` — but only if a `logout_url`
+  // was set in the room's metadata when the room was created. That happens
+  // in the `plugnmeet-token` Supabase Edge Function (per the comment in
+  // config.js), which isn't one of the files this app ships client-side,
+  // so it has to be set there, not here. Add `logout_url` alongside the
+  // existing `room_features`/ROOM_SETTINGS metadata sent to PlugNmeet's
+  // Create Room API, pointing at a URL on THIS app's own origin containing
+  // the PLUGNMEET_SESSION_ENDED_MARKER below — e.g.
+  // `${window.location.origin}${window.location.pathname}?liveSessionEnded=1`.
+  // (Docs: https://www.plugnmeet.org/docs/api/room/create — `metadata.logout_url`,
+  // "URL to redirect users after the meeting or session ends.")
+  //
+  // Once that's set server-side, this is what actually detects it
+  // happened: #videoIframe navigating itself to `logout_url` is a real
+  // top-level navigation of the iframe's own window, which fires a normal
+  // `load` event we CAN see from the parent page — we just can't read
+  // WHERE it navigated to while it's still on PlugNmeet's own origin
+  // (meet.nouscomplex.com), since reading a cross-origin iframe's
+  // location throws. The moment it redirects to our OWN origin, that read
+  // stops throwing — which is itself the signal: any successful read means
+  // PlugNmeet just sent us home, so close the overlay and let the group
+  // chat underneath show through, same as any other end-of-call path.
+  const PLUGNMEET_SESSION_ENDED_MARKER = 'liveSessionEnded';
+
+  function handleVideoIframeLoad() {
+    if (!state.videoActive) return; // already closed on our side — e.g. the src='' from closeLiveSession() itself firing 'load'
+    let href;
+    try {
+      href = DOM.videoIframe.contentWindow && DOM.videoIframe.contentWindow.location.href;
+    } catch (e) {
+      return; // still cross-origin on the PlugNmeet room itself — normal, call is still going
+    }
+    if (href && href.includes(PLUGNMEET_SESSION_ENDED_MARKER)) {
+      closeLiveSession('This live session has ended.');
+    }
   }
 
   async function endLiveSessionForEveryone() {
@@ -5125,20 +5176,12 @@
     DOM.videoIframe.src = liveUrl;
     state.videoActive = true;
     state.activeCallScheduleId = state.currentSchedule ? state.currentSchedule.id : null;
-    state.activeCallIsHost = mode === 'start';
     updateLiveButtonState();
     if (DOM.endLiveSessionBtn) {
-      // FIX: root cause of "why is there a cross button when there's a
-      // meeting end button available" (the other half — see closeVideoBtn
-      // below) — this used to be admin-only (`state.isAdmin`), so the
-      // TEACHER a session was actually scheduled for never saw "End for
-      // Everyone" at all, only an admin who happened to also be present.
-      // With X now only ever leaving the current viewer's own view, the
-      // host needs their own way to end it for the class — so this now
-      // also shows for whoever actually started the call
-      // (state.activeCallIsHost, set right above from getLiveButtonMode()
-      // === 'start'), on top of the existing admin override.
-      DOM.endLiveSessionBtn.classList.toggle('hidden', !((state.isAdmin || state.activeCallIsHost) && state.activeCallScheduleId));
+      // Admin-only, by design: "End for Everyone" ends the class for the
+      // whole group, so only an admin sees/can use it — a teacher who
+      // started the session does not get it. See endLiveSessionForEveryone().
+      DOM.endLiveSessionBtn.classList.toggle('hidden', !(state.isAdmin && state.activeCallScheduleId));
     }
 
     clearLiveSessionAutoCloseTimer();
@@ -6541,24 +6584,22 @@
   }
 
   // FIX: root cause of "why is there a cross button when there's a
-  // meeting end button available" — for a host, X used to silently do the
-  // exact same thing as "End for Everyone" (branching on
-  // state.activeCallIsHost below), just with a plainer icon and no label
-  // explaining that's what it was about to do. Worse, "End for Everyone"
-  // was admin-only (see the FIX above on DOM.endLiveSessionBtn), so a
-  // TEACHER host had no other way to just leave their own view — X was
-  // their ONLY control, and it always ended the class for everyone,
-  // confirm dialog or not. X now always does one thing, for anyone: leave
-  // this viewer's own view of the call. Ending it for the whole group is
-  // exclusively #endLiveSessionBtn's job now — the two buttons are
-  // visually distinct (a plain circular X vs. a labeled red pill) because
-  // they're actually different actions.
-  DOM.closeVideoBtn.addEventListener('click', () => {
-    closeLiveSession();
-  });
-
+  // meeting end button available" (per-request follow-up) — the outer X
+  // button is gone now. There's no separate "leave my own view" control
+  // in this toolbar at all; leaving a call happens through PlugNmeet's
+  // own leave/end control inside the iframe (see the "PLUGNMEET
+  // SESSION-ENDED DETECTION" section below for how the app notices that
+  // and returns to the chat automatically). "End for Everyone" remains
+  // the one explicit, admin-only control in this outer toolbar.
   if (DOM.endLiveSessionBtn) {
     DOM.endLiveSessionBtn.addEventListener('click', () => endLiveSessionForEveryone());
+  }
+
+  // See the "PLUGNMEET SESSION-ENDED DETECTION" section (11b) above —
+  // handleVideoIframeLoad() is what actually closes #videoContainer once
+  // PlugNmeet redirects the iframe home after a disconnect.
+  if (DOM.videoIframe) {
+    DOM.videoIframe.addEventListener('load', handleVideoIframeLoad);
   }
 
   // FIX: root cause of "user can't see the buttons for minimizing/
