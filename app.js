@@ -261,9 +261,11 @@
     sendMsgBtn: $('sendMsgBtn'),
     videoContainer: $('videoContainer'),
     videoIframe: $('videoIframe'),
+    videoToolbar: $('videoToolbar'),
     endLiveSessionBtn: $('endLiveSessionBtn'),
     closeVideoBtn: $('closeVideoBtn'),
     minimizeVideoBtn: $('minimizeVideoBtn'),
+    videoResizeHandle: $('videoResizeHandle'),
 
     backFromMembers: $('backFromMembers'),
     memberSearchInput: $('memberSearchInput'),
@@ -4858,6 +4860,151 @@
         ? 'Expand call'
         : 'Minimize call (keep chatting)';
     }
+    if (!state.videoMinimized) {
+      // FIX: going back to full screen (or the call just isn't minimized
+      // yet) — drop any inline left/top/width/height a previous drag or
+      // resize left behind (see applyPipRect() below). Those are set via
+      // .style, which beats every stylesheet rule including the base
+      // .video-panel's `inset: 0`, so without this the panel would stay
+      // wherever it was last dragged/sized instead of actually filling
+      // the screen again. Re-minimizing after this always starts back at
+      // the default corner spot/size from .video-panel-minimized in
+      // styles.css, not wherever it was left.
+      clearPipInlineRect();
+      cancelPipGesture();
+    }
+  }
+
+  // ============================================================
+  // 11a. VIDEO PIP DRAG + RESIZE (minimized call window)
+  // ============================================================
+  // FIX: root cause of "why is the minimized meeting not movable and
+  // resizable" — minimizing (setVideoMinimized() above) only ever gave
+  // the pip ONE fixed spot and ONE fixed size, driven entirely by the
+  // .video-panel-minimized CSS rule (top:78px/right:14px, 176x136) —
+  // nothing here ever listened for a pointer gesture on it. The pip is
+  // still positioned/sized by that CSS rule by default; dragging or
+  // resizing just layers inline left/top/width/height on top of it
+  // (cleared again in setVideoMinimized() above whenever the call leaves
+  // the minimized state), clamped to stay inside this chat screen and
+  // above a sane minimum size so the toolbar buttons stay tappable.
+  const PIP_MIN_WIDTH = 140;
+  const PIP_MIN_HEIGHT = 110;
+  const PIP_EDGE_MARGIN = 8;
+
+  function clampPipRect(left, top, width, height) {
+    const bounds = DOM.screenChatDetail
+      ? DOM.screenChatDetail.getBoundingClientRect()
+      : { width: window.innerWidth, height: window.innerHeight };
+    const maxWidth = Math.max(PIP_MIN_WIDTH, bounds.width - PIP_EDGE_MARGIN * 2);
+    const maxHeight = Math.max(PIP_MIN_HEIGHT, bounds.height - PIP_EDGE_MARGIN * 2);
+    width = Math.max(PIP_MIN_WIDTH, Math.min(width, maxWidth));
+    height = Math.max(PIP_MIN_HEIGHT, Math.min(height, maxHeight));
+    left = Math.max(PIP_EDGE_MARGIN, Math.min(left, bounds.width - width - PIP_EDGE_MARGIN));
+    top = Math.max(PIP_EDGE_MARGIN, Math.min(top, bounds.height - height - PIP_EDGE_MARGIN));
+    return { left, top, width, height };
+  }
+
+  function applyPipRect(rect) {
+    DOM.videoContainer.style.left = rect.left + 'px';
+    DOM.videoContainer.style.top = rect.top + 'px';
+    DOM.videoContainer.style.right = 'auto';
+    DOM.videoContainer.style.bottom = 'auto';
+    DOM.videoContainer.style.width = rect.width + 'px';
+    DOM.videoContainer.style.height = rect.height + 'px';
+  }
+
+  function clearPipInlineRect() {
+    ['left', 'top', 'right', 'bottom', 'width', 'height'].forEach((prop) => {
+      DOM.videoContainer.style[prop] = '';
+    });
+  }
+
+  function pipContainerOffset() {
+    const rect = DOM.videoContainer.getBoundingClientRect();
+    const parentRect = DOM.screenChatDetail
+      ? DOM.screenChatDetail.getBoundingClientRect()
+      : { left: 0, top: 0 };
+    return {
+      left: rect.left - parentRect.left,
+      top: rect.top - parentRect.top,
+      width: rect.width,
+      height: rect.height,
+    };
+  }
+
+  let pipDrag = null;
+  let pipResize = null;
+
+  function cancelPipGesture() {
+    DOM.videoContainer.classList.remove('video-panel-no-anim');
+    pipDrag = null;
+    pipResize = null;
+  }
+
+  function beginPipDrag(e) {
+    if (!state.videoMinimized || pipResize) return;
+    if (e.target.closest('button')) return; // let minimize/end/close buttons take their own tap
+    const offset = pipContainerOffset();
+    pipDrag = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      startLeft: offset.left,
+      startTop: offset.top,
+    };
+    DOM.videoContainer.classList.add('video-panel-no-anim');
+    try { DOM.videoToolbar.setPointerCapture(e.pointerId); } catch (err) { /* unsupported — drag still works via move/up on this element */ }
+    e.preventDefault();
+  }
+
+  function onPipDragMove(e) {
+    if (!pipDrag || e.pointerId !== pipDrag.pointerId) return;
+    const dx = e.clientX - pipDrag.startX;
+    const dy = e.clientY - pipDrag.startY;
+    const current = pipContainerOffset();
+    const rect = clampPipRect(pipDrag.startLeft + dx, pipDrag.startTop + dy, current.width, current.height);
+    applyPipRect(rect);
+  }
+
+  function endPipDrag(e) {
+    if (!pipDrag || e.pointerId !== pipDrag.pointerId) return;
+    try { DOM.videoToolbar.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
+    pipDrag = null;
+    if (!pipResize) DOM.videoContainer.classList.remove('video-panel-no-anim');
+  }
+
+  function beginPipResize(e) {
+    if (!state.videoMinimized || pipDrag) return;
+    const offset = pipContainerOffset();
+    pipResize = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      startWidth: offset.width,
+      startHeight: offset.height,
+      left: offset.left,
+      top: offset.top,
+    };
+    DOM.videoContainer.classList.add('video-panel-no-anim');
+    try { DOM.videoResizeHandle.setPointerCapture(e.pointerId); } catch (err) { /* unsupported — resize still works via move/up on this element */ }
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  function onPipResizeMove(e) {
+    if (!pipResize || e.pointerId !== pipResize.pointerId) return;
+    const dx = e.clientX - pipResize.startX;
+    const dy = e.clientY - pipResize.startY;
+    const rect = clampPipRect(pipResize.left, pipResize.top, pipResize.startWidth + dx, pipResize.startHeight + dy);
+    applyPipRect(rect);
+  }
+
+  function endPipResize(e) {
+    if (!pipResize || e.pointerId !== pipResize.pointerId) return;
+    try { DOM.videoResizeHandle.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
+    pipResize = null;
+    if (!pipDrag) DOM.videoContainer.classList.remove('video-panel-no-anim');
   }
 
   function closeLiveSession(message) {
@@ -6366,6 +6513,37 @@
       setVideoMinimized(!state.videoMinimized);
     });
   }
+
+  // FIX: root cause of "why is the minimized meeting not movable and
+  // resizable" — beginPipDrag()/beginPipResize() (see the "VIDEO PIP
+  // DRAG + RESIZE" section above) existed nowhere to attach to; the pip
+  // was purely CSS-positioned with no gesture handling at all. Pointer
+  // Events (not mouse/touch separately) so this works the same with a
+  // mouse, trackpad, or a finger on mobile. pointerdown starts a gesture
+  // and captures the pointer on the SAME element (setPointerCapture in
+  // beginPipDrag/beginPipResize) so pointermove/pointerup keep firing on
+  // it even once the finger/cursor drifts outside the small toolbar or
+  // resize grip — without that capture, a fast drag would "lose" the
+  // gesture the instant the pointer left those tiny hit areas.
+  if (DOM.videoToolbar) {
+    DOM.videoToolbar.addEventListener('pointerdown', beginPipDrag);
+    DOM.videoToolbar.addEventListener('pointermove', onPipDragMove);
+    DOM.videoToolbar.addEventListener('pointerup', endPipDrag);
+    DOM.videoToolbar.addEventListener('pointercancel', endPipDrag);
+  }
+  if (DOM.videoResizeHandle) {
+    DOM.videoResizeHandle.addEventListener('pointerdown', beginPipResize);
+    DOM.videoResizeHandle.addEventListener('pointermove', onPipResizeMove);
+    DOM.videoResizeHandle.addEventListener('pointerup', endPipResize);
+    DOM.videoResizeHandle.addEventListener('pointercancel', endPipResize);
+  }
+  // Re-clamp into view on rotation/resize so the pip can't get stranded
+  // off-screen (e.g. a phone rotated after being dragged near an edge).
+  window.addEventListener('resize', () => {
+    if (!state.videoMinimized) return;
+    const offset = pipContainerOffset();
+    applyPipRect(clampPipRect(offset.left, offset.top, offset.width, offset.height));
+  });
 
   DOM.fileInput.addEventListener('change', function() {
     const file = this.files[0];
