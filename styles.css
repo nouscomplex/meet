@@ -2227,14 +2227,6 @@ body.theme-dark .btn-send { color: #FFFFFF; }
   padding: 10px 14px;
   background: #05061a;
 }
-/* Groups "End for Everyone" + the leave/close X on the right, so the
-   new minimize button (below) can sit on its own at the left without
-   extra markup changes to the two existing buttons. */
-.video-toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
 .video-panel.video-panel-minimized .video-toolbar {
   padding: 6px 8px;
   gap: 6px;
@@ -2248,7 +2240,6 @@ body.theme-dark .btn-send { color: #FFFFFF; }
   touch-action: none;
 }
 
-.video-close,
 .video-minimize-btn {
   width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
   background: rgba(255,255,255,0.15); color: #fff; border: none; cursor: pointer;
@@ -2257,7 +2248,6 @@ body.theme-dark .btn-send { color: #FFFFFF; }
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
-.video-close:hover,
 .video-minimize-btn:hover { background: rgba(255,255,255,0.28); }
 
 .video-end-session-btn {
@@ -2283,7 +2273,6 @@ body.theme-dark .btn-send { color: #FFFFFF; }
 /* Minimized pip: shrink the controls too and drop the "End for
    Everyone" text label down to just its icon so three controls still
    fit in a ~176px-wide bar without wrapping or overflowing. */
-.video-panel.video-panel-minimized .video-close,
 .video-panel.video-panel-minimized .video-minimize-btn {
   width: 24px; height: 24px; font-size: 11px;
 }
