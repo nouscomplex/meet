@@ -2136,8 +2136,42 @@ body.theme-dark .btn-send { color: #FFFFFF; }
      from the meeting room instead of layered over it. */
   display: flex;
   flex-direction: column;
+  transition: width 0.2s ease, height 0.2s ease, top 0.2s ease, left 0.2s ease,
+    right 0.2s ease, bottom 0.2s ease, border-radius 0.2s ease;
 }
 .video-panel iframe { width: 100%; flex: 1; min-height: 0; border: 0; display: block; }
+
+/* FIX: root cause of "user can't see the buttons for minimizing/
+   maximizing in live meeting so they can text in the group when
+   needed" — #videoContainer used to be a fixed full-screen overlay
+   (position:absolute; inset:0) with no smaller state at all, and the
+   only exit was #closeVideoBtn, which fully disconnects the call (see
+   closeLiveSession() in app.js) rather than just getting it out of the
+   way. This shrinks the SAME panel — call kept alive, videoIframe.src
+   untouched — into a small corner pip anchored within this screen (not
+   the whole viewport, so it stays correctly placed in the desktop
+   two-pane layout too) once app.js's setVideoMinimized() toggles this
+   class. With the panel out of full-screen, #chatContainer and the
+   composer underneath become visible and usable again, so a message
+   can be typed and sent without leaving the call. Toggled back to the
+   base .video-panel layout (full screen) by the same button/class. */
+.video-panel.video-panel-minimized {
+  /* Anchored top-right, clear of .chat-detail-header (sticky, ~64px) —
+     NOT bottom-right. #chatContainer/.composer sit at the literal bottom
+     of this same .screen (composer is position:sticky; bottom:0), so a
+     bottom-anchored pip would land right on top of #messageInput — the
+     one control this whole fix exists to make reachable again. */
+  top: 78px;
+  left: auto;
+  right: 14px;
+  bottom: auto;
+  width: 176px;
+  height: 136px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
 
 /* FIX: root cause of the close ("X") and "End for Everyone" buttons
    overlapping the speaker name / connection-signal indicators inside
@@ -2153,17 +2187,35 @@ body.theme-dark .btn-send { color: #FFFFFF; }
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 10px;
   padding: 10px 14px;
   background: #05061a;
 }
-.video-close {
+/* Groups "End for Everyone" + the leave/close X on the right, so the
+   new minimize button (below) can sit on its own at the left without
+   extra markup changes to the two existing buttons. */
+.video-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.video-panel.video-panel-minimized .video-toolbar {
+  padding: 6px 8px;
+  gap: 6px;
+}
+
+.video-close,
+.video-minimize-btn {
   width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
   background: rgba(255,255,255,0.15); color: #fff; border: none; cursor: pointer;
   backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
-.video-close:hover { background: rgba(255,255,255,0.28); }
+.video-close:hover,
+.video-minimize-btn:hover { background: rgba(255,255,255,0.28); }
 
 .video-end-session-btn {
   display: flex;
@@ -2184,6 +2236,22 @@ body.theme-dark .btn-send { color: #FFFFFF; }
   touch-action: manipulation;
 }
 .video-end-session-btn:hover { background: #c73a32; }
+
+/* Minimized pip: shrink the controls too and drop the "End for
+   Everyone" text label down to just its icon so three controls still
+   fit in a ~176px-wide bar without wrapping or overflowing. */
+.video-panel.video-panel-minimized .video-close,
+.video-panel.video-panel-minimized .video-minimize-btn {
+  width: 24px; height: 24px; font-size: 11px;
+}
+.video-panel.video-panel-minimized .video-end-session-btn {
+  padding: 0 8px;
+  height: 24px;
+  font-size: 10px;
+}
+.video-panel.video-panel-minimized .video-end-session-label {
+  display: none;
+}
 
 /* ============================================================
    MEMBERS
