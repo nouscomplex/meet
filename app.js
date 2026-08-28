@@ -4892,16 +4892,34 @@
   const PIP_MIN_HEIGHT = 110;
   const PIP_EDGE_MARGIN = 8;
 
+  // FIX: root cause of "why can't I see the meeting in full screen on
+  // laptop" made #videoContainer `position: fixed` instead of `absolute`
+  // (see the matching comment on .video-panel in styles.css), so its
+  // `left`/`top` are now relative to the actual browser viewport, not to
+  // #screenChatDetail. clampPipRect()/pipContainerOffset() below used to
+  // work in "offset from the chat panel's top-left" coordinates, which
+  // would place the pip in the wrong spot entirely under `fixed`
+  // positioning (that offset would be reused as a viewport coordinate).
+  // Both now work directly in viewport-absolute coordinates —
+  // getBoundingClientRect() already returns those — while still using
+  // #screenChatDetail's rect as the box the pip is kept within, so it
+  // stays confined to the chat pane (not free to drift over the sidebar
+  // or chat list) even though the panel itself now escapes that pane
+  // for true full-screen mode.
   function clampPipRect(left, top, width, height) {
     const bounds = DOM.screenChatDetail
       ? DOM.screenChatDetail.getBoundingClientRect()
-      : { width: window.innerWidth, height: window.innerHeight };
+      : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
     const maxWidth = Math.max(PIP_MIN_WIDTH, bounds.width - PIP_EDGE_MARGIN * 2);
     const maxHeight = Math.max(PIP_MIN_HEIGHT, bounds.height - PIP_EDGE_MARGIN * 2);
     width = Math.max(PIP_MIN_WIDTH, Math.min(width, maxWidth));
     height = Math.max(PIP_MIN_HEIGHT, Math.min(height, maxHeight));
-    left = Math.max(PIP_EDGE_MARGIN, Math.min(left, bounds.width - width - PIP_EDGE_MARGIN));
-    top = Math.max(PIP_EDGE_MARGIN, Math.min(top, bounds.height - height - PIP_EDGE_MARGIN));
+    const minLeft = bounds.left + PIP_EDGE_MARGIN;
+    const maxLeft = bounds.left + bounds.width - width - PIP_EDGE_MARGIN;
+    const minTop = bounds.top + PIP_EDGE_MARGIN;
+    const maxTop = bounds.top + bounds.height - height - PIP_EDGE_MARGIN;
+    left = Math.max(minLeft, Math.min(left, maxLeft));
+    top = Math.max(minTop, Math.min(top, maxTop));
     return { left, top, width, height };
   }
 
@@ -4921,16 +4939,10 @@
   }
 
   function pipContainerOffset() {
+    // Viewport-absolute, to match #videoContainer's `position: fixed` —
+    // see the FIX comment on clampPipRect() above.
     const rect = DOM.videoContainer.getBoundingClientRect();
-    const parentRect = DOM.screenChatDetail
-      ? DOM.screenChatDetail.getBoundingClientRect()
-      : { left: 0, top: 0 };
-    return {
-      left: rect.left - parentRect.left,
-      top: rect.top - parentRect.top,
-      width: rect.width,
-      height: rect.height,
-    };
+    return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
   }
 
   let pipDrag = null;
