@@ -14,7 +14,7 @@
   <!-- Cache-busting query param — bump alongside the one on app.js
      whenever styles.css changes, for the same reason (see the comment
      on the app.js <script> tag below). -->
-<link rel="stylesheet" href="styles.css?v=20260828c">
+<link rel="stylesheet" href="styles.css?v=20260828d">
 
   <!-- FIX: root cause of "opening the app shows a blank screen for a few
        seconds instead of the loading/home screen" — these three <script>
@@ -525,6 +525,22 @@
             </div>
           </div>
           <iframe id="videoIframe" src="" allow="camera; microphone; display-capture; autoplay; encrypted-media" allowfullscreen></iframe>
+          <!-- FIX: root cause of "why is the minimized meeting not
+               movable and resizable" — minimizing only ever gave the pip
+               ONE fixed spot and ONE fixed size (top:78px/right:14px,
+               176x136 — see .video-panel-minimized in styles.css); nothing
+               ever listened for a drag or resize gesture on it. #videoToolbar
+               is now the drag handle (see beginPipDrag()/onPipDragMove() in
+               app.js — dragging anywhere on the toolbar except its buttons
+               repositions the pip, clamped to stay inside this chat
+               screen), and this handle is a resize grip in the pip's
+               bottom-right corner (see beginPipResize()/onPipResizeMove()).
+               Both use inline left/top/width/height styles that only take
+               effect while .video-panel-minimized is present, and are
+               cleared again on maximize/leave so the call still goes back
+               to a normal full-screen layout afterward. Hidden by default;
+               only shown while minimized (see the matching CSS rule). -->
+          <div id="videoResizeHandle" class="video-resize-handle" title="Drag to resize" aria-hidden="true"></div>
         </div>
       </section>
 
@@ -779,7 +795,7 @@
      anything) every time app.js changes so browsers/CDNs that cached the
      old file under the plain "app.js" URL are forced to fetch the new
      one instead of silently keeping serving stale code. -->
-<script src="app.js?v=20260828c" defer></script>
+<script src="app.js?v=20260828d" defer></script>
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
