@@ -3595,81 +3595,51 @@
     return 'hidden';
   }
 
-  // FIX: root cause of "teacher sees Join Live Session on the grey/
-  // disabled button instead of Start Live Session" — getLiveButtonMode()
-  // correctly returns 'hidden' (button stays disabled/grey) for the whole
-  // stretch BEFORE the scheduled start time, for every viewer including
-  // the concerned teacher — that's correct, it's not time yet. But the
-  // label used to be driven off that same 'hidden' mode and just fell
-  // back to 'Join Live Session' whenever mode wasn't exactly 'start' — so
-  // the teacher's own upcoming session showed "Join" (implying someone
-  // else has to start it) right up until the instant it became
-  // clickable. The label is decided independently of whether the button
-  // is currently clickable: a schedule that exists and belongs to this
-  // user (or any admin) is always labelled "Start Live Session",
-  // grey/disabled or not; it only ever reads "Join Live Session" for
-  // someone who isn't the one who starts it.
-  //
-  // Pulled out of updateLiveButtonState() into its own named function so
-  // there's a single source of truth for the label (styles.css already
-  // referenced a getLiveButtonLabel() in its comments for the
-  // waiting/live button states — this is that function).
-  function getLiveButtonLabel(mode) {
-    if (mode === 'start') return 'Start Live Session';
-
-    const schedule = state.currentSchedule;
-    if (schedule && state.currentUser) {
-      const currentUsername = normalizeUsername(state.currentUser.username);
-      const teacherUsername = normalizeUsername(schedule.teacher_username);
-      const isConcernedTeacher = currentUsername === teacherUsername;
-      // DEBUG: if a teacher is still seeing "Join Live Session" while the
-      // button is grey/disabled, open devtools → Console and reload the
-      // chat. This line prints exactly what's being compared — if
-      // currentUsername and teacherUsername don't match character-for-
-      // character (a typo, extra space, or a display name instead of the
-      // login username in class_schedule.teacher_username), that's the
-      // root cause and it's a data fix (re-save the schedule with the
-      // correct username), not a code fix.
-      console.log(`🔍 Live button label check: currentUsername="${currentUsername}" teacherUsername="${teacherUsername}" match=${isConcernedTeacher} isAdmin=${state.isAdmin}`);
-      if (isConcernedTeacher || state.isAdmin) return 'Start Live Session';
-    }
-    return 'Join Live Session';
-  }
-
   function updateLiveButtonState() {
     if (!DOM.joinLiveBtn) return;
     const mode = getLiveButtonMode();
     const isInactive = mode === 'hidden';
 
-    // FIX: root cause of "the button turns blue the instant the scheduled
-    // window opens, even though nobody has pressed Start yet" — color used
-    // to be driven off `isInactive` alone (disabled ⇒ grey, anything
-    // clickable ⇒ the button's plain/default look, which reads as blue).
-    // That made the concerned teacher's button turn blue the moment their
-    // window opened, before the class was actually live. Color must be
-    // driven by whether the meeting is ACTUALLY live
-    // (state.currentSchedule.is_live), not by whether the button happens
-    // to be clickable yet:
-    //   - not live yet (whether the window hasn't opened, or it has but
-    //     nobody pressed Start) → grey, for both the teacher and students
-    //   - is_live === true → blue, for both the teacher and students
-    // Clickability (disabled/aria-disabled) stays tied to the scheduled
-    // window via `mode`, same as before — only the color changed.
-    const isMeetingLive = !!(state.currentSchedule && state.currentSchedule.is_live === true);
-
     DOM.joinLiveBtn.disabled = isInactive;
-    DOM.joinLiveBtn.setAttribute('aria-disabled', String(isInactive));
     DOM.joinLiveBtn.classList.toggle('btn-live-pill-dead', isInactive);
-    DOM.joinLiveBtn.classList.toggle('btn-live-pill-waiting', !isInactive && !isMeetingLive);
-    DOM.joinLiveBtn.classList.toggle('btn-live-pill-live', isMeetingLive);
+    DOM.joinLiveBtn.setAttribute('aria-disabled', String(isInactive));
 
     if (DOM.liveBtnText) {
-      DOM.liveBtnText.textContent = getLiveButtonLabel(mode);
+      // FIX: root cause of "teacher sees Join Live Session on the grey/
+      // disabled button instead of Start Live Session" — getLiveButtonMode()
+      // correctly returns 'hidden' (button stays disabled/grey) for the
+      // whole stretch BEFORE the scheduled start time, for every viewer
+      // including the concerned teacher — that's correct, it's not time
+      // yet. But the label used to be driven off that same 'hidden' mode
+      // and just fell back to 'Join Live Session' whenever mode wasn't
+      // exactly 'start' — so the teacher's own upcoming session showed
+      // "Join" (implying someone else has to start it) right up until the
+      // instant it became clickable. The label is now decided
+      // independently of whether the button is currently clickable: a
+      // schedule that exists and belongs to this user (or any admin) is
+      // always labelled "Start Live Session", grey/disabled or not; it
+      // only ever reads "Join Live Session" for someone who isn't the one
+      // who starts it.
+      let label = 'Join Live Session';
+      if (mode === 'start') {
+        label = 'Start Live Session';
+      } else {
+        const schedule = state.currentSchedule;
+        if (schedule && state.currentUser) {
+          const currentUsername = normalizeUsername(state.currentUser.username);
+          const teacherUsername = normalizeUsername(schedule.teacher_username);
+          const isConcernedTeacher = currentUsername === teacherUsername;
+          if (isConcernedTeacher || state.isAdmin) {
+            label = 'Start Live Session';
+          }
+        }
+      }
+      DOM.liveBtnText.textContent = label;
     }
 
     DOM.joinLiveBtn.title = isInactive
       ? (state.currentSchedule ? 'This live session hasn\'t started yet.' : 'No live session is scheduled for this group yet')
-      : (isMeetingLive ? '' : 'Tap to start this live session.');
+      : '';
   }
 
   function subscribeToSchedule(channelId) {
