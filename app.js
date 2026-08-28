@@ -3595,6 +3595,38 @@
     return 'hidden';
   }
 
+  // FIX: root cause of "teacher sees Join Live Session on the grey/
+  // disabled button instead of Start Live Session" — getLiveButtonMode()
+  // correctly returns 'hidden' (button stays disabled/grey) for the whole
+  // stretch BEFORE the scheduled start time, for every viewer including
+  // the concerned teacher — that's correct, it's not time yet. But the
+  // label used to be driven off that same 'hidden' mode and just fell
+  // back to 'Join Live Session' whenever mode wasn't exactly 'start' — so
+  // the teacher's own upcoming session showed "Join" (implying someone
+  // else has to start it) right up until the instant it became
+  // clickable. The label is decided independently of whether the button
+  // is currently clickable: a schedule that exists and belongs to this
+  // user (or any admin) is always labelled "Start Live Session",
+  // grey/disabled or not; it only ever reads "Join Live Session" for
+  // someone who isn't the one who starts it.
+  //
+  // Pulled out of updateLiveButtonState() into its own named function so
+  // there's a single source of truth for the label (styles.css already
+  // referenced a getLiveButtonLabel() in its comments for the
+  // waiting/live button states — this is that function).
+  function getLiveButtonLabel(mode) {
+    if (mode === 'start') return 'Start Live Session';
+
+    const schedule = state.currentSchedule;
+    if (schedule && state.currentUser) {
+      const currentUsername = normalizeUsername(state.currentUser.username);
+      const teacherUsername = normalizeUsername(schedule.teacher_username);
+      const isConcernedTeacher = currentUsername === teacherUsername;
+      if (isConcernedTeacher || state.isAdmin) return 'Start Live Session';
+    }
+    return 'Join Live Session';
+  }
+
   function updateLiveButtonState() {
     if (!DOM.joinLiveBtn) return;
     const mode = getLiveButtonMode();
@@ -3605,36 +3637,7 @@
     DOM.joinLiveBtn.setAttribute('aria-disabled', String(isInactive));
 
     if (DOM.liveBtnText) {
-      // FIX: root cause of "teacher sees Join Live Session on the grey/
-      // disabled button instead of Start Live Session" — getLiveButtonMode()
-      // correctly returns 'hidden' (button stays disabled/grey) for the
-      // whole stretch BEFORE the scheduled start time, for every viewer
-      // including the concerned teacher — that's correct, it's not time
-      // yet. But the label used to be driven off that same 'hidden' mode
-      // and just fell back to 'Join Live Session' whenever mode wasn't
-      // exactly 'start' — so the teacher's own upcoming session showed
-      // "Join" (implying someone else has to start it) right up until the
-      // instant it became clickable. The label is now decided
-      // independently of whether the button is currently clickable: a
-      // schedule that exists and belongs to this user (or any admin) is
-      // always labelled "Start Live Session", grey/disabled or not; it
-      // only ever reads "Join Live Session" for someone who isn't the one
-      // who starts it.
-      let label = 'Join Live Session';
-      if (mode === 'start') {
-        label = 'Start Live Session';
-      } else {
-        const schedule = state.currentSchedule;
-        if (schedule && state.currentUser) {
-          const currentUsername = normalizeUsername(state.currentUser.username);
-          const teacherUsername = normalizeUsername(schedule.teacher_username);
-          const isConcernedTeacher = currentUsername === teacherUsername;
-          if (isConcernedTeacher || state.isAdmin) {
-            label = 'Start Live Session';
-          }
-        }
-      }
-      DOM.liveBtnText.textContent = label;
+      DOM.liveBtnText.textContent = getLiveButtonLabel(mode);
     }
 
     DOM.joinLiveBtn.title = isInactive
