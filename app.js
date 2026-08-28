@@ -2461,6 +2461,26 @@
       }
     }
 
+    // FIX: safety net for rows the *old* purge function already nulled
+    // out before this fix — those messages have no file_url, no content,
+    // and no reply left, so nothing above produces any bubble at all
+    // (this is exactly the "just sender name is showing" bug). There's
+    // no way to recover what those rows used to contain (file_url was
+    // the only record of it), but a message can never be sent with
+    // neither text nor a file (see the `if (!content && !file) return;`
+    // guard on the composer's send handler), so any message that still
+    // ends up with a fully empty bubbleHtml here is guaranteed to be one
+    // of these already-purged rows rather than a legitimate empty
+    // message. Show the same placeholder instead of leaving it blank.
+    if (!bubbleHtml) {
+      const inlineTicks = ticksMarkup ? `<span class="msg-inline-ticks">${ticksMarkup}</span>` : '';
+      bubbleHtml = `
+        <div class="msg-bubble msg-media-expired">
+          <i class="fas fa-file-circle-xmark"></i> ${escapeHtml(MESSAGE_MEDIA_EXPIRED_TEXT)}${inlineTicks}
+        </div>
+      `;
+    }
+
     const displayName = getDisplayName(msg.username);
     wrap.innerHTML = `
       ${avatarHtml(msg.username, 'sm')}
@@ -2810,11 +2830,20 @@
 
   async function forwardMessageToChannel(msg, targetChannelId) {
     if (!state.currentUser) return;
+    // FIX: forwarding an already-expired attachment used to carry its
+    // (now purged) file_url straight into the new message row. The new
+    // message gets a fresh created_at, so isMessageMediaExpired() sees it
+    // as brand new and buildMessageEl tries to render it as live media —
+    // pointing at either the EXPIRED_MARKER sentinel or a deleted storage
+    // object, i.e. a broken link, instead of correctly showing nothing/
+    // the expired placeholder. Don't carry forward a file_url that's
+    // already past its expiry window.
+    const forwardableFileUrl = (msg.file_url && !isMessageMediaExpired(msg)) ? msg.file_url : null;
     const payload = {
       channel_id: targetChannelId,
       username: state.currentUser.username,
       content: msg.content || '',
-      file_url: msg.file_url || null,
+      file_url: forwardableFileUrl,
       client_id: `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     };
     const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.MESSAGES).insert(payload);
