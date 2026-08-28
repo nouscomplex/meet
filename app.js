@@ -95,6 +95,15 @@
     isAdmin: false,
     isTeacher: false,
     videoActive: false,
+    // FIX: root cause of "user can't see the buttons for minimizing/
+    // maximizing in live meeting so they can text in group when needed" —
+    // there was no minimized state at all; #videoContainer was always
+    // either full-screen or fully hidden (see closeLiveSession(), which
+    // tears down videoIframe.src entirely). This flag tracks the new
+    // in-between state — call still connected, panel shrunk to a corner
+    // pip — toggled by setVideoMinimized() below and reflected in the DOM
+    // via the .video-panel-minimized class (styles.css).
+    videoMinimized: false,
     progressInterval: null,
     messagesSubscription: null,
     replyingTo: null,
@@ -254,6 +263,7 @@
     videoIframe: $('videoIframe'),
     endLiveSessionBtn: $('endLiveSessionBtn'),
     closeVideoBtn: $('closeVideoBtn'),
+    minimizeVideoBtn: $('minimizeVideoBtn'),
 
     backFromMembers: $('backFromMembers'),
     memberSearchInput: $('memberSearchInput'),
@@ -945,7 +955,13 @@
       return;
     }
     
-    if (DOM.videoContainer && !DOM.videoContainer.classList.contains('hidden')) {
+    // FIX: only force-close the call here while it's full-screen — that's
+    // the state where it would otherwise swallow every back gesture with
+    // no other way out. Once minimized (see setVideoMinimized()) the call
+    // is already out of the way and the composer/chat list are usable, so
+    // back should behave normally (e.g. leave the chat screen) instead of
+    // also disconnecting a call the user deliberately kept running.
+    if (DOM.videoContainer && !DOM.videoContainer.classList.contains('hidden') && !state.videoMinimized) {
       closeLiveSession();
       if (state.currentScreen) pushScreenState(state.currentScreen);
       return;
@@ -4820,6 +4836,30 @@
     }
   }
 
+  // FIX: root cause of "user can't see the buttons for minimizing/
+  // maximizing in live meeting so they can text in group when needed" —
+  // this is the piece that never existed. Minimizing only ever meant
+  // closeLiveSession() below, which sets videoIframe.src = '' and tears
+  // the call down completely — there was no way to shrink #videoContainer
+  // out of the way while keeping the meeting connected. This toggles the
+  // .video-panel-minimized class (styles.css positions/resizes the panel
+  // into a small corner pip instead of covering the whole screen) without
+  // touching videoIframe.src or state.videoActive at all, so the call
+  // keeps running in the background and #chatContainer/.composer
+  // underneath become reachable again. Wired to #minimizeVideoBtn below.
+  function setVideoMinimized(minimized) {
+    state.videoMinimized = !!minimized;
+    DOM.videoContainer.classList.toggle('video-panel-minimized', state.videoMinimized);
+    if (DOM.minimizeVideoBtn) {
+      DOM.minimizeVideoBtn.innerHTML = state.videoMinimized
+        ? '<i class="fas fa-expand"></i>'
+        : '<i class="fas fa-compress"></i>';
+      DOM.minimizeVideoBtn.title = state.videoMinimized
+        ? 'Expand call'
+        : 'Minimize call (keep chatting)';
+    }
+  }
+
   function closeLiveSession(message) {
     const wasActive = state.videoActive;
     clearLiveSessionAutoCloseTimer();
@@ -4828,6 +4868,7 @@
     state.videoActive = false;
     state.activeCallScheduleId = null;
     state.activeCallIsHost = false;
+    setVideoMinimized(false);
     if (DOM.endLiveSessionBtn) DOM.endLiveSessionBtn.classList.add('hidden');
     if (message && wasActive) alert(message);
   }
@@ -4893,6 +4934,7 @@
     }
 
     DOM.videoContainer.classList.remove('hidden');
+    setVideoMinimized(false);
     DOM.videoIframe.src = liveUrl;
     state.videoActive = true;
     state.activeCallScheduleId = state.currentSchedule ? state.currentSchedule.id : null;
@@ -6311,6 +6353,18 @@
 
   if (DOM.endLiveSessionBtn) {
     DOM.endLiveSessionBtn.addEventListener('click', () => endLiveSessionForEveryone());
+  }
+
+  // FIX: root cause of "user can't see the buttons for minimizing/
+  // maximizing in live meeting so they can text in group when needed" —
+  // #minimizeVideoBtn didn't exist before, so there was nothing to wire
+  // up. This just flips state.videoMinimized via setVideoMinimized() —
+  // same button doubles as "maximize" once minimized (see its icon swap
+  // in setVideoMinimized()) — leaving the call itself completely alone.
+  if (DOM.minimizeVideoBtn) {
+    DOM.minimizeVideoBtn.addEventListener('click', () => {
+      setVideoMinimized(!state.videoMinimized);
+    });
   }
 
   DOM.fileInput.addEventListener('change', function() {
