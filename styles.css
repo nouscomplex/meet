@@ -2270,9 +2270,41 @@ body.theme-dark .btn-send { color: #FFFFFF; }
 }
 .video-end-session-btn:hover { background: #c73a32; }
 
+/* FIX: root cause of "screen is still at [PlugNmeet's own 'meeting has
+   ended'] page when the meeting is ended by any teacher or admin" — see
+   the long comment above #returnToChatBtn in index.html for why
+   PlugNmeet's own auto-redirect can't be guaranteed to fire. Styled as a
+   neutral/secondary pill (not var(--danger) like "End for Everyone") so
+   it doesn't read as a destructive/ending action — it's just "go back". */
+.video-return-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: var(--radius-pill);
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.video-return-btn:hover { background: rgba(255,255,255,0.28); }
+
 /* Minimized pip: shrink the controls too and drop the "End for
    Everyone" text label down to just its icon so three controls still
-   fit in a ~176px-wide bar without wrapping or overflowing. */
+   fit in a ~176px-wide bar without wrapping or overflowing.
+   #returnToChatBtn is hidden entirely while minimized rather than
+   shrunk — it's a recovery action for a full-screen call getting stuck
+   on PlugNmeet's own screen, which doesn't apply while minimized (the
+   pip itself already proves the call/iframe is responsive), and there
+   isn't room for a third control in the pip's ~176px-wide bar without
+   crowding the drag handle. */
 .video-panel.video-panel-minimized .video-minimize-btn {
   width: 24px; height: 24px; font-size: 11px;
 }
@@ -2282,6 +2314,9 @@ body.theme-dark .btn-send { color: #FFFFFF; }
   font-size: 10px;
 }
 .video-panel.video-panel-minimized .video-end-session-label {
+  display: none;
+}
+.video-panel.video-panel-minimized .video-return-btn {
   display: none;
 }
 
