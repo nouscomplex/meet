@@ -42,3 +42,21 @@ footer#main-footer .message {
 .flex-1:has(> .all-MessageModule-wrap) + .message-form {
   display: none !important;
 }
+
+/* Remove the "change theme" (light/dark) toggle from the live meeting.
+   Verified against the PlugNmeet client's own source: this button
+   (DarkThemeSwitcher) is rendered unconditionally in the header — there
+   is no per-room lock/feature flag for it, so it can't be turned off
+   from our own PLUGNMEET.ROOM_SETTINGS in config.js. The one setting
+   that does disable it (window.plugNmeetConfig.disableDarkMode) lives in
+   the PlugNmeet server's own static config.js under dist/assets/ on
+   meet.nouscomplex.com — a different codebase/server than this app — so
+   until that's set there too, CSS is the reliable way to remove it here,
+   same reasoning as the chat removal above. It's the only <button> in
+   the header's left-hand group (next to the logo), so target it
+   structurally; the aria-label match is a backup in case that markup
+   ever shifts. */
+header#main-header .left > button,
+header#main-header .left button[aria-label*="theme" i] {
+  display: none !important;
+}
