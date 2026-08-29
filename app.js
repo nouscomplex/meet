@@ -2347,7 +2347,7 @@
   // viewer's device to begin with (it lived in Supabase Storage), so that
   // wording was actively misleading about what happened. It's the file
   // itself that's gone after the 168h retention window, so say that.
-  const MESSAGE_MEDIA_EXPIRED_TEXT = "The file is no longer available for downloading";
+  const MESSAGE_MEDIA_EXPIRED_TEXT = "This file is no longer available for download";
 
   // FIX: root cause of "the expired-media message never shows up, media
   // just silently stays broken" — isMessageMediaExpired() is a pure
