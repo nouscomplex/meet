@@ -60,3 +60,15 @@ header#main-header .left > button,
 header#main-header .left button[aria-label*="theme" i] {
   display: none !important;
 }
+
+/* Whiteboard: remove the row of external link buttons (Documentation,
+   Read our blog, Found an issue? Submit, YouTube) from the top of the
+   Excalidraw "Help" panel. The whiteboard is Excalidraw, embedded as-is
+   inside the PlugNmeet client (only its text labels are localized by
+   PlugNmeet, not its DOM/class names) — those four links live together
+   in one wrapper, `.HelpDialog__header`, above the "Keyboard shortcuts"
+   heading, so hiding that wrapper removes exactly the link row and
+   leaves the shortcuts reference intact. */
+.HelpDialog__header {
+  display: none !important;
+}
