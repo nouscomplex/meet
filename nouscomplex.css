@@ -72,3 +72,54 @@ header#main-header .left button[aria-label*="theme" i] {
 .HelpDialog__header {
   display: none !important;
 }
+
+/* Reserve room next to the whiteboard/screen-share area for whichever
+   side panel is open (Participants/Chat/Polls), so its content isn't
+   covered by the panel.
+   Checked against the PlugNmeet client's own main-area source: the side
+   panel is `position: absolute`, pinned to the right edge, ~300–340px
+   wide — it was always designed to overlay, not push, the content next
+   to it. The main content area is supposed to make room for it itself
+   (a conditional `padding-inline-end` class applied only while a panel
+   is open), and PlugNmeet also force-refreshes the whiteboard's own
+   canvas size at that same moment so it redraws into the freed-up
+   space. Both of those live in PlugNmeet's own JS, which this
+   stylesheet can't reach (it can only add CSS, it can't run code inside
+   that cross-origin app) — so if the deployed PlugNmeet build is older
+   than that fix, or something is overriding its padding class, the
+   canvas keeps its old, wider size and the panel simply sits on top of
+   the part that's now hidden underneath it, exactly like the
+   screenshot. This rule reinstates the missing space reservation
+   (belt-and-suspenders with PlugNmeet's own class, using :has() so it
+   doesn't depend on that class being present or intact); it does NOT
+   force the canvas itself to redraw into that space — for the drawing
+   to actually reflow (not just stop being covered), the whiteboard
+   still needs its own resize/refresh, which only happens if the
+   deployed PlugNmeet client includes that logic. If content is still
+   cut off after this — just no longer hidden behind the panel, still
+   sitting past the visible edge — that's the signal the PlugNmeet
+   client build on meet.nouscomplex.com needs updating; ask whoever
+   maintains that deployment (a different codebase/server than this
+   app) to update to a current release. */
+#main-area .inner:has(> .participants-panel) > .middle-area,
+#main-area .inner:has(> .chat-panel) > .middle-area,
+#main-area .inner:has(> .polls-panel) > .middle-area {
+  padding-bottom: 300px !important;
+}
+
+@media (min-width: 768px) {
+  #main-area .inner:has(> .participants-panel) > .middle-area,
+  #main-area .inner:has(> .chat-panel) > .middle-area,
+  #main-area .inner:has(> .polls-panel) > .middle-area {
+    padding-bottom: 0 !important;
+    padding-inline-end: 300px !important;
+  }
+}
+
+@media (min-width: 1920px) {
+  #main-area .inner:has(> .participants-panel) > .middle-area,
+  #main-area .inner:has(> .chat-panel) > .middle-area,
+  #main-area .inner:has(> .polls-panel) > .middle-area {
+    padding-inline-end: 340px !important;
+  }
+}
