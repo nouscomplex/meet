@@ -2227,6 +2227,22 @@ body.theme-dark .btn-send { color: #FFFFFF; }
   padding: 10px 14px;
   background: #05061a;
 }
+/* FIX: root cause of "duplicate minimize / return-to-chat / end-for-
+   everyone controls in a live call" — this same toolbar row used to
+   always render above the iframe. PlugNmeet's own header now has its
+   own native minimize/maximize and (admin-only) End for Everyone
+   buttons wired to the exact same app.js functions via postMessage
+   (see NOUS_COMPLEX_PLUGNMEET_HEADER_BRIDGE), so this row became a
+   redundant duplicate of controls that already exist right next to the
+   bell icon. Hidden only in the full-screen (non-minimized) state —
+   left alone while minimized, where this same bar (shrunk down) is
+   still the pip's drag handle (see beginPipDrag() in app.js) and still
+   shows a tiny minimize/end-session control for the pip itself, which
+   has no equivalent reachable from the miniaturized iframe. */
+.video-panel:not(.video-panel-minimized) .video-toolbar {
+  display: none;
+}
+
 .video-panel.video-panel-minimized .video-toolbar {
   padding: 6px 8px;
   gap: 6px;
