@@ -5182,6 +5182,16 @@
       }
     }
 
+    // FIX: root cause of "browser asks for camera/mic permission when no
+    // meeting is open" — requestMediaPermissions() used to run once at
+    // login (completeLogin()), for every user on every sign-in/session
+    // restore, regardless of whether they ever opened a live session.
+    // Requesting it here instead means the browser's permission prompt
+    // (and the friendly "permissions blocked" modal on denial) only ever
+    // appears at the moment someone actually clicks Start/Join Live
+    // Session, matching what a user would expect.
+    await requestMediaPermissions();
+
     let liveUrl;
     DOM.joinLiveBtn.disabled = true;
     try {
@@ -6014,7 +6024,13 @@
 
     setupPresence();
     startSessionWatchdog();
-    requestMediaPermissions();
+    // FIX: root cause of "browser asks for camera/mic permission when no
+    // meeting is open" — this used to run unconditionally on every login
+    // and every session restore, so the permission prompt fired the
+    // instant someone signed in, whether or not they ever opened a live
+    // session that visit. Moved to joinLiveClass() (see the FIX comment
+    // there), which only runs when a user actually clicks Start/Join Live
+    // Session — that's the point permissions should be requested.
     await renderChannels();
     subscribeToChannelListUpdates();
     startChannelPreviewPolling();
