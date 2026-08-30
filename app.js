@@ -3638,21 +3638,20 @@
     DOM.joinLiveBtn.setAttribute('aria-disabled', String(isInactive));
 
     if (DOM.liveBtnText) {
-      // FIX: root cause of "teacher/admin sees Join Live Session on the
-      // grey/disabled button instead of Start Live Session" — a prior
-      // version of this fix tried to override the label but was reported
-      // as still showing "Join Live Session" before the scheduled time,
-      // for BOTH the concerned teacher and admins, even with the schedule
-      // banner correctly visible (i.e. state.currentSchedule was NOT the
-      // problem). Rewritten from scratch with the condition inverted —
-      // start from "Start Live Session" as the default and only fall back
-      // to "Join Live Session" in the one case that should ever show it
-      // (mode is 'join' AND this viewer isn't the starter) — rather than
-      // the previous "default to Join, opt in to Start" shape, which had
-      // more ways to silently fail open into the wrong label. The
-      // 🏷️ console line below is temporary-but-harmless diagnostic output
-      // so the next report of wrong text can be root-caused from the
-      // browser console instead of guessed at again.
+      // FIX: "Join Live Session" is only ever correct for someone who is
+      // NOT the one who starts the class (a student) — never for the
+      // concerned teacher or an admin, regardless of whether the session
+      // has started yet, hasn't started yet, or is already live and
+      // they're rejoining. The label must therefore depend ONLY on
+      // whether this viewer is a starter, never on `mode` — a previous
+      // version of this fix kept `mode` in the condition (falling back to
+      // "Start Live Session" for any mode other than 'join'), which
+      // regressed the opposite way: it made STUDENTS see "Start Live
+      // Session" too, because their mode is 'hidden' (not 'join') before
+      // the scheduled time. isStarter alone, independent of mode, is the
+      // correct and only condition. The 🏷️ console line is
+      // temporary-but-harmless diagnostic output so a future report of
+      // wrong text can be root-caused from the browser console.
       const schedule = state.currentSchedule;
       let isStarter = false;
       if (schedule && state.currentUser) {
@@ -3660,7 +3659,7 @@
         const teacherUsername = normalizeUsername(schedule.teacher_username);
         isStarter = !!state.isAdmin || currentUsername === teacherUsername;
       }
-      const label = (mode === 'join' && !isStarter) ? 'Join Live Session' : 'Start Live Session';
+      const label = isStarter ? 'Start Live Session' : 'Join Live Session';
       console.log(`🏷️ Live button label: mode=${mode}, isStarter=${isStarter}, isAdmin=${!!state.isAdmin}, scheduleTeacher=${schedule ? schedule.teacher_username : 'none'}, me=${state.currentUser ? state.currentUser.username : 'none'} -> "${label}"`);
       DOM.liveBtnText.textContent = label;
     }
