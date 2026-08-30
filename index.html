@@ -3,7 +3,22 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes, viewport-fit=cover, interactive-widget=resizes-content">
+  <!-- FIX: root cause of "pinch-to-zoom doesn't work on a shared screen
+       during a live class on mobile" — maximum-scale used to be locked to
+       1.0 here. That caps zoom at exactly 100% even with user-scalable
+       set to "yes", so there's nowhere for a pinch gesture to go. This
+       matters beyond just this page: PlugNmeet runs inside #videoIframe
+       below, and native pinch-zoom is a browser-chrome-level operation
+       that only ever consults the TOP-LEVEL document's viewport meta —
+       an embedded iframe's own viewport meta (PlugNmeet's dist/index.html
+       on meet.nouscomplex.com) has no effect on it at all. So this one
+       line was the actual, page-wide block, regardless of anything set
+       inside PlugNmeet itself. The whiteboard was never affected by this
+       because Excalidraw implements its own zoom in JS (redraws its own
+       canvas) rather than relying on native browser pinch-zoom — only the
+       shared-screen <video>, which has no such logic of its own, needed
+       this. 5.0 matches the max already set on PlugNmeet's own page. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="theme-color" content="#0e1b75">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -14,7 +29,7 @@
   <!-- Cache-busting query param — bump alongside the one on app.js
      whenever styles.css changes, for the same reason (see the comment
      on the app.js <script> tag below). -->
-<link rel="stylesheet" href="styles.css?v=20260828h">
+<link rel="stylesheet" href="styles.css?v=20260830a">
 
   <!-- FIX: root cause of "opening the app shows a blank screen for a few
        seconds instead of the loading/home screen" — these three <script>
@@ -510,6 +525,16 @@
             <button id="minimizeVideoBtn" class="video-minimize-btn" title="Minimize call (keep chatting)">
               <i class="fas fa-compress"></i>
             </button>
+            <!-- Live meeting timer — counts up from when this class actually
+                 went live (state.currentSchedule.scheduled_time, the same
+                 timestamp endLiveSessionForEveryone() uses to compute
+                 duration_minutes), not from when this device happened to
+                 join, so everyone in the call sees the same elapsed time.
+                 Ticks every second via startLiveCallTimer()/
+                 stopLiveCallTimer() in app.js. Hidden while minimized — the
+                 176px-wide pip already sheds every other label for space
+                 (see .video-panel-minimized rules in styles.css). -->
+            <span id="liveCallTimer" class="video-call-timer hidden" aria-live="off">00:00</span>
             <!-- FIX: root cause of "screen is still at [PlugNmeet's own
                  'Disconnected / The meeting has ended'] page when the
                  meeting is ended by any teacher or admin" — the removed
@@ -824,7 +849,7 @@
      anything) every time app.js changes so browsers/CDNs that cached the
      old file under the plain "app.js" URL are forced to fetch the new
      one instead of silently keeping serving stale code. -->
-<script src="app.js?v=20260828h" defer></script>
+<script src="app.js?v=20260830a" defer></script>
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
