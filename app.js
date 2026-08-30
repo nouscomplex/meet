@@ -511,7 +511,7 @@
   }
 
   function formatDate(ts) {
-    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
   }
 
   function dayKey(ts) {
@@ -540,7 +540,7 @@
   }
 
   function formatFullDate(ts) {
-    return new Date(ts).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+    return new Date(ts).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: true });
   }
 
   function formatTimeAgo(ts) {
@@ -3572,8 +3572,8 @@
   function renderScheduleBanner(schedule) {
     const start = new Date(schedule.scheduled_time);
     const end = new Date(start.getTime() + (schedule.duration_minutes || 45) * 60000);
-    const startFormatted = start.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-    const endFormatted = end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const startFormatted = start.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+    const endFormatted = end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
     DOM.scheduleBannerText.textContent = `Class with ${getDisplayName(schedule.teacher_username)} scheduled for ${startFormatted}–${endFormatted}`;
     DOM.scheduleBanner.classList.remove('hidden');
   }
@@ -3799,7 +3799,7 @@
     const end = new Date(start.getTime() + durationMinutes * 60000);
     const isLiveNow = Date.now() >= start.getTime() && Date.now() < end.getTime();
     const dateLabel = start.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-    const timeLabel = `${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    const timeLabel = `${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })} – ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}`;
 
     const adminActions = state.isAdmin ? `
       <div class="group-schedule-item-actions">
@@ -3976,7 +3976,7 @@
     const [h, m] = startTimeStr.split(':').map(Number);
     if (!Number.isFinite(h) || !Number.isFinite(m)) return '—';
     const end = new Date(2000, 0, 1, h, m + durationMinutes);
-    return end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
   }
 
   function updateScheduleEndPreview() {
@@ -4172,8 +4172,8 @@
     const start = new Date(row.scheduled_time);
     const durationMinutes = row.duration_minutes || 45;
     const end = new Date(start.getTime() + durationMinutes * 60000);
-    const startLabel = start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const endLabel = end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const startLabel = start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+    const endLabel = end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
     const groupName = channelNameById.get(String(row.channel_id)) || 'Unknown group';
     const isLiveNow = Date.now() >= start.getTime() && Date.now() < end.getTime();
 
