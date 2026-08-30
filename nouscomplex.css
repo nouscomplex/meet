@@ -61,6 +61,36 @@ header#main-header .left button[aria-label*="theme" i] {
   display: none !important;
 }
 
+/* True-center the meeting title (header#main-header .middle) regardless
+   of how many icons sit in .left vs .right. By default PlugNmeet only
+   centers the title within whatever space is LEFT OVER between those two
+   shrink-0 flex groups (confirmed via DevTools: header#main-header >
+   .left / .middle[flex-1 justify-center] / .right) — so a lighter .left
+   and heavier .right visibly pull the title off true-center. That
+   imbalance already exists in PlugNmeet's stock header (.right holds 4
+   icons: notifications, signal, speaker, overflow menu — .left only ever
+   held the logo plus the now-hidden theme toggle above), and hiding that
+   theme toggle made .left even lighter, nudging the title slightly
+   further left than PlugNmeet's own unmodified header would sit.
+   Switching .middle to absolute + translate centers it against the
+   header's true full width instead of the leftover gap. max-width keeps a
+   long class name truncating safely (same ellipsis behavior as before)
+   instead of ever sliding under the logo or the icon cluster on a narrow
+   phone screen — the 340px figure is an estimate from the icon cluster's
+   on-screen width, not a measured exact value, so re-check this with a
+   longer class name and adjust if it ever gets close to overlapping. */
+header#main-header {
+  position: relative;
+}
+header#main-header .middle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: calc(100% - 340px);
+  z-index: 10;
+}
+
 /* Whiteboard: remove the row of external link buttons (Documentation,
    Read our blog, Found an issue? Submit, YouTube) from the top of the
    Excalidraw "Help" panel. The whiteboard is Excalidraw, embedded as-is
