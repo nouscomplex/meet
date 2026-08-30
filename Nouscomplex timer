@@ -1,0 +1,101 @@
+// ============================================================
+// NOUS COMPLEX ORBIT — Live meeting timer for PlugNmeet
+// ============================================================
+// Injected into PlugNmeet's own meeting screen via a single <script> tag
+// added to client/dist/index.html on the server (see deployment notes).
+// Not part of the React app's own build — this is a small, self-contained
+// script with no dependencies, so a future PlugNmeet client update can't
+// break it by changing internal component code; it only depends on
+// header#main-header existing, which nouscomplex.css already relies on
+// too.
+//
+// IMPORTANT LIMITATION: this counts "time since THIS browser's PlugNmeet
+// page loaded" — it has no access to the class schedule data that lives
+// in the Orbit app/Supabase, so it is NOT guaranteed to show the exact
+// same second for every participant (someone who joins a few seconds
+// later will start their own count from 0 at that point). If you need
+// every viewer to see an identically-synced elapsed time, that's what the
+// timer already added to the Orbit app's own video toolbar does instead
+// (it's anchored to the class's scheduled_time). This one is the
+// equivalent of "time since I joined," shown inside PlugNmeet's own
+// screen rather than around it.
+(function () {
+  'use strict';
+
+  function formatDuration(ms) {
+    var totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    var hours = Math.floor(totalSeconds / 3600);
+    var minutes = Math.floor((totalSeconds % 3600) / 60);
+    var seconds = totalSeconds % 60;
+    function pad(n) { return (n < 10 ? '0' : '') + n; }
+    return hours > 0
+      ? hours + ':' + pad(minutes) + ':' + pad(seconds)
+      : pad(minutes) + ':' + pad(seconds);
+  }
+
+  function createTimerEl() {
+    var el = document.createElement('div');
+    el.id = 'nc-live-timer';
+    el.setAttribute('aria-live', 'off');
+    // Inline styles + position:fixed on purpose — this does NOT try to
+    // slot into PlugNmeet's own header flex layout (whose internal
+    // structure isn't ours to depend on and can change between PlugNmeet
+    // versions). It floats above the header instead, so it can't distort
+    // or get squeezed out by PlugNmeet's own controls.
+    el.style.cssText = [
+      'position:fixed',
+      'top:8px',
+      'left:50%',
+      'transform:translateX(-50%)',
+      'z-index:2147483000',
+      'background:rgba(14,28,118,0.85)', // matches header_bg_color navy
+      'color:#ffffff',
+      'font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif',
+      'font-size:12px',
+      'font-weight:700',
+      'letter-spacing:0.02em',
+      'padding:4px 12px',
+      'border-radius:999px',
+      'pointer-events:none',
+      'font-variant-numeric:tabular-nums',
+      'box-shadow:0 2px 8px rgba(0,0,0,0.25)'
+    ].join(';');
+    el.textContent = '00:00';
+    return el;
+  }
+
+  function startWhenReady() {
+    var startedAt = Date.now();
+    var timerEl = null;
+    var intervalId = null;
+
+    function ensureMounted() {
+      // React re-renders can wipe out DOM nodes it doesn't know about —
+      // re-attach if that ever happens.
+      if (timerEl && document.body.contains(timerEl)) return;
+      // Only appear once the actual meeting UI is up (header#main-header
+      // exists) — not on the pre-join / waiting-room / permission screens.
+      if (!document.querySelector('header#main-header')) return;
+      timerEl = createTimerEl();
+      document.body.appendChild(timerEl);
+    }
+
+    function tick() {
+      ensureMounted();
+      if (timerEl) timerEl.textContent = formatDuration(Date.now() - startedAt);
+    }
+
+    tick();
+    intervalId = setInterval(tick, 1000);
+
+    window.addEventListener('pagehide', function () {
+      if (intervalId) clearInterval(intervalId);
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startWhenReady);
+  } else {
+    startWhenReady();
+  }
+})();
