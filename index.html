@@ -75,9 +75,31 @@
        That file is the splash graphic and should only ever be used for the
        splash/loading screen (see #appLoading below); the actual app icon
        everywhere else (favicon, apple-touch-icon, and now here) is
-       nouscomplex.png. Decoded, this base64 payload is:
-       {"name":"Nous Complex Orbit","short_name":"Orbit","description":"Unified communication platform","start_url":".","display":"standalone","background_color":"#ffffff","theme_color":"#1F6F78","icons":[{"src":"nouscomplex.png","sizes":"512x512","type":"image/png","purpose":"any"}]} -->
-  <link rel="manifest" href='data:application/json;base64,eyJuYW1lIjogIk5vdXMgQ29tcGxleCBPcmJpdCIsICJzaG9ydF9uYW1lIjogIk9yYml0IiwgImRlc2NyaXB0aW9uIjogIlVuaWZpZWQgY29tbXVuaWNhdGlvbiBwbGF0Zm9ybSIsICJzdGFydF91cmwiOiAiLiIsICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLCAiYmFja2dyb3VuZF9jb2xvciI6ICIjZmZmZmZmIiwgInRoZW1lX2NvbG9yIjogIiMxRjZGNzgiLCAiaWNvbnMiOiBbeyJzcmMiOiAibm91c2NvbXBsZXgucG5nIiwgInNpemVzIjogIjUxMng1MTIiLCAidHlwZSI6ICJpbWFnZS9wbmciLCAicHVycG9zZSI6ICJhbnkifV19' />
+       nouscomplex.png.
+
+       FIX: root cause of "pinch-to-zoom doesn't work anywhere in the app
+       (not just the shared screen) when opened from the installed
+       home-screen icon, but works fine in a normal Chrome tab" —
+       "display" used to be "standalone". Confirmed directly: Android
+       Chrome's WebAPK wrapper for "standalone" mode disables pinch-zoom
+       system-wide, regardless of any viewport meta tag — a platform
+       limitation, not something fixable from CSS/JS inside the page
+       (this is why the maximum-scale fix above had no effect from the
+       installed icon, while it did fix zoom in a browser tab). Per the
+       Web App Manifest spec, "display" falls back down the chain
+       fullscreen -> standalone -> minimal-ui -> browser when a value
+       isn't supported — never back up to standalone — so "minimal-ui"
+       is a safe thing to try: best case it keeps most of the installed,
+       address-bar-free look while restoring normal browser zoom
+       behavior; worst case (if minimal-ui isn't honored) it falls back
+       to plain "browser", which is the Chrome-tab behavior already
+       confirmed to work. If the small system UI minimal-ui can add
+       (e.g. a thin reload/URL strip) isn't acceptable, the alternative
+       is switching back to "standalone" and relying on the Capacitor
+       native-app build for a properly zoomable live-class screen
+       instead. Decoded, this base64 payload is now:
+       {"name":"Nous Complex Orbit","short_name":"Orbit","description":"Unified communication platform","start_url":".","display":"minimal-ui","background_color":"#ffffff","theme_color":"#1F6F78","icons":[{"src":"nouscomplex.png","sizes":"512x512","type":"image/png","purpose":"any"}]} -->
+  <link rel="manifest" href='data:application/json;base64,eyJuYW1lIjogIk5vdXMgQ29tcGxleCBPcmJpdCIsICJzaG9ydF9uYW1lIjogIk9yYml0IiwgImRlc2NyaXB0aW9uIjogIlVuaWZpZWQgY29tbXVuaWNhdGlvbiBwbGF0Zm9ybSIsICJzdGFydF91cmwiOiAiLiIsICJkaXNwbGF5IjogIm1pbmltYWwtdWkiLCAiYmFja2dyb3VuZF9jb2xvciI6ICIjZmZmZmZmIiwgInRoZW1lX2NvbG9yIjogIiMxRjZGNzgiLCAiaWNvbnMiOiBbeyJzcmMiOiAibm91c2NvbXBsZXgucG5nIiwgInNpemVzIjogIjUxMng1MTIiLCAidHlwZSI6ICJpbWFnZS9wbmciLCAicHVycG9zZSI6ICJhbnkifV19' />
 </head>
 <body>
 
