@@ -2243,31 +2243,45 @@ body.theme-dark .btn-send { color: #FFFFFF; }
   display: none;
 }
 
+/* FIX: root cause of "black row showing on top of PlugNmeet's header
+   in the minimized pip" — the previous version of this rule kept
+   #videoToolbar as a normal, in-flow flex item (so the drag handle
+   still worked) but never overrode its base `.video-toolbar` rule's
+   `background: #05061a`, so a solid near-black bar still rendered as
+   its own reserved strip above the iframe, on top of the tiny
+   PlugNmeet header now visible inside the pip. Switched to an
+   absolutely-positioned, transparent overlay instead: taken out of
+   flex flow (so the iframe expands to fill the ENTIRE pip, no reserved
+   gap) and layered on top with no background of its own, so nothing
+   paints there — only a thin invisible strip remains for
+   beginPipDrag()'s pointer listeners (see app.js) to grab, same as
+   before. .video-panel is `position: fixed` (base rule, unchanged by
+   the minimized-state overrides), so it's the positioning context this
+   overlay sizes against. */
 .video-panel.video-panel-minimized .video-toolbar {
-  padding: 6px 8px;
-  gap: 6px;
-  /* FIX: this is the pip's drag handle (see beginPipDrag() in app.js) —
-     cursor:move signals that, and touch-action:none stops a touch-drag
-     here from also panning/scrolling the chat screen underneath while
-     the pointer is down. */
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 26px;
+  padding: 0;
+  margin: 0;
+  gap: 0;
+  background: transparent;
+  z-index: 5;
+  /* cursor:move signals this is the pip's drag handle; touch-action:none
+     stops a touch-drag here from also panning/scrolling the chat screen
+     underneath while the pointer is down. */
   cursor: move;
   touch-action: none;
 }
 
-/* FIX: follow-up to the full-screen toolbar removal above — the
-   minimized pip still showed its own tiny minimize/End-for-Everyone
-   buttons (and #videoToolbar doubles as the pip's drag handle), which
-   read as the same old "desktop" controls reappearing on the small
-   minimized screen, mobile included. Those buttons are hidden here too
-   (still reachable from PlugNmeet's own header inside the tiny iframe),
-   but the bar itself is kept in normal, non-`display:none` layout so it
-   still exists as an invisible full-width strip: visibility:hidden
-   removes each button from painting AND from hit-testing (clicks pass
-   through to the bar underneath) without collapsing its box, so
-   dragging the pip by this strip keeps working exactly as before —
-   beginPipDrag()'s own `e.target.closest('button')` bail-out simply
-   never triggers anymore since a hidden button can't be the event
-   target. */
+/* Buttons/timer that used to render inside this bar are hidden — those
+   controls now live on PlugNmeet's own header, visible inside the tiny
+   iframe itself. visibility:hidden (not display:none) makes each one
+   fully non-interactive too, so it can never be the event target and
+   block a drag — see beginPipDrag()'s `e.target.closest('button')`
+   bail-out in app.js, which now simply never triggers here. */
 .video-panel.video-panel-minimized .video-toolbar > * {
   visibility: hidden;
 }
