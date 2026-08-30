@@ -5195,6 +5195,21 @@
 
     DOM.videoContainer.classList.remove('hidden');
     setVideoMinimized(false);
+    // FIX: tag the join URL with nc_role=admin for admins so the header
+    // controls injected into PlugNmeet's own UI (see
+    // NOUS_COMPLEX_PLUGNMEET_HEADER_BRIDGE above and
+    // NOUS_COMPLEX_HEADER_CONTROLS in PlugNmeet's client/dist/index.html on
+    // the Oracle server) know whether to draw the admin-only "End for
+    // Everyone" button. Wrapped in try/catch since liveUrl is server-
+    // provided — if it's ever not a valid absolute URL, fall back to
+    // joining unmodified rather than breaking the call.
+    try {
+      const u = new URL(liveUrl);
+      if (state.isAdmin) u.searchParams.set('nc_role', 'admin');
+      liveUrl = u.toString();
+    } catch (e) {
+      console.warn('Could not append nc_role to join URL:', e);
+    }
     DOM.videoIframe.src = liveUrl;
     state.videoActive = true;
     state.activeCallScheduleId = state.currentSchedule ? state.currentSchedule.id : null;
@@ -6657,6 +6672,39 @@
       setVideoMinimized(!state.videoMinimized);
     });
   }
+
+  // ============================================================
+  // NOUS_COMPLEX_PLUGNMEET_HEADER_BRIDGE
+  // ============================================================
+  // Lets a Minimize/Maximize and an "End for Everyone" button, injected
+  // directly into PlugNmeet's own header UI (client/dist/index.html on the
+  // Oracle server — search that file for NOUS_COMPLEX_HEADER_CONTROLS),
+  // reach the exact same setVideoMinimized()/endLiveSessionForEveryone()
+  // this app's own toolbar buttons already use. PlugNmeet renders in a
+  // cross-origin iframe (meet.nouscomplex.com), so postMessage is the only
+  // channel a button drawn inside it has back to this page — this listens
+  // for that.
+  //
+  // Security: event.origin is checked against PlugNmeet's real origin so a
+  // malicious page can't forge these commands by embedding this app and
+  // posting fake messages. The "nc_role=admin" flag joinLiveClass() below
+  // appends to the join URL only controls whether PlugNmeet's injected
+  // script *draws* the End-for-Everyone button — it's just a URL a student
+  // could edit in devtools, so it is NOT trusted as the real permission
+  // check here. state.isAdmin (this session's actual, server-verified
+  // role) is the real gate, same as the app's own #endLiveSessionBtn.
+  window.addEventListener('message', (event) => {
+    if (event.origin !== 'https://meet.nouscomplex.com') return;
+    const data = event.data;
+    if (!data || data.source !== 'nous-complex-plugnmeet') return;
+    if (data.type === 'nous-minimize') {
+      setVideoMinimized(true);
+    } else if (data.type === 'nous-maximize') {
+      setVideoMinimized(false);
+    } else if (data.type === 'nous-end-for-everyone') {
+      if (state.isAdmin) endLiveSessionForEveryone();
+    }
+  });
 
   // FIX: root cause of "why is the minimized meeting not movable and
   // resizable" — beginPipDrag()/beginPipResize() (see the "VIDEO PIP
