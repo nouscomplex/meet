@@ -3638,35 +3638,30 @@
     DOM.joinLiveBtn.setAttribute('aria-disabled', String(isInactive));
 
     if (DOM.liveBtnText) {
-      // FIX: root cause of "teacher sees Join Live Session on the grey/
-      // disabled button instead of Start Live Session" — getLiveButtonMode()
-      // correctly returns 'hidden' (button stays disabled/grey) for the
-      // whole stretch BEFORE the scheduled start time, for every viewer
-      // including the concerned teacher — that's correct, it's not time
-      // yet. But the label used to be driven off that same 'hidden' mode
-      // and just fell back to 'Join Live Session' whenever mode wasn't
-      // exactly 'start' — so the teacher's own upcoming session showed
-      // "Join" (implying someone else has to start it) right up until the
-      // instant it became clickable. The label is now decided
-      // independently of whether the button is currently clickable: a
-      // schedule that exists and belongs to this user (or any admin) is
-      // always labelled "Start Live Session", grey/disabled or not; it
-      // only ever reads "Join Live Session" for someone who isn't the one
-      // who starts it.
-      let label = 'Join Live Session';
-      if (mode === 'start') {
-        label = 'Start Live Session';
-      } else {
-        const schedule = state.currentSchedule;
-        if (schedule && state.currentUser) {
-          const currentUsername = normalizeUsername(state.currentUser.username);
-          const teacherUsername = normalizeUsername(schedule.teacher_username);
-          const isConcernedTeacher = currentUsername === teacherUsername;
-          if (isConcernedTeacher || state.isAdmin) {
-            label = 'Start Live Session';
-          }
-        }
+      // FIX: root cause of "teacher/admin sees Join Live Session on the
+      // grey/disabled button instead of Start Live Session" — a prior
+      // version of this fix tried to override the label but was reported
+      // as still showing "Join Live Session" before the scheduled time,
+      // for BOTH the concerned teacher and admins, even with the schedule
+      // banner correctly visible (i.e. state.currentSchedule was NOT the
+      // problem). Rewritten from scratch with the condition inverted —
+      // start from "Start Live Session" as the default and only fall back
+      // to "Join Live Session" in the one case that should ever show it
+      // (mode is 'join' AND this viewer isn't the starter) — rather than
+      // the previous "default to Join, opt in to Start" shape, which had
+      // more ways to silently fail open into the wrong label. The
+      // 🏷️ console line below is temporary-but-harmless diagnostic output
+      // so the next report of wrong text can be root-caused from the
+      // browser console instead of guessed at again.
+      const schedule = state.currentSchedule;
+      let isStarter = false;
+      if (schedule && state.currentUser) {
+        const currentUsername = normalizeUsername(state.currentUser.username);
+        const teacherUsername = normalizeUsername(schedule.teacher_username);
+        isStarter = !!state.isAdmin || currentUsername === teacherUsername;
       }
+      const label = (mode === 'join' && !isStarter) ? 'Join Live Session' : 'Start Live Session';
+      console.log(`🏷️ Live button label: mode=${mode}, isStarter=${isStarter}, isAdmin=${!!state.isAdmin}, scheduleTeacher=${schedule ? schedule.teacher_username : 'none'}, me=${state.currentUser ? state.currentUser.username : 'none'} -> "${label}"`);
       DOM.liveBtnText.textContent = label;
     }
 
