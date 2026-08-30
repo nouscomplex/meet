@@ -3660,8 +3660,15 @@
         isStarter = !!state.isAdmin || currentUsername === teacherUsername;
       }
       const label = isStarter ? 'Start Live Session' : 'Join Live Session';
-      console.log(`🏷️ Live button label: mode=${mode}, isStarter=${isStarter}, isAdmin=${!!state.isAdmin}, scheduleTeacher=${schedule ? schedule.teacher_username : 'none'}, me=${state.currentUser ? state.currentUser.username : 'none'} -> "${label}"`);
+      const diag = `mode=${mode} isStarter=${isStarter} isAdmin=${!!state.isAdmin} scheduleId=${schedule ? schedule.id : 'none'} scheduledTime=${schedule ? schedule.scheduled_time : 'none'} isLive=${schedule ? schedule.is_live : 'none'} scheduleTeacher="${schedule ? schedule.teacher_username : 'none'}" me="${state.currentUser ? state.currentUser.username : 'none'}"`;
+      console.log(`🏷️ Live button label: ${diag} -> "${label}"`);
       DOM.liveBtnText.textContent = label;
+      // DIAGNOSTIC (temporary): the exact values used to compute the label
+      // are shown on hover, so this can be checked without opening
+      // DevTools — just hover the mouse over the live-session button and
+      // read the tooltip text.
+      DOM.joinLiveBtn.title = diag;
+      return;
     }
 
     DOM.joinLiveBtn.title = isInactive
