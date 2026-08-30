@@ -3639,29 +3639,26 @@
     DOM.joinLiveBtn.setAttribute('aria-disabled', String(isInactive));
 
     if (DOM.liveBtnText) {
-      // FIX: "Join Live Session" is only ever correct for someone who is
-      // NOT the one who starts the class (a student) — never for the
-      // concerned teacher or an admin, regardless of whether the session
-      // has started yet, hasn't started yet, or is already live and
-      // they're rejoining. The label must therefore depend ONLY on
-      // whether this viewer is a starter, never on `mode` — a previous
-      // version of this fix kept `mode` in the condition (falling back to
-      // "Start Live Session" for any mode other than 'join'), which
-      // regressed the opposite way: it made STUDENTS see "Start Live
-      // Session" too, because their mode is 'hidden' (not 'join') before
-      // the scheduled time. isStarter alone, independent of mode, is the
-      // correct and only condition. The 🏷️ console line is
-      // temporary-but-harmless diagnostic output so a future report of
-      // wrong text can be root-caused from the browser console.
+      // FIX (root cause, found via the diagnostic line): the previous
+      // version only counted someone as a "starter" (-> "Start Live
+      // Session") when a schedule row existed AND its teacher_username
+      // matched the current user. Whenever no schedule row was currently
+      // loaded for the channel (state.currentSchedule === null — e.g.
+      // before the scheduled time, or when no session is scheduled at
+      // all), isStarter silently defaulted to false for EVERYONE,
+      // including the teacher/admin, which is exactly the "teacher sees
+      // Join Live Session while idle, then it flips to Start Live Session
+      // once the schedule loads/starts" bug that was reported.
+      // "Join Live Session" is designed for students only, full stop —
+      // it must never depend on whether a specific schedule row is loaded
+      // or who it names as teacher. The only correct signal for "is this
+      // person staff, not a student" is their account role, which is
+      // already known the instant they're logged in via
+      // state.isTeacher / state.isAdmin — independent of any schedule.
       const schedule = state.currentSchedule;
-      let isStarter = false;
-      if (schedule && state.currentUser) {
-        const currentUsername = normalizeUsername(state.currentUser.username);
-        const teacherUsername = normalizeUsername(schedule.teacher_username);
-        isStarter = !!state.isAdmin || currentUsername === teacherUsername;
-      }
+      const isStarter = !!state.isTeacher || !!state.isAdmin;
       const label = isStarter ? 'Start Live Session' : 'Join Live Session';
-      const diag = `mode=${mode} isStarter=${isStarter} isAdmin=${!!state.isAdmin} scheduleId=${schedule ? schedule.id : 'none'} scheduledTime=${schedule ? schedule.scheduled_time : 'none'} isLive=${schedule ? schedule.is_live : 'none'} scheduleTeacher="${schedule ? schedule.teacher_username : 'none'}" me="${state.currentUser ? state.currentUser.username : 'none'}"`;
+      const diag = `mode=${mode} isStarter=${isStarter} isTeacher=${!!state.isTeacher} isAdmin=${!!state.isAdmin} scheduleId=${schedule ? schedule.id : 'none'} scheduledTime=${schedule ? schedule.scheduled_time : 'none'} isLive=${schedule ? schedule.is_live : 'none'} scheduleTeacher="${schedule ? schedule.teacher_username : 'none'}" me="${state.currentUser ? state.currentUser.username : 'none'}"`;
       console.log(`🏷️ Live button label: ${diag} -> "${label}"`);
       DOM.liveBtnText.textContent = label;
       // DIAGNOSTIC (temporary): a disabled <button>'s title attribute does
