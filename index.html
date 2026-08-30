@@ -426,13 +426,6 @@
           </button>
         </header>
 
-        <!-- TEMP DIAGNOSTIC: shows exactly why the live-session button
-             above says what it says. A disabled <button>'s title attribute
-             does not show a hover tooltip in Chrome, so this is a plain
-             visible line instead. Safe to delete once the button-label
-             bug is confirmed fixed. -->
-        <div id="liveDebugInfo" style="font-size:10px;color:#888;padding:2px 8px;word-break:break-all;"></div>
-
         <!-- WhatsApp-style selection header: replaces the group-name
              header above (not a floating pill over the bubble) once a
              message is selected — click it on desktop, long-press it
@@ -864,7 +857,7 @@
      anything) every time app.js changes so browsers/CDNs that cached the
      old file under the plain "app.js" URL are forced to fetch the new
      one instead of silently keeping serving stale code. -->
-<script src="app.js?v=20260830i" defer></script>
+<script src="app.js?v=20260830j" defer></script>
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
