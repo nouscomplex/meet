@@ -243,6 +243,7 @@
     msgSelectInfoBtn: $('msgSelectInfoBtn'),
     joinLiveBtn: $('joinLiveBtn'),
     liveBtnText: $('liveBtnText'),
+    liveDebugInfo: $('liveDebugInfo'),
     scheduleBanner: $('scheduleBanner'),
     scheduleBannerText: $('scheduleBannerText'),
     chatContainer: $('chatContainer'),
@@ -3663,11 +3664,12 @@
       const diag = `mode=${mode} isStarter=${isStarter} isAdmin=${!!state.isAdmin} scheduleId=${schedule ? schedule.id : 'none'} scheduledTime=${schedule ? schedule.scheduled_time : 'none'} isLive=${schedule ? schedule.is_live : 'none'} scheduleTeacher="${schedule ? schedule.teacher_username : 'none'}" me="${state.currentUser ? state.currentUser.username : 'none'}"`;
       console.log(`🏷️ Live button label: ${diag} -> "${label}"`);
       DOM.liveBtnText.textContent = label;
-      // DIAGNOSTIC (temporary): the exact values used to compute the label
-      // are shown on hover, so this can be checked without opening
-      // DevTools — just hover the mouse over the live-session button and
-      // read the tooltip text.
+      // DIAGNOSTIC (temporary): a disabled <button>'s title attribute does
+      // not show a hover tooltip in Chrome (confirmed not visible), so the
+      // same info is also written as plain visible text into #liveDebugInfo
+      // right under the button — no hover, no DevTools needed to read it.
       DOM.joinLiveBtn.title = diag;
+      if (DOM.liveDebugInfo) { DOM.liveDebugInfo.textContent = diag; }
       return;
     }
 
