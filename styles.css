@@ -2249,11 +2249,27 @@ body.theme-dark .btn-send { color: #FFFFFF; }
   /* FIX: this is the pip's drag handle (see beginPipDrag() in app.js) —
      cursor:move signals that, and touch-action:none stops a touch-drag
      here from also panning/scrolling the chat screen underneath while
-     the pointer is down. Buttons inside still take normal taps —
-     beginPipDrag() bails out via e.target.closest('button') before a
-     drag ever starts on one of them. */
+     the pointer is down. */
   cursor: move;
   touch-action: none;
+}
+
+/* FIX: follow-up to the full-screen toolbar removal above — the
+   minimized pip still showed its own tiny minimize/End-for-Everyone
+   buttons (and #videoToolbar doubles as the pip's drag handle), which
+   read as the same old "desktop" controls reappearing on the small
+   minimized screen, mobile included. Those buttons are hidden here too
+   (still reachable from PlugNmeet's own header inside the tiny iframe),
+   but the bar itself is kept in normal, non-`display:none` layout so it
+   still exists as an invisible full-width strip: visibility:hidden
+   removes each button from painting AND from hit-testing (clicks pass
+   through to the bar underneath) without collapsing its box, so
+   dragging the pip by this strip keeps working exactly as before —
+   beginPipDrag()'s own `e.target.closest('button')` bail-out simply
+   never triggers anymore since a hidden button can't be the event
+   target. */
+.video-panel.video-panel-minimized .video-toolbar > * {
+  visibility: hidden;
 }
 
 .video-minimize-btn {
