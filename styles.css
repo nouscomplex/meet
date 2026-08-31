@@ -509,9 +509,16 @@ button { font-family: inherit; }
 }
 
 .auth-emblem {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
+  /* FIX: root cause of "logo size is very small on login screen" — this
+     used to force the logo into a fixed 56x56px square. nouscomplex.png
+     is a wordmark (wider than tall), so object-fit: contain was shrinking
+     the whole image down to fit inside that tiny box instead of letting
+     it read at a normal size. Now sized by width with height:auto, so the
+     logo scales up to a legible size while keeping its own aspect ratio;
+     border-radius removed since that was meant for a square icon crop,
+     not a wordmark. */
+  width: min(180px, 60%);
+  height: auto;
   object-fit: contain;
   margin: 0 auto 18px;
   display: block;
