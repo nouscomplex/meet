@@ -3299,10 +3299,10 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
   cursor: pointer;
   color: var(--ink-faint);
   font-size: 10.5px;
-  /* FIX: "increase the icons size for chat updates and settings and make
-     the font size bold" — label weight bumped 600 -> 800 to read as bold
-     under the tab icons (Sessions/Updates/Settings). */
-  font-weight: 800;
+  /* FIX: "make the font of sessions, updates and settings bold" — label
+     weight bumped 600 -> 900 (max weight) so Sessions/Updates/Settings
+     read unambiguously bold under the tab icons. */
+  font-weight: 900;
   padding: 2px 14px;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
