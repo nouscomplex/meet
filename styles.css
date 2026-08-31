@@ -3311,12 +3311,15 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
 }
 .nav-icon-wrap {
   position: relative;
-  /* FIX: enlarged along with .nav-icon-svg below (34px -> 40px) so the
-     active-state circle still has breathing room around the bigger icon
-     instead of the icon crowding its edge. */
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
+  /* FIX: "use this shape for icons highlighter instead of circular shape"
+     — the active-tab highlight was a circle (40x40, border-radius:50%).
+     Per the reference image (a wide navy stadium/pill shape), this is now
+     a pill: wider than tall, with border-radius large enough (999px) to
+     fully round the shorter (height) dimension into semicircular ends,
+     instead of a perfect circle. */
+  width: 56px;
+  height: 34px;
+  border-radius: 999px;
   display: flex;
   align-items: center;
   justify-content: center;
