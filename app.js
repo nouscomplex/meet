@@ -479,14 +479,18 @@
   // profile photo (channelAvatarHtml() below, plus the bigger picture at
   // the top of the group Profile screen — see #profileChannelLogo in
   // index.html, set directly in markup since it's the same image for every
-  // group, no per-channel JS needed), and the default photo for teacher and
-  // student accounts (avatarHtml()/setAvatarEl() below). Admin keeps the
-  // original colored-initial avatar — only teachers and students were
-  // asked for.
+  // group, no per-channel JS needed), and the default photo for every
+  // account role — admin, teacher, and student (avatarHtml()/setAvatarEl()
+  // below, gated by isLogoAvatarRole()) — fully consistent branding
+  // everywhere an avatar shows up.
   const LOGO_AVATAR_IMG_HTML = '<img class="avatar-img" src="nouscomplex.png" alt="" draggable="false">';
 
   function isLogoAvatarRole(key) {
-    return key === 'teacher' || key === 'student';
+    // FIX: admin now shows the logo too, at the user's request — every
+    // role (admin/teacher/student) and the group itself all show the same
+    // Nous Complex logo, fully consistent branding across every avatar in
+    // the app.
+    return key === 'admin' || key === 'teacher' || key === 'student';
   }
 
   function avatarHtml(username, size) {
