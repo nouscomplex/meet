@@ -578,6 +578,7 @@ button { font-family: inherit; }
 
 .field-sm {
   padding: 9px 11px;
+  font-family: var(--font-body);
   font-size: 13px;
   border-radius: var(--radius-sm);
   border: 1.5px solid var(--border);
@@ -602,8 +603,19 @@ button { font-family: inherit; }
 .format-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 8px;
+}
+/* Separates the inline markers (bold/italic/strike/mono/line break) from
+   the block-alignment buttons, which behave differently — alignment
+   applies to the whole field's text, not just a selection. */
+.format-toolbar-divider {
+  width: 1.5px;
+  height: 18px;
+  background: var(--border-strong);
+  margin: 0 2px;
+  flex-shrink: 0;
 }
 .format-toolbar-btn {
   width: 30px;
