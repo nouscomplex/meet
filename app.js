@@ -299,6 +299,7 @@
     groupScheduleList: $('groupScheduleList'),
     
     adminDescEdit: $('adminDescEdit'),
+    descFormatToolbar: $('descFormatToolbar'),
     channelDescInput: $('channelDescInput'),
     updateDescBtn: $('updateDescBtn'),
 
@@ -609,6 +610,89 @@
       }
     }
     return html;
+  }
+
+  // ============================================================
+  // TEXT FORMATTING TOOLBAR (group description + status updates)
+  // WhatsApp-style inline markers, applied on top of linkifyText()'s
+  // already-escaped HTML: *bold*, _italic_, ~strikethrough~, ```mono```.
+  // Matches never cross a '<'/'>' so they can't reach into an <a> tag's
+  // attributes or straddle two tags, and lookaround boundaries keep them
+  // from firing mid-word (e.g. snake_case_name, 3*4) — only markers a
+  // toolbar button actually inserted, or someone typed on purpose with
+  // clear boundaries, get rendered.
+  // ============================================================
+  function applyInlineFormatting(html) {
+    if (!html) return html;
+    // Pull out ```mono``` spans first and stash their contents behind a
+    // placeholder so a marker typed *inside* one (e.g. ```*raw*```) stays
+    // literal instead of also being turned into <strong> etc. below —
+    // matches how inline code normally behaves in markdown-style syntax.
+    const monoStore = [];
+    html = html.replace(/```([^`<>\n]+?)```/g, (_m, inner) => {
+      monoStore.push(inner);
+      return `\u0001MONO${monoStore.length - 1}\u0001`;
+    });
+    html = html.replace(/(?<![\w*])\*([^*<>\n]+?)\*(?![\w*])/g, '<strong>$1</strong>');
+    html = html.replace(/(?<![\w_])_([^_<>\n]+?)_(?![\w_])/g, '<em>$1</em>');
+    html = html.replace(/(?<![\w~])~([^~<>\n]+?)~(?![\w~])/g, '<s>$1</s>');
+    html = html.replace(/\u0001MONO(\d+)\u0001/g, (_m, idx) => `<code class="msg-mono">${monoStore[Number(idx)]}</code>`);
+    return html;
+  }
+
+  // Full render pipeline for user-authored text that supports both links
+  // and the formatting markers above: group descriptions and status/update
+  // content. (Chat messages intentionally keep plain linkifyText() — this
+  // toolbar was only added for description + status composing.)
+  function richText(text) {
+    return applyInlineFormatting(linkifyText(text));
+  }
+
+  // Wraps the current selection inside a text <input>/<textarea> with the
+  // given marker pair, or inserts an empty pair at the caret and places
+  // the cursor between them when nothing is selected. Fires a synthetic
+  // 'input' event so anything listening on the field (e.g. keypress-driven
+  // save shortcuts) still sees the change.
+  function wrapSelectionWithMarker(el, before, after) {
+    if (!el) return;
+    if (after === undefined) after = before;
+    el.focus();
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    const value = el.value;
+    const selected = value.slice(start, end);
+    el.value = value.slice(0, start) + before + selected + after + value.slice(end);
+    const cursorStart = start + before.length;
+    const cursorEnd = cursorStart + selected.length;
+    el.setSelectionRange(cursorStart, cursorEnd);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  const FORMAT_MARKERS = {
+    bold: ['*', '*'],
+    italic: ['_', '_'],
+    strike: ['~', '~'],
+    mono: ['```', '```'],
+  };
+
+  // Wires up a .format-toolbar's buttons (data-format="bold|italic|strike|mono")
+  // to wrap the current selection in `targetEl`. Used for both the group
+  // description input (#descFormatToolbar, static markup) and each status
+  // composer's toolbar (#statusFormatToolbar, built fresh per modal in
+  // openStatusComposer()).
+  function initFormatToolbar(toolbarEl, targetEl) {
+    if (!toolbarEl || !targetEl || toolbarEl.dataset.formatToolbarBound === '1') return;
+    toolbarEl.dataset.formatToolbarBound = '1';
+    toolbarEl.querySelectorAll('[data-format]').forEach((btn) => {
+      // Prevent the button from stealing focus (and collapsing the
+      // selection) before the click handler runs.
+      btn.addEventListener('mousedown', (e) => e.preventDefault());
+      btn.addEventListener('click', () => {
+        const marker = FORMAT_MARKERS[btn.dataset.format];
+        if (!marker) return;
+        wrapSelectionWithMarker(targetEl, marker[0], marker[1]);
+      });
+    });
   }
 
   function firstUrlIn(text) {
@@ -4224,7 +4308,14 @@
 
     const fallback = `Group workspace for ${state.currentChannel?.name || 'this group'}. Share updates, chat with the group, and join live sessions together.`;
     const desc = state.currentChannel.description || fallback;
-    DOM.profileChannelDesc.textContent = desc;
+    // FIX: was `.textContent = desc`, which showed the raw *bold*/_italic_
+    // markers literally instead of rendering them — now that the admin
+    // description editor has a formatting toolbar (#descFormatToolbar),
+    // this needs to render those markers for every viewer, not just echo
+    // the plain saved string. richText() escapes the text itself (via
+    // linkifyText()'s internal escapeHtml()) before turning markers into
+    // real tags, so this stays safe against HTML injection.
+    DOM.profileChannelDesc.innerHTML = richText(desc);
     DOM.channelDescInput.value = state.currentChannel.description || '';
 
     DOM.adminDescEdit.classList.toggle('hidden', !state.isAdmin);
@@ -4626,6 +4717,12 @@
     modal.innerHTML = `
       <div class="modal-card">
         <h3 class="modal-title"><i class="fas fa-bullhorn"></i> Post an update</h3>
+        <div id="statusFormatToolbar" class="format-toolbar" role="toolbar" aria-label="Text formatting">
+          <button type="button" class="format-toolbar-btn" data-format="bold" title="Bold" aria-label="Bold"><i class="fas fa-bold"></i></button>
+          <button type="button" class="format-toolbar-btn" data-format="italic" title="Italic" aria-label="Italic"><i class="fas fa-italic"></i></button>
+          <button type="button" class="format-toolbar-btn" data-format="strike" title="Strikethrough" aria-label="Strikethrough"><i class="fas fa-strikethrough"></i></button>
+          <button type="button" class="format-toolbar-btn" data-format="mono" title="Monospace" aria-label="Monospace"><i class="fas fa-code"></i></button>
+        </div>
         <textarea id="statusComposeText" class="field" rows="3" placeholder="Write something..." style="resize:vertical; margin-bottom:10px;"></textarea>
 
         <label class="section-label" style="display:block; margin-bottom:6px;">Photo or video (optional)</label>
@@ -4654,6 +4751,8 @@
     const fileEl = modal.querySelector('#statusComposeFile');
     const fileNameEl = modal.querySelector('#statusComposeFileName');
     const expiryEl = modal.querySelector('#statusComposeExpiry');
+
+    initFormatToolbar(modal.querySelector('#statusFormatToolbar'), textEl);
 
     fileEl.addEventListener('change', () => {
       fileNameEl.textContent = fileEl.files[0] ? `📎 ${fileEl.files[0].name}` : '';
@@ -4691,7 +4790,12 @@
     setAvatarEl(DOM.statusViewerAvatar, status.username, 'sm status-viewer-avatar');
     DOM.statusModalTitle.textContent = getDisplayName(status.username);
     DOM.statusModalTime.textContent = formatFullDate(status.created_at);
-    DOM.statusModalContent.innerHTML = linkifyText(status.content || '');
+    // FIX: was linkifyText() alone — didn't render the *bold*/_italic_/
+    // ~strike~/```mono``` markers the new status-composer toolbar
+    // (#statusFormatToolbar) inserts, so a formatted update showed its
+    // raw markup instead of styled text. richText() = linkifyText() +
+    // applyInlineFormatting().
+    DOM.statusModalContent.innerHTML = richText(status.content || '');
 
     if (DOM.statusLinkPreview) {
       const statusLinkUrl = firstUrlIn(status.content);
@@ -6903,6 +7007,8 @@
     await addMemberToChannel(username, role);
     DOM.assignStudentInput.value = '';
   });
+
+  initFormatToolbar(DOM.descFormatToolbar, DOM.channelDescInput);
 
   DOM.updateDescBtn.addEventListener('click', () => {
     if (!state.currentChannel) return;
