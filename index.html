@@ -651,28 +651,39 @@
           <div class="profile-card">
             <div class="profile-card-name" id="profileChannelName">—</div>
             <div class="profile-card-meta" id="profileChannelMeta">—</div>
-            <p class="profile-card-desc" id="profileChannelDesc"></p>
-            
+            <!-- FIX: was a <p>. renderRichBlocks() (app.js) now fills this
+                 with one <div style="text-align:...​"> per line — block-level
+                 markup that a <p> can't validly contain — so this is a
+                 plain <div> instead; .profile-card-desc is a class, styling
+                 is unaffected either way. -->
+            <div class="profile-card-desc" id="profileChannelDesc"></div>
+
             <!-- Admin description edit
                  FIX: added a text-formatting toolbar (Bold/Italic/
                  Strikethrough/Monospace/Line break/Align left-center-right)
-                 above the field so an admin can style the group description
-                 without hand-typing markup. The inline buttons wrap the
-                 current text-selection in #channelDescInput with
-                 WhatsApp-style markers (*bold*, _italic_, ~strike~,
-                 ```mono```); Align sets a whole-block [[align:...]]
-                 directive; Line break inserts a real newline — see
-                 initFormatToolbar()/wrapSelectionWithMarker()/
-                 insertAtCursor()/applyTextAlign() in app.js. All of it is
-                 rendered back wherever the description is shown (see
-                 richText()/parseAlignedText() + loadChannelDescription()).
+                 above the field so an admin can style the group description.
+                 #channelDescInput is a `contenteditable` editor (not an
+                 <input>/<textarea>) so Bold/Italic/Strikethrough/Monospace
+                 and alignment show as REAL formatting live, while typing —
+                 not raw *marker* characters with a separate preview box
+                 underneath. Bold/Italic/Strikethrough use the browser's own
+                 native execCommand (toggle-aware, integrates with
+                 Ctrl/Cmd+Z undo); Monospace is a manual wrap. Align applies
+                 only to whichever line(s) the current selection/cursor is
+                 actually in — same as Word/Google Docs — not the whole
+                 field. See initFormatToolbar()/wrapSelectionInEditor()/
+                 applyEditorAlign() in app.js. What's typed here is
+                 serialized back to plain text (editorToMarkerValue()) for
+                 storage, and the exact same markers are what
+                 renderRichBlocks() renders wherever the description is
+                 displayed (see loadChannelDescription()).
 
                  FIX: #channelDescInput was a single-line <input>, so there
                  was no way to actually type a line break into a
-                 description — Enter just triggered Save. It's now a
-                 <textarea>: Enter inserts a newline like any normal text
-                 box, and Ctrl/Cmd+Enter saves instead (see the updated
-                 keydown listener in app.js). -->
+                 description — Enter just triggered Save. Now, as a
+                 contenteditable editor, Enter starts a new line/paragraph
+                 like any normal text editor, and Ctrl/Cmd+Enter saves
+                 instead (see the keydown listener in app.js). -->
             <div id="adminDescEdit" class="hidden" style="margin-top:12px;">
               <div id="descFormatToolbar" class="format-toolbar" role="toolbar" aria-label="Text formatting">
                 <button type="button" class="format-toolbar-btn" data-format="bold" title="Bold" aria-label="Bold"><i class="fas fa-bold"></i></button>
@@ -685,16 +696,7 @@
                 <button type="button" class="format-toolbar-btn" data-format="align-center" title="Align center" aria-label="Align center"><i class="fas fa-align-center"></i></button>
                 <button type="button" class="format-toolbar-btn" data-format="align-right" title="Align right" aria-label="Align right"><i class="fas fa-align-right"></i></button>
               </div>
-              <textarea id="channelDescInput" class="field-sm" rows="3" placeholder="Group description... (Enter for a new line, Ctrl+Enter to save)" style="width:100%; resize:vertical;"></textarea>
-              <!-- Live preview: renders the exact same richText() output the
-                   real Profile-screen description uses (bold/italic/strike/
-                   mono + alignment), updated on every keystroke and every
-                   toolbar click — see wireLivePreview() in app.js. Answers
-                   "let the admin see how it'll actually look" without
-                   turning this field into a full contenteditable rich-text
-                   editor (a much riskier change on a mobile PWA). -->
-              <span class="format-preview-label">Preview</span>
-              <div id="descFormatPreview" class="format-preview"></div>
+              <div id="channelDescInput" class="field-sm rich-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Group description" data-placeholder="Group description... (Enter for a new line, Ctrl+Enter to save)"></div>
               <button id="updateDescBtn" class="btn-admin-sm" title="Save (Ctrl+Enter)" style="width:100%; margin-top:8px;"><i class="fas fa-save"></i> Save description</button>
             </div>
           </div>
@@ -867,7 +869,6 @@
       </div>
       <div class="status-viewer-body" id="statusViewerBody">
         <div id="statusModalMedia" class="status-viewer-media"></div>
-        <p id="statusModalContent"></p>
         <!-- FIX: root cause of "shared link in updates not clickable with
              thumbnail" — #statusModalContent used to be filled with
              `.textContent`, so a shared link was always inert plain text
@@ -876,7 +877,14 @@
              goes through linkifyText() (real clickable <a> tags) and, if
              the text contains a link, this slot gets filled with a
              thumbnail/title card fetched for it. Ships hidden/empty and
-             only shown when a status actually contains a link. -->
+             only shown when a status actually contains a link.
+
+             FIX: was a <p>. renderRichBlocks() (app.js) now fills this with
+             one <div style="text-align:...​"> per line, so each line can
+             carry its own alignment — block-level markup a <p> can't
+             validly contain — hence the tag change to <div>; see the
+             matching #statusModalContent CSS rule (was .status-viewer-body p). -->
+        <div id="statusModalContent"></div>
         <div id="statusLinkPreview" class="hidden"></div>
       </div>
     </div>
