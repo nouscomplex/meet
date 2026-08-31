@@ -3299,7 +3299,10 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
   cursor: pointer;
   color: var(--ink-faint);
   font-size: 10.5px;
-  font-weight: 600;
+  /* FIX: "increase the icons size for chat updates and settings and make
+     the font size bold" — label weight bumped 600 -> 800 to read as bold
+     under the tab icons (Sessions/Updates/Settings). */
+  font-weight: 800;
   padding: 2px 14px;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
@@ -3308,8 +3311,11 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
 }
 .nav-icon-wrap {
   position: relative;
-  width: 34px;
-  height: 34px;
+  /* FIX: enlarged along with .nav-icon-svg below (34px -> 40px) so the
+     active-state circle still has breathing room around the bigger icon
+     instead of the icon crowding its edge. */
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -3322,8 +3328,11 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
    means they pick up color exactly like the old <i> icons did — no
    change needed to the active-state rules below. */
 .nav-icon-svg {
-  width: 18px;
-  height: 18px;
+  /* FIX: "increase the icons size" — Sessions/Updates/Settings glyphs
+     bumped 18px -> 24px so they read clearly against the enlarged
+     .nav-icon-wrap circle above. */
+  width: 24px;
+  height: 24px;
   display: block;
   color: inherit;
 }
