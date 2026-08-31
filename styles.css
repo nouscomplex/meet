@@ -636,6 +636,43 @@ button { font-family: inherit; }
 .format-toolbar-btn:hover { background: var(--surface-sunken); color: var(--accent); border-color: var(--border-strong); }
 .format-toolbar-btn:active { transform: scale(0.94); }
 
+/* Live "how it'll actually look" preview box under a formatting-enabled
+   field — see wireLivePreview() in app.js. Renders the exact same
+   richText() output the real description/status views use, including
+   alignment (text-align is set inline per-render, not here). */
+.format-preview-label {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 10px 0 4px;
+}
+.format-preview {
+  min-height: 40px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1.5px dashed var(--border-strong);
+  background: var(--surface-sunken);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.5;
+  word-break: break-word;
+  margin-bottom: 8px;
+}
+.format-preview-empty { color: var(--ink-faint); font-style: italic; }
+/* The status composer's preview leans dark to mirror the actual
+   full-screen status viewer it's previewing (see .status-viewer-body). */
+#statusFormatPreview {
+  background: var(--navy);
+  border-color: var(--navy-soft);
+  color: #fff;
+}
+#statusFormatPreview .format-preview-empty { color: rgba(255, 255, 255, 0.55); }
+#statusFormatPreview .msg-link { color: var(--chat-blue); }
+#statusFormatPreview .msg-mono { background: rgba(255, 255, 255, 0.16); color: #fff; }
+
 /* Rendered output of the ```mono``` marker — a small inline code chip,
    matching how the rest of the app treats monospace/code-like content. */
 .msg-mono {
