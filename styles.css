@@ -945,7 +945,7 @@ button { font-family: inherit; }
      line-height:1 + vertical-align:middle keeps both spans' baselines
      level within the flex row instead of drifting per-font. */
   font-family: var(--font-display);
-  font-size: 1.2rem; /* 20% smaller than .brand-word's 1.5rem, per request */
+  font-size: 1.3rem;
   font-weight: 800;
   letter-spacing: -0.01em;
   line-height: 1;
