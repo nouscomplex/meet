@@ -934,10 +934,22 @@ button { font-family: inherit; }
 }
 
 .text-logo {
-  font-family: 'Helvetica Neue', Arial, sans-serif;
-  font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: -0.5px;
+  /* FIX: "read the font of orbit and fix that font for NOUS COMPLEX and
+     make it aligned" — this used to be a different font entirely
+     ('Helvetica Neue') at a different size/weight (1.25rem/700) than
+     .brand-word ("Orbit", var(--font-display) i.e. Manrope, 1.5rem/800),
+     so the two halves of the header lockup were visibly mismatched and,
+     since mismatched fonts carry different metrics/baselines, never quite
+     lined up even though both sit in the same flex row. Now matches
+     .brand-word's font-family/size/weight/letter-spacing exactly, and
+     line-height:1 + vertical-align:middle keeps both spans' baselines
+     level within the flex row instead of drifting per-font. -->
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  vertical-align: middle;
   color: #0E1B75;
   text-transform: uppercase;
   display: inline-block;
@@ -952,7 +964,7 @@ body.theme-dark .text-logo {
   color: #7BB8FF;
 }
 
-.brand-word { font-family: var(--font-display); font-weight: 800; font-size: 1.5rem; color: #C9CBDA; letter-spacing: -0.01em; }
+.brand-word { font-family: var(--font-display); font-weight: 800; font-size: 1.5rem; color: #C9CBDA; letter-spacing: -0.01em; line-height: 1; vertical-align: middle; }
 body.theme-dark .brand-word { color: #3A3E63; }
 
 /* ===== Generic screen header ===== */
