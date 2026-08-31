@@ -2765,7 +2765,14 @@ body.theme-dark .btn-send { color: #FFFFFF; }
 }
 .section-label { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-faint); }
 .see-all-link { font-size: 12.5px; font-weight: 700; color: var(--accent); text-decoration: none; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
-.see-all-link:hover { text-decoration: underline; }
+/* FIX: "remove the underline from show all and show less" — the base rule
+   above already sets text-decoration: none, but this :hover rule put it
+   back. On a touch device tapping the link (Show All/Show Less — see
+   #profileSeeAllPhotos/#profileSeeAllVideos in index.html) triggers
+   :hover too and it tends to stick after the tap instead of clearing like
+   a real mouse hover would, which reads as a permanent underline. Removed
+   outright rather than left as a desktop-only affordance, since the user
+   asked for no underline on this link at all. */
 
 /* FIX: "make the shared media grid small" — was a fixed 3-column grid, so
    each thumbnail scaled up to roughly a third of the profile card's width
