@@ -2773,18 +2773,19 @@ body.theme-dark .btn-send { color: #FFFFFF; }
    consistently small regardless of screen width, fitting more per row
    (5-6 on a typical phone) instead of stretching 3 large tiles edge to
    edge. */
+/* FIX: "make the picture grid to 5 picture per row" — was
+   repeat(auto-fill, minmax(56px, 1fr)), so the actual column count varied
+   with screen width (however many 56px tiles happened to fit) instead of
+   being a fixed count. Now both the photo grid and .shared-video-grid
+   below use the same fixed 5-column layout, so this rule alone covers
+   both — the old separate video-only override is gone since it would just
+   be duplicating this. */
 .shared-media-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  grid-template-columns: repeat(5, 1fr);
   gap: 6px;
   margin: 0 18px;
 }
-/* FIX: "make the video grid small 5 video in one grid" — fixed 5-column
-   layout instead of the photo grid's auto-fill, so it's always exactly 5
-   tiles per row (narrower than the ~56px auto-fill tiles above, since 5
-   columns squeezed into the same card width is inherently smaller) rather
-   than however many happen to fit at a 56px minimum. */
-.shared-video-grid { grid-template-columns: repeat(5, 1fr); }
 
 
 .shared-media-grid img,
