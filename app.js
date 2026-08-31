@@ -4794,10 +4794,24 @@
         // does.
         const statusPreviewText = stripAlignPrefix(st.content);
         const statusPreviewLinkUrl = statusPreviewText ? firstUrlIn(statusPreviewText) : null;
+        // FIX: root cause of "asterisks still shown for bold text on the
+        // status screen" — this is the Updates LIST row preview, a
+        // different render path from the full-screen viewer (showStatusModal()
+        // → renderRichBlocks(), which already handled markers correctly).
+        // This one used to run straight through escapeHtml(truncate(...))
+        // with no applyInlineFormatting() step at all, so *bold*/_italic_/
+        // ~strike~/```mono``` markers always showed as literal characters
+        // here even though the full viewer rendered them correctly.
+        // truncate() still runs on the raw text first (unchanged) — cutting
+        // a marker pair in half at the truncation boundary just leaves a
+        // stray, harmless asterisk/underscore in the preview, same
+        // trade-off every truncated-markdown preview (Slack, GitHub, etc.)
+        // makes.
+        const statusPreviewHtml = applyInlineFormatting(escapeHtml(truncate(statusPreviewText, 46)));
         const preview = statusPreviewText
           ? (statusPreviewLinkUrl
-              ? `<a href="${escapeHtml(statusPreviewLinkUrl)}" rel="noopener" class="msg-link">${escapeHtml(truncate(statusPreviewText, 46))}</a>`
-              : escapeHtml(truncate(statusPreviewText, 46)))
+              ? `<a href="${escapeHtml(statusPreviewLinkUrl)}" rel="noopener" class="msg-link">${statusPreviewHtml}</a>`
+              : statusPreviewHtml)
           : (st.media_url ? '<i class="fas fa-camera"></i> Photo/video' : '');
         const seenCount = (state.statusViews.get(st.id) || []).length;
         const seenBadge = state.isAdmin
