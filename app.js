@@ -640,12 +640,38 @@
     return html;
   }
 
-  // Full render pipeline for user-authored text that supports both links
-  // and the formatting markers above: group descriptions and status/update
-  // content. (Chat messages intentionally keep plain linkifyText() — this
-  // toolbar was only added for description + status composing.)
+  // Leading directive that stores whole-block text alignment for a
+  // description/status, e.g. "[[align:center]]\nMeet us at 5pm". There's
+  // no dedicated alignment column in the `channels`/`statuses` tables, so
+  // — same trick as the *bold*/_italic_ markers — it's just encoded in the
+  // saved text itself and stripped back out at render/edit time.
+  const ALIGN_PREFIX_RE = /^\[\[align:(left|center|right)\]\]\n?/;
+
+  // Splits a raw saved value into { align, body }. `body` is what actually
+  // gets run through richText(); `align` is applied as text-align on the
+  // element that displays it.
+  function parseAlignedText(text) {
+    if (!text) return { align: 'left', body: '' };
+    const m = ALIGN_PREFIX_RE.exec(text);
+    return m ? { align: m[1], body: text.slice(m[0].length) } : { align: 'left', body: text };
+  }
+
+  // Same split, but only the body — for places that just need the alignment
+  // directive stripped out of a preview/truncated snippet (list rows), not
+  // full rich rendering.
+  function stripAlignPrefix(text) {
+    return text ? text.replace(ALIGN_PREFIX_RE, '') : text;
+  }
+
+  // Full render pipeline for user-authored text that supports links, the
+  // inline formatting markers above, and line breaks: group descriptions
+  // and status/update content. (Chat messages intentionally keep plain
+  // linkifyText() — this toolbar was only added for description + status
+  // composing.) Expects the alignment prefix (if any) already stripped by
+  // the caller via parseAlignedText() — see loadChannelDescription()/
+  // showStatusModal().
   function richText(text) {
-    return applyInlineFormatting(linkifyText(text));
+    return applyInlineFormatting(linkifyText(text)).replace(/\n/g, '<br>');
   }
 
   // Wraps the current selection inside a text <input>/<textarea> with the
@@ -668,6 +694,35 @@
     el.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
+  // Inserts literal text at the caret (replacing any selection) instead of
+  // wrapping it — used for the line-break button, which needs to add a
+  // newline rather than surround one.
+  function insertAtCursor(el, text) {
+    if (!el) return;
+    el.focus();
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    const value = el.value;
+    el.value = value.slice(0, start) + text + value.slice(end);
+    const cursor = start + text.length;
+    el.setSelectionRange(cursor, cursor);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  // Sets (or clears) the whole-block alignment directive on a field's
+  // value — see ALIGN_PREFIX_RE above. Alignment is block-level (it
+  // describes the whole description/status, not a selection within it),
+  // so this replaces any existing directive rather than wrapping a
+  // selection like the inline marker buttons do.
+  function applyTextAlign(el, align) {
+    if (!el) return;
+    el.focus();
+    const body = el.value.replace(ALIGN_PREFIX_RE, '');
+    el.value = align === 'left' ? body : `[[align:${align}]]\n${body}`;
+    el.setSelectionRange(el.value.length, el.value.length);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
   const FORMAT_MARKERS = {
     bold: ['*', '*'],
     italic: ['_', '_'],
@@ -675,11 +730,15 @@
     mono: ['```', '```'],
   };
 
-  // Wires up a .format-toolbar's buttons (data-format="bold|italic|strike|mono")
-  // to wrap the current selection in `targetEl`. Used for both the group
-  // description input (#descFormatToolbar, static markup) and each status
-  // composer's toolbar (#statusFormatToolbar, built fresh per modal in
-  // openStatusComposer()).
+  // Wires up a .format-toolbar's buttons to act on `targetEl`:
+  //  - data-format="bold|italic|strike|mono" wraps the current selection
+  //    in inline markers (FORMAT_MARKERS above).
+  //  - data-format="linebreak" inserts a newline at the caret.
+  //  - data-format="align-left|align-center|align-right" sets the whole
+  //    field's block alignment directive.
+  // Used for both the group description field (#descFormatToolbar, static
+  // markup) and each status composer's toolbar (#statusFormatToolbar,
+  // built fresh per modal in openStatusComposer()).
   function initFormatToolbar(toolbarEl, targetEl) {
     if (!toolbarEl || !targetEl || toolbarEl.dataset.formatToolbarBound === '1') return;
     toolbarEl.dataset.formatToolbarBound = '1';
@@ -688,7 +747,13 @@
       // selection) before the click handler runs.
       btn.addEventListener('mousedown', (e) => e.preventDefault());
       btn.addEventListener('click', () => {
-        const marker = FORMAT_MARKERS[btn.dataset.format];
+        const fmt = btn.dataset.format;
+        if (fmt === 'linebreak') { insertAtCursor(targetEl, '\n'); return; }
+        if (fmt === 'align-left' || fmt === 'align-center' || fmt === 'align-right') {
+          applyTextAlign(targetEl, fmt.slice('align-'.length));
+          return;
+        }
+        const marker = FORMAT_MARKERS[fmt];
         if (!marker) return;
         wrapSelectionWithMarker(targetEl, marker[0], marker[1]);
       });
@@ -4315,7 +4380,9 @@
     // the plain saved string. richText() escapes the text itself (via
     // linkifyText()'s internal escapeHtml()) before turning markers into
     // real tags, so this stays safe against HTML injection.
-    DOM.profileChannelDesc.innerHTML = richText(desc);
+    const parsedDesc = parseAlignedText(desc);
+    DOM.profileChannelDesc.style.textAlign = parsedDesc.align === 'left' ? '' : parsedDesc.align;
+    DOM.profileChannelDesc.innerHTML = richText(parsedDesc.body);
     DOM.channelDescInput.value = state.currentChannel.description || '';
 
     DOM.adminDescEdit.classList.toggle('hidden', !state.isAdmin);
@@ -4542,11 +4609,20 @@
         item.className = 'update-row';
         item.dataset.id = st.id;
         const displayName = getDisplayName(st.username);
-        const statusPreviewLinkUrl = st.content ? firstUrlIn(st.content) : null;
-        const preview = st.content
+        // FIX: truncate() used to run on the raw st.content, so a status
+        // saved with the [[align:center]] block-alignment directive (see
+        // applyTextAlign() in app.js) showed that literal marker text at
+        // the front of its list-row preview. stripAlignPrefix() removes it
+        // before truncating; the *bold*/_italic_/~strike~ inline markers
+        // still show as raw characters here — this is only a truncated
+        // plain-text snippet, not the full rich render showStatusModal()
+        // does.
+        const statusPreviewText = stripAlignPrefix(st.content);
+        const statusPreviewLinkUrl = statusPreviewText ? firstUrlIn(statusPreviewText) : null;
+        const preview = statusPreviewText
           ? (statusPreviewLinkUrl
-              ? `<a href="${escapeHtml(statusPreviewLinkUrl)}" rel="noopener" class="msg-link">${escapeHtml(truncate(st.content, 46))}</a>`
-              : escapeHtml(truncate(st.content, 46)))
+              ? `<a href="${escapeHtml(statusPreviewLinkUrl)}" rel="noopener" class="msg-link">${escapeHtml(truncate(statusPreviewText, 46))}</a>`
+              : escapeHtml(truncate(statusPreviewText, 46)))
           : (st.media_url ? '<i class="fas fa-camera"></i> Photo/video' : '');
         const seenCount = (state.statusViews.get(st.id) || []).length;
         const seenBadge = state.isAdmin
@@ -4722,8 +4798,13 @@
           <button type="button" class="format-toolbar-btn" data-format="italic" title="Italic" aria-label="Italic"><i class="fas fa-italic"></i></button>
           <button type="button" class="format-toolbar-btn" data-format="strike" title="Strikethrough" aria-label="Strikethrough"><i class="fas fa-strikethrough"></i></button>
           <button type="button" class="format-toolbar-btn" data-format="mono" title="Monospace" aria-label="Monospace"><i class="fas fa-code"></i></button>
+          <button type="button" class="format-toolbar-btn" data-format="linebreak" title="Insert line break" aria-label="Insert line break"><i class="fas fa-paragraph"></i></button>
+          <span class="format-toolbar-divider" aria-hidden="true"></span>
+          <button type="button" class="format-toolbar-btn" data-format="align-left" title="Align left" aria-label="Align left"><i class="fas fa-align-left"></i></button>
+          <button type="button" class="format-toolbar-btn" data-format="align-center" title="Align center" aria-label="Align center"><i class="fas fa-align-center"></i></button>
+          <button type="button" class="format-toolbar-btn" data-format="align-right" title="Align right" aria-label="Align right"><i class="fas fa-align-right"></i></button>
         </div>
-        <textarea id="statusComposeText" class="field" rows="3" placeholder="Write something..." style="resize:vertical; margin-bottom:10px;"></textarea>
+        <textarea id="statusComposeText" class="field" rows="3" placeholder="Write something... (Enter for a new line)" style="resize:vertical; margin-bottom:10px;"></textarea>
 
         <label class="section-label" style="display:block; margin-bottom:6px;">Photo or video (optional)</label>
         <input id="statusComposeFile" type="file" accept="image/*,video/*" class="field" style="margin-bottom:4px;">
@@ -4795,7 +4876,9 @@
     // (#statusFormatToolbar) inserts, so a formatted update showed its
     // raw markup instead of styled text. richText() = linkifyText() +
     // applyInlineFormatting().
-    DOM.statusModalContent.innerHTML = richText(status.content || '');
+    const parsedStatus = parseAlignedText(status.content || '');
+    DOM.statusModalContent.style.textAlign = parsedStatus.align === 'left' ? '' : parsedStatus.align;
+    DOM.statusModalContent.innerHTML = richText(parsedStatus.body);
 
     if (DOM.statusLinkPreview) {
       const statusLinkUrl = firstUrlIn(status.content);
@@ -7015,8 +7098,15 @@
     updateChannelDescription(state.currentChannel.id, DOM.channelDescInput.value.trim());
   });
 
-  DOM.channelDescInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
+  // FIX: was a 'keypress' listener that saved on every plain Enter — that
+  // made sense back when this was a single-line <input>, but it's now a
+  // <textarea> (see index.html) so people can actually write multi-line
+  // descriptions. Plain Enter now inserts a newline like any normal
+  // textarea; Ctrl/Cmd+Enter is the save shortcut instead. 'keydown' (not
+  // 'keypress', which is deprecated and unreliable with modifier keys) so
+  // the shortcut is caught before the newline would otherwise be inserted.
+  DOM.channelDescInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       DOM.updateDescBtn.click();
     }
