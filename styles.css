@@ -590,15 +590,18 @@ button { font-family: inherit; }
 .field-sm:focus { outline: none; border-color: var(--accent); }
 
 /* ============================================================
-   TEXT FORMATTING TOOLBAR
-   Shared by the group-description editor (#descFormatToolbar,
-   next to #channelDescInput) and the status/update composer
-   (#statusFormatToolbar, built dynamically in openStatusComposer()
-   in app.js). Buttons wrap the current selection in the paired
-   <input>/<textarea> with WhatsApp-style markers — see
-   initFormatToolbar()/wrapSelectionWithMarker() in app.js — which
-   richText() then renders back into real <strong>/<em>/<s>/<code>
-   wherever that text is displayed.
+   TEXT FORMATTING TOOLBAR + RICH TEXT EDITOR
+   Shared by the group-description editor (#descFormatToolbar +
+   #channelDescInput) and the status/update composer
+   (#statusFormatToolbar + #statusComposeText, built dynamically in
+   openStatusComposer() in app.js). #channelDescInput/#statusComposeText
+   are `contenteditable` <div>s (.rich-editor below), not <input>/
+   <textarea> — toolbar buttons act on the live selection via
+   document.execCommand()/wrapSelectionInEditor()/applyEditorAlign() in
+   app.js, so Bold/Italic/Strikethrough/Monospace/alignment show as real
+   formatting immediately, not raw marker characters. What's typed is
+   serialized to plain marker text for storage (editorToMarkerValue()) and
+   rendered back the same way wherever it's displayed (renderRichBlocks()).
    ============================================================ */
 .format-toolbar {
   display: flex;
@@ -608,8 +611,9 @@ button { font-family: inherit; }
   margin-bottom: 8px;
 }
 /* Separates the inline markers (bold/italic/strike/mono/line break) from
-   the block-alignment buttons, which behave differently — alignment
-   applies to the whole field's text, not just a selection. */
+   the alignment buttons, which behave differently — alignment applies to
+   whichever line(s) the current selection/cursor is in, not the whole
+   field (see getSelectedEditorLines() in app.js). */
 .format-toolbar-divider {
   width: 1.5px;
   height: 18px;
@@ -636,42 +640,40 @@ button { font-family: inherit; }
 .format-toolbar-btn:hover { background: var(--surface-sunken); color: var(--accent); border-color: var(--border-strong); }
 .format-toolbar-btn:active { transform: scale(0.94); }
 
-/* Live "how it'll actually look" preview box under a formatting-enabled
-   field — see wireLivePreview() in app.js. Renders the exact same
-   richText() output the real description/status views use, including
-   alignment (text-align is set inline per-render, not here). */
-.format-preview-label {
+/* The contenteditable editor itself. Reuses .field-sm/.field for
+   padding/border/background so it looks identical to the <input>/
+   <textarea> it replaced; this just adds what a plain form control gets
+   for free and a contenteditable <div> doesn't. */
+.rich-editor {
   display: block;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  margin: 10px 0 4px;
-}
-.format-preview {
-  min-height: 40px;
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
-  border: 1.5px dashed var(--border-strong);
-  background: var(--surface-sunken);
-  color: var(--ink);
-  font-size: 13px;
-  line-height: 1.5;
+  width: 100%;
+  min-height: 76px;
+  max-height: 220px;
+  overflow-y: auto;
+  cursor: text;
   word-break: break-word;
-  margin-bottom: 8px;
+  white-space: pre-wrap;
 }
-.format-preview-empty { color: var(--ink-faint); font-style: italic; }
-/* The status composer's preview leans dark to mirror the actual
-   full-screen status viewer it's previewing (see .status-viewer-body). */
-#statusFormatPreview {
-  background: var(--navy);
-  border-color: var(--navy-soft);
-  color: #fff;
+.rich-editor div { min-height: 1.4em; } /* keeps an empty line's height consistent with a text line */
+/* Placeholder text — contenteditable has no native `placeholder`
+   attribute. :empty only matches when there are truly no child nodes,
+   which is exactly the state populateRichEditor() (app.js) leaves an
+   empty field in, so this shows correctly without extra JS bookkeeping. */
+.rich-editor:empty:before {
+  content: attr(data-placeholder);
+  color: var(--ink-faint);
+  pointer-events: none;
 }
-#statusFormatPreview .format-preview-empty { color: rgba(255, 255, 255, 0.55); }
-#statusFormatPreview .msg-link { color: var(--chat-blue); }
-#statusFormatPreview .msg-mono { background: rgba(255, 255, 255, 0.16); color: #fff; }
+/* .profile-card and .modal-card (the editors' containers) both set
+   user-select: none for their own non-editable chrome (buttons, labels).
+   Without overriding it back here, that inherits straight into the
+   editor and blocks selecting text to format — an ID selector beats
+   those class rules regardless of which comes later in the file. */
+#channelDescInput,
+#statusComposeText {
+  user-select: text;
+  -webkit-user-select: text;
+}
 
 /* Rendered output of the ```mono``` marker — a small inline code chip,
    matching how the rest of the app treats monospace/code-like content. */
@@ -3272,8 +3274,14 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
    applied to the Updates full-screen viewer's text (#statusModalContent
    renders inside here) — this is exactly the "clicking any text selects it
    instead of opening the link" complaint for shared links inside updates. */
-.status-viewer-body p { color: #fff; font-size: 16px; line-height: 1.6; font-weight: 500; text-align: center; user-select: none; -webkit-user-select: none; }
-.status-viewer-body p:empty { display: none; }
+/* FIX: was `.status-viewer-body p` — #statusModalContent is a plain <div>
+   now (renderRichBlocks() in app.js fills it with one <div> per line, each
+   carrying its own alignment; block-level markup a <p> can't validly
+   contain), so this targets the id directly. text-align dropped from here
+   entirely: alignment is per-line now, set as an inline style on each of
+   those inner <div>s, not once for the whole block. */
+#statusModalContent { color: #fff; font-size: 16px; line-height: 1.6; font-weight: 500; user-select: none; -webkit-user-select: none; }
+#statusModalContent:empty { display: none; }
 /* FIX: .msg-link's default color (var(--chat-accent), navy) is meant for
    text on light chat-bubble backgrounds — against this viewer's dark navy
    background (.status-viewer-inner) it would be nearly invisible. Use the
@@ -3525,12 +3533,13 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
 }
 
 /* Allow text selection in specific areas
-   FIX: .msg-bubble and .status-viewer-body p used to be listed here too.
-   This rule comes AFTER their own dedicated rules above in the file, so —
-   same selector specificity — it was the one actually winning the cascade
-   and re-enabling native selection there, overriding the user-select:none
-   just set on them above. Dropped both from this list; see the FIX
-   comments on .msg-bubble and .status-viewer-body p for why. */
+   FIX: .msg-bubble and #statusModalContent (formerly .status-viewer-body p)
+   used to be listed here too. This rule comes AFTER their own dedicated
+   rules above in the file, so — same selector specificity — it was the one
+   actually winning the cascade and re-enabling native selection there,
+   overriding the user-select:none just set on them above. Dropped both
+   from this list; see the FIX comments on .msg-bubble and
+   #statusModalContent for why. */
 .msg-author,
 .msg-time,
 .profile-card-desc,
