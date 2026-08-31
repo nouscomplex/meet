@@ -301,7 +301,6 @@
     adminDescEdit: $('adminDescEdit'),
     descFormatToolbar: $('descFormatToolbar'),
     channelDescInput: $('channelDescInput'),
-    descFormatPreview: $('descFormatPreview'),
     updateDescBtn: $('updateDescBtn'),
 
     statusModal: $('statusModal'),
@@ -641,148 +640,289 @@
     return html;
   }
 
-  // Leading directive that stores whole-block text alignment for a
-  // description/status, e.g. "[[align:center]]\nMeet us at 5pm". There's
-  // no dedicated alignment column in the `channels`/`statuses` tables, so
-  // — same trick as the *bold*/_italic_ markers — it's just encoded in the
-  // saved text itself and stripped back out at render/edit time.
-  const ALIGN_PREFIX_RE = /^\[\[align:(left|center|right)\]\]\n?/;
+  // ============================================================
+  // RICH TEXT EDITOR (group description + status updates)
+  // #channelDescInput and #statusComposeText are `contenteditable` <div>s
+  // (not <input>/<textarea>) so bold/italic/strike/mono and alignment show
+  // as REAL formatting while typing, not raw *marker* characters — that
+  // was the whole point of switching over from the old plain-text +
+  // separate-preview-box version.
+  //
+  // Storage format: still plain text in the `channels.description` /
+  // `statuses.content` columns (no schema change) — one line per editor
+  // line, each optionally prefixed with a `[[align:center]]` or
+  // `[[align:right]]` directive (left is the default, no prefix). That's
+  // what editorToMarkerValue()/renderRichBlocks() convert to and from.
+  // Alignment is stored PER LINE, not once for the whole field, because
+  // clicking Align only affects whichever line(s) the current
+  // selection/cursor is actually in — same as Word/Google Docs, and what
+  // was actually asked for (align was previously whole-field only).
+  // ============================================================
 
-  // Splits a raw saved value into { align, body }. `body` is what actually
-  // gets run through richText(); `align` is applied as text-align on the
-  // element that displays it.
-  function parseAlignedText(text) {
-    if (!text) return { align: 'left', body: '' };
-    const m = ALIGN_PREFIX_RE.exec(text);
-    return m ? { align: m[1], body: text.slice(m[0].length) } : { align: 'left', body: text };
+  const LINE_ALIGN_RE = /^\[\[align:(center|right)\]\]/;
+
+  // Renders saved marker text into the *display* HTML used by the actual
+  // group-description and status views (#profileChannelDesc,
+  // #statusModalContent — both plain <div>s now, not <p>, since each line
+  // becomes its own block-level <div>). Unlike the editor, this DOES
+  // linkify URLs, since it's read-only rendered output, not something
+  // being typed into.
+  function renderRichBlocks(text) {
+    if (!text) return '';
+    return String(text)
+      .split('\n')
+      .map((line) => {
+        const m = LINE_ALIGN_RE.exec(line);
+        const align = m ? m[1] : 'left';
+        const body = m ? line.slice(m[0].length) : line;
+        const html = applyInlineFormatting(linkifyText(body));
+        // Always explicit, never omitted — .profile-card and
+        // .status-viewer-body both default to text-align: center for
+        // their own reasons (card heading, full-bleed status text), and
+        // text-align is inherited, so leaving 'left' unset here would
+        // silently inherit that center instead of actually showing left.
+        return `<div style="text-align:${align};">${html || '<br>'}</div>`;
+      })
+      .join('');
   }
 
-  // Same split, but only the body — for places that just need the alignment
-  // directive stripped out of a preview/truncated snippet (list rows), not
-  // full rich rendering.
+  // Strips a leading per-line align directive from the *start* of a raw
+  // string — used only for the truncated single-line list-row previews
+  // (status "Updates" list), so they don't show "[[align:center]]" as
+  // literal text. Only the first line's directive; a truncated preview
+  // that happens to reach a second line still shows that line's own
+  // directive raw, which is an acceptable, pre-existing limitation of a
+  // plain-text truncated snippet (inline *bold* markers show raw there
+  // too — it's not the full rich render).
   function stripAlignPrefix(text) {
-    return text ? text.replace(ALIGN_PREFIX_RE, '') : text;
+    return text ? text.replace(LINE_ALIGN_RE, '') : text;
   }
 
-  // Full render pipeline for user-authored text that supports links, the
-  // inline formatting markers above, and line breaks: group descriptions
-  // and status/update content. (Chat messages intentionally keep plain
-  // linkifyText() — this toolbar was only added for description + status
-  // composing.) Expects the alignment prefix (if any) already stripped by
-  // the caller via parseAlignedText() — see loadChannelDescription()/
-  // showStatusModal().
-  function richText(text) {
-    return applyInlineFormatting(linkifyText(text)).replace(/\n/g, '<br>');
+  // Converts one line's escaped body text into the initial editor HTML for
+  // that line (used only when first populating the editor from a saved
+  // value — see populateRichEditor()). Reuses applyInlineFormatting() so a
+  // saved *bold*/_italic_/~strike~/```mono``` marker shows as real
+  // formatting the moment the editor opens, not just after re-typing it.
+  // Deliberately skips linkifyText() — auto-turning a URL into a live,
+  // unfocusable <a> while someone is still composing text around it would
+  // be more confusing than helpful; that only happens in the final
+  // rendered view (renderRichBlocks() above).
+  function inlineHtmlForEditorLine(body) {
+    return applyInlineFormatting(escapeHtml(body));
   }
 
-  // Wraps the current selection inside a text <input>/<textarea> with the
-  // given marker pair, or inserts an empty pair at the caret and places
-  // the cursor between them when nothing is selected. Fires a synthetic
-  // 'input' event so anything listening on the field (e.g. keypress-driven
-  // save shortcuts) still sees the change.
-  function wrapSelectionWithMarker(el, before, after) {
-    if (!el) return;
-    if (after === undefined) after = before;
-    el.focus();
-    const start = el.selectionStart ?? el.value.length;
-    const end = el.selectionEnd ?? el.value.length;
-    const value = el.value;
-    const selected = value.slice(start, end);
-    el.value = value.slice(0, start) + before + selected + after + value.slice(end);
-    const cursorStart = start + before.length;
-    const cursorEnd = cursorStart + selected.length;
-    el.setSelectionRange(cursorStart, cursorEnd);
-    el.dispatchEvent(new Event('input', { bubbles: true }));
+  // Clears the editor and rebuilds it as one <div> per line from a saved
+  // marker-text value (or leaves it completely empty for '' — so the
+  // :empty CSS placeholder shows). Every line gets an EXPLICIT
+  // style.textAlign (defaulting to 'left'), same reasoning as
+  // renderRichBlocks() above: both #channelDescInput (inside .profile-card)
+  // and #statusComposeText (inside .modal-card) sit under ancestors that
+  // could hand down an inherited alignment if left unset.
+  function populateRichEditor(editorEl, text) {
+    if (!editorEl) return;
+    editorEl.innerHTML = '';
+    if (text) {
+      String(text).split('\n').forEach((line) => {
+        const m = LINE_ALIGN_RE.exec(line);
+        const align = m ? m[1] : 'left';
+        const body = m ? line.slice(m[0].length) : line;
+        const div = document.createElement('div');
+        div.style.textAlign = align;
+        div.innerHTML = inlineHtmlForEditorLine(body) || '<br>';
+        editorEl.appendChild(div);
+      });
+    }
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
-  // Inserts literal text at the caret (replacing any selection) instead of
-  // wrapping it — used for the line-break button, which needs to add a
-  // newline rather than surround one.
-  function insertAtCursor(el, text) {
-    if (!el) return;
-    el.focus();
-    const start = el.selectionStart ?? el.value.length;
-    const end = el.selectionEnd ?? el.value.length;
-    const value = el.value;
-    el.value = value.slice(0, start) + text + value.slice(end);
-    const cursor = start + text.length;
-    el.setSelectionRange(cursor, cursor);
-    el.dispatchEvent(new Event('input', { bubbles: true }));
+  // Serializes one inline DOM node (text, <b>/<strong>, <i>/<em>,
+  // <strike>/<s>/<del>, <code>, <br>, or a stray nested block from pasted
+  // content) back into marker text. The counterpart to
+  // inlineHtmlForEditorLine()/applyInlineFormatting().
+  function inlineNodeToMarkerText(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      // Strip zero-width spaces used internally to give an empty
+      // wrapSelectionInEditor() wrapper somewhere for the cursor to sit.
+      return node.textContent.replace(/\u200b/g, '');
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    const tag = node.tagName.toLowerCase();
+    if (tag === 'br') return '\n';
+    const inner = inlineNodesToMarkerText(Array.from(node.childNodes));
+    switch (tag) {
+      case 'b': case 'strong': return inner ? `*${inner}*` : '';
+      case 'i': case 'em': return inner ? `_${inner}_` : '';
+      case 'strike': case 's': case 'del': return inner ? `~${inner}~` : '';
+      case 'code': return inner ? '```' + inner + '```' : '';
+      default: return inner; // span/div/font etc. from pasted content — keep the text, drop the wrapper
+    }
+  }
+  function inlineNodesToMarkerText(nodeList) {
+    return nodeList.map(inlineNodeToMarkerText).join('');
   }
 
-  // Sets (or clears) the whole-block alignment directive on a field's
-  // value — see ALIGN_PREFIX_RE above. Alignment is block-level (it
-  // describes the whole description/status, not a selection within it),
-  // so this replaces any existing directive rather than wrapping a
-  // selection like the inline marker buttons do.
-  function applyTextAlign(el, align) {
-    if (!el) return;
-    el.focus();
-    const body = el.value.replace(ALIGN_PREFIX_RE, '');
-    el.value = align === 'left' ? body : `[[align:${align}]]\n${body}`;
-    el.setSelectionRange(el.value.length, el.value.length);
-    el.dispatchEvent(new Event('input', { bubbles: true }));
+  // Serializes the whole editor's current DOM back into the plain
+  // marker-text format that gets saved to Supabase — the inverse of
+  // populateRichEditor(). Each top-level block (line) becomes one line of
+  // output, prefixed with its own [[align:...]] directive if it isn't
+  // left-aligned.
+  function editorToMarkerValue(editorEl) {
+    if (!editorEl) return '';
+    const blocks = Array.from(editorEl.children).filter((c) => c.nodeType === 1);
+    const lineToText = (block) => {
+      const align = block.style.textAlign;
+      const text = inlineNodesToMarkerText(Array.from(block.childNodes));
+      return (align === 'center' || align === 'right') ? `[[align:${align}]]${text}` : text;
+    };
+    if (!blocks.length) {
+      // No block children yet — a single line still living directly in
+      // the editor (nothing pressed Enter). Only real browsers that
+      // ignore defaultParagraphSeparator hit this; treat the editor
+      // itself as that one line.
+      return lineToText(editorEl);
+    }
+    return blocks.map(lineToText).join('\n');
   }
 
-  const FORMAT_MARKERS = {
-    bold: ['*', '*'],
-    italic: ['_', '_'],
-    strike: ['~', '~'],
-    mono: ['```', '```'],
+  // Wraps the current selection inside `editorEl` in a new element (used
+  // for the Monospace button, which has no native execCommand). With
+  // nothing selected, inserts an empty wrapper with a zero-width space so
+  // there's somewhere for the cursor to land and start typing inside it.
+  function wrapSelectionInEditor(editorEl, tagName, className) {
+    editorEl.focus();
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (!editorEl.contains(range.commonAncestorContainer)) return;
+    const wrapper = document.createElement(tagName);
+    if (className) wrapper.className = className;
+    if (range.collapsed) {
+      wrapper.appendChild(document.createTextNode('\u200b'));
+      range.insertNode(wrapper);
+      const newRange = document.createRange();
+      newRange.setStart(wrapper.firstChild, 1);
+      newRange.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+    } else {
+      wrapper.appendChild(range.extractContents());
+      range.insertNode(wrapper);
+      sel.removeAllRanges();
+      const newRange = document.createRange();
+      newRange.selectNodeContents(wrapper);
+      sel.addRange(newRange);
+    }
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  // Returns the top-level line(s) — direct block children of `editorEl` —
+  // that the current selection/cursor touches. This is what makes Align
+  // apply to only the selected text's line(s) instead of the whole field:
+  // Range.intersectsNode() is true for any block the selection overlaps
+  // even partially, and for a collapsed (no-selection) range it's true
+  // exactly for the single block the caret is currently in — matching how
+  // alignment works in Word/Docs (a paragraph-level property, applied to
+  // whichever paragraph(s) the cursor/selection is in).
+  function getSelectedEditorLines(editorEl, range) {
+    const blocks = Array.from(editorEl.children).filter((c) => c.nodeType === 1);
+    if (!blocks.length) return [editorEl]; // no lines yet — align the editor itself
+    const touched = blocks.filter((block) => range.intersectsNode(block));
+    return touched.length ? touched : blocks;
+  }
+
+  function applyEditorAlign(editorEl, align) {
+    editorEl.focus();
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (!editorEl.contains(range.commonAncestorContainer)) return;
+    getSelectedEditorLines(editorEl, range).forEach((block) => {
+      block.style.textAlign = align;
+    });
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  // Freshly-created lines (Enter inside the editor) come out with no
+  // explicit text-align — the browser doesn't copy inline styles from the
+  // line they were split off from. Left unset, they'd inherit whatever the
+  // editor's ancestor happens to default to (center, for both
+  // .profile-card and .modal-card) instead of continuing the alignment of
+  // the line they came from. Run after every edit: any block missing an
+  // explicit left/center/right picks up whatever the line before it has.
+  function normalizeEditorLineAlignment(editorEl) {
+    let lastAlign = 'left';
+    Array.from(editorEl.children).forEach((block) => {
+      if (block.nodeType !== 1) return;
+      const current = block.style.textAlign;
+      if (current === 'left' || current === 'center' || current === 'right') {
+        lastAlign = current;
+      } else {
+        block.style.textAlign = lastAlign;
+      }
+    });
+  }
+
+  const EDITOR_EXEC_COMMAND = {
+    bold: 'bold',
+    italic: 'italic',
+    strike: 'strikeThrough',
   };
 
-  // Wires up a .format-toolbar's buttons to act on `targetEl`:
-  //  - data-format="bold|italic|strike|mono" wraps the current selection
-  //    in inline markers (FORMAT_MARKERS above).
-  //  - data-format="linebreak" inserts a newline at the caret.
-  //  - data-format="align-left|align-center|align-right" sets the whole
-  //    field's block alignment directive.
-  // Used for both the group description field (#descFormatToolbar, static
-  // markup) and each status composer's toolbar (#statusFormatToolbar,
-  // built fresh per modal in openStatusComposer()).
-  function initFormatToolbar(toolbarEl, targetEl) {
-    if (!toolbarEl || !targetEl || toolbarEl.dataset.formatToolbarBound === '1') return;
+  // Wires up a .format-toolbar's buttons to act on `editorEl` (a
+  // contenteditable <div>):
+  //  - bold/italic/strike use the browser's native execCommand — still
+  //    broadly supported despite the MDN deprecation notice, and buys
+  //    native toggle-on-reselect behavior plus Ctrl/Cmd+Z undo support for
+  //    free, which a hand-rolled DOM wrap wouldn't get.
+  //  - mono has no native command, so it's a manual wrap (no toggle).
+  //  - linebreak inserts a soft <br> within the current line (Enter alone
+  //    already starts a new line/paragraph natively).
+  //  - align-left/center/right realign just the selected line(s) — see
+  //    applyEditorAlign() above.
+  // Used for both the group description editor (#descFormatToolbar,
+  // static markup) and each status composer's toolbar
+  // (#statusFormatToolbar, built fresh per modal in openStatusComposer()).
+  function initFormatToolbar(toolbarEl, editorEl) {
+    if (!toolbarEl || !editorEl || toolbarEl.dataset.formatToolbarBound === '1') return;
     toolbarEl.dataset.formatToolbarBound = '1';
+
+    // Best-effort: keep Enter creating a new <div> per line rather than a
+    // <br>, so alignment (a per-<div> property) has a consistent block to
+    // attach to. Modern Chrome/Firefox/Safari already default to this: this
+    // is a safety net for the rare engine that doesn't, wrapped in
+    // try/catch since execCommand can throw/warn in stricter contexts.
+    editorEl.addEventListener('focus', () => {
+      try { document.execCommand('defaultParagraphSeparator', false, 'div'); } catch (e) { /* ignore */ }
+    });
+    editorEl.addEventListener('input', () => normalizeEditorLineAlignment(editorEl));
+
     toolbarEl.querySelectorAll('[data-format]').forEach((btn) => {
       // Prevent the button from stealing focus (and collapsing the
       // selection) before the click handler runs.
       btn.addEventListener('mousedown', (e) => e.preventDefault());
       btn.addEventListener('click', () => {
         const fmt = btn.dataset.format;
-        if (fmt === 'linebreak') { insertAtCursor(targetEl, '\n'); return; }
-        if (fmt === 'align-left' || fmt === 'align-center' || fmt === 'align-right') {
-          applyTextAlign(targetEl, fmt.slice('align-'.length));
+        if (fmt === 'linebreak') {
+          editorEl.focus();
+          document.execCommand('insertHTML', false, '<br>');
+          editorEl.dispatchEvent(new Event('input', { bubbles: true }));
           return;
         }
-        const marker = FORMAT_MARKERS[fmt];
-        if (!marker) return;
-        wrapSelectionWithMarker(targetEl, marker[0], marker[1]);
+        if (fmt === 'align-left' || fmt === 'align-center' || fmt === 'align-right') {
+          applyEditorAlign(editorEl, fmt.slice('align-'.length));
+          return;
+        }
+        if (fmt === 'mono') {
+          wrapSelectionInEditor(editorEl, 'code', 'msg-mono');
+          return;
+        }
+        const command = EDITOR_EXEC_COMMAND[fmt];
+        if (!command) return;
+        editorEl.focus();
+        document.execCommand(command);
+        editorEl.dispatchEvent(new Event('input', { bubbles: true }));
       });
     });
-  }
-
-  // Live "how it'll actually look" preview for a formatting-enabled field.
-  // Rather than trying to render bold/italic/alignment directly inside the
-  // <input>/<textarea> itself (that would mean replacing it with a
-  // contenteditable rich-text editor — a much bigger, more fragile change
-  // on a mobile-first PWA: IME/composition, mobile Safari cursor and
-  // selection quirks, copy-paste, undo/redo all get harder to get right),
-  // this renders the exact same richText() output used for the real
-  // group-description/status views into a preview box below the field,
-  // live on every keystroke and every toolbar click (wrapSelectionWithMarker/
-  // insertAtCursor/applyTextAlign all dispatch a synthetic 'input' event
-  // after they edit the field, which is what drives this).
-  function wireLivePreview(fieldEl, previewEl) {
-    if (!fieldEl || !previewEl) return;
-    const render = () => {
-      const parsed = parseAlignedText(fieldEl.value);
-      previewEl.style.textAlign = parsed.align;
-      previewEl.innerHTML = parsed.body.trim()
-        ? richText(parsed.body)
-        : '<span class="format-preview-empty">Nothing to preview yet…</span>';
-    };
-    fieldEl.addEventListener('input', render);
-    render();
   }
 
   function firstUrlIn(text) {
@@ -4402,9 +4542,9 @@
     // markers literally instead of rendering them — now that the admin
     // description editor has a formatting toolbar (#descFormatToolbar),
     // this needs to render those markers for every viewer, not just echo
-    // the plain saved string. richText() escapes the text itself (via
-    // linkifyText()'s internal escapeHtml()) before turning markers into
-    // real tags, so this stays safe against HTML injection.
+    // the plain saved string. renderRichBlocks() escapes the text itself
+    // (via linkifyText()'s internal escapeHtml()) before turning markers
+    // into real tags, so this stays safe against HTML injection.
     // FIX: root cause of "left/right alignment not working, everything
     // shows centered" — this used to only set an explicit style.textAlign
     // for 'center'/'right' and CLEAR it (style.textAlign = '') for 'left',
@@ -4413,13 +4553,12 @@
     // text-align: center (for the card's name/meta above it) — and
     // text-align is an inherited CSS property, so clearing the inline
     // override on 'left' let that ancestor's center win instead of
-    // browser-default left. Always setting the value explicitly (never
-    // clearing it) fixes 'left' and is simpler besides.
-    const parsedDesc = parseAlignedText(desc);
-    DOM.profileChannelDesc.style.textAlign = parsedDesc.align;
-    DOM.profileChannelDesc.innerHTML = richText(parsedDesc.body);
-    DOM.channelDescInput.value = state.currentChannel.description || '';
-    DOM.channelDescInput.dispatchEvent(new Event('input', { bubbles: true }));
+    // browser-default left. renderRichBlocks() now sets an explicit
+    // text-align on each rendered line itself (alignment is per-line, not
+    // once for the whole field — see the "RICH TEXT EDITOR" section
+    // above), so there's no longer a single container-level style to set.
+    DOM.profileChannelDesc.innerHTML = renderRichBlocks(desc);
+    populateRichEditor(DOM.channelDescInput, state.currentChannel.description || '');
 
     DOM.adminDescEdit.classList.toggle('hidden', !state.isAdmin);
   }
@@ -4646,8 +4785,8 @@
         item.dataset.id = st.id;
         const displayName = getDisplayName(st.username);
         // FIX: truncate() used to run on the raw st.content, so a status
-        // saved with the [[align:center]] block-alignment directive (see
-        // applyTextAlign() in app.js) showed that literal marker text at
+        // whose first line carries a [[align:center]] directive (see
+        // applyEditorAlign() in app.js) showed that literal marker text at
         // the front of its list-row preview. stripAlignPrefix() removes it
         // before truncating; the *bold*/_italic_/~strike~ inline markers
         // still show as raw characters here — this is only a truncated
@@ -4840,9 +4979,7 @@
           <button type="button" class="format-toolbar-btn" data-format="align-center" title="Align center" aria-label="Align center"><i class="fas fa-align-center"></i></button>
           <button type="button" class="format-toolbar-btn" data-format="align-right" title="Align right" aria-label="Align right"><i class="fas fa-align-right"></i></button>
         </div>
-        <textarea id="statusComposeText" class="field" rows="3" placeholder="Write something... (Enter for a new line)" style="resize:vertical;"></textarea>
-        <span class="format-preview-label">Preview</span>
-        <div id="statusFormatPreview" class="format-preview"></div>
+        <div id="statusComposeText" class="field rich-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Status text" data-placeholder="Write something... (Enter for a new line)" style="margin-bottom:10px;"></div>
 
         <label class="section-label" style="display:block; margin-bottom:6px;">Photo or video (optional)</label>
         <input id="statusComposeFile" type="file" accept="image/*,video/*" class="field" style="margin-bottom:4px;">
@@ -4872,7 +5009,6 @@
     const expiryEl = modal.querySelector('#statusComposeExpiry');
 
     initFormatToolbar(modal.querySelector('#statusFormatToolbar'), textEl);
-    wireLivePreview(textEl, modal.querySelector('#statusFormatPreview'));
 
     fileEl.addEventListener('change', () => {
       fileNameEl.textContent = fileEl.files[0] ? `📎 ${fileEl.files[0].name}` : '';
@@ -4883,7 +5019,7 @@
     modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
 
     modal.querySelector('#statusComposePost').addEventListener('click', async () => {
-      const content = textEl.value.trim();
+      const content = editorToMarkerValue(textEl).trim();
       const file = fileEl.files[0] || null;
       if (!content && !file) { alert('Add some text or a photo/video first.'); return; }
 
@@ -4911,17 +5047,17 @@
     DOM.statusModalTitle.textContent = getDisplayName(status.username);
     DOM.statusModalTime.textContent = formatFullDate(status.created_at);
     // FIX: was linkifyText() alone — didn't render the *bold*/_italic_/
-    // ~strike~/```mono``` markers the new status-composer toolbar
-    // (#statusFormatToolbar) inserts, so a formatted update showed its
-    // raw markup instead of styled text. richText() = linkifyText() +
-    // applyInlineFormatting().
+    // ~strike~/```mono``` markers the status-composer toolbar
+    // (#statusFormatToolbar) produces, so a formatted update showed its
+    // raw markup instead of styled text. renderRichBlocks() = linkifyText()
+    // + applyInlineFormatting(), per line.
     // FIX: same root cause as loadChannelDescription() — .status-viewer-body p
     // has its own default text-align: center, and clearing the inline
     // style for 'left' let that class default win instead of showing left.
-    // Always set it explicitly.
-    const parsedStatus = parseAlignedText(status.content || '');
-    DOM.statusModalContent.style.textAlign = parsedStatus.align;
-    DOM.statusModalContent.innerHTML = richText(parsedStatus.body);
+    // renderRichBlocks() now sets an explicit text-align per rendered line
+    // itself (alignment is per-line — see the "RICH TEXT EDITOR" section
+    // above), so there's no single container-level style to set anymore.
+    DOM.statusModalContent.innerHTML = renderRichBlocks(status.content || '');
 
     if (DOM.statusLinkPreview) {
       const statusLinkUrl = firstUrlIn(status.content);
@@ -7135,20 +7271,20 @@
   });
 
   initFormatToolbar(DOM.descFormatToolbar, DOM.channelDescInput);
-  wireLivePreview(DOM.channelDescInput, DOM.descFormatPreview);
 
   DOM.updateDescBtn.addEventListener('click', () => {
     if (!state.currentChannel) return;
-    updateChannelDescription(state.currentChannel.id, DOM.channelDescInput.value.trim());
+    updateChannelDescription(state.currentChannel.id, editorToMarkerValue(DOM.channelDescInput).trim());
   });
 
   // FIX: was a 'keypress' listener that saved on every plain Enter — that
   // made sense back when this was a single-line <input>, but it's now a
-  // <textarea> (see index.html) so people can actually write multi-line
-  // descriptions. Plain Enter now inserts a newline like any normal
-  // textarea; Ctrl/Cmd+Enter is the save shortcut instead. 'keydown' (not
-  // 'keypress', which is deprecated and unreliable with modifier keys) so
-  // the shortcut is caught before the newline would otherwise be inserted.
+  // contenteditable rich-text editor (see index.html) so people can
+  // actually write multi-line descriptions. Plain Enter starts a new
+  // line/paragraph like any normal text editor; Ctrl/Cmd+Enter is the save
+  // shortcut instead. 'keydown' (not 'keypress', which is deprecated and
+  // unreliable with modifier keys) so the shortcut is caught before the
+  // newline would otherwise be inserted.
   DOM.channelDescInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
