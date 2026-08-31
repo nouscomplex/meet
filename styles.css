@@ -1686,6 +1686,35 @@ body.theme-dark .msg-mine .msg-bubble {
   color: #FFFFFF;
 }
 
+/* FIX: root cause of "the link (and other text) inside my own sent
+   messages is unreadable in dark mode" — .msg-mine .msg-link, along with
+   the sibling rules below it (.msg-file, .msg-link-preview-title,
+   .msg-doc-name, .msg-reply-quote's author/bar), color themselves with
+   var(--chat-white) so they read as white text sitting on the navy
+   .msg-mine bubble. That's correct in light mode, where --chat-white
+   really is white (#FFFFFF) — but body.theme-dark above repoints
+   --chat-white to #15172F, a near-black navy meant for --chat-white's
+   OTHER job: the received-message bubble background, chat header and
+   composer background, all of which correctly want to go dark in dark
+   mode. .msg-mine's own bubble background/border/base text color already
+   got an explicit dark-mode override right above this comment (and
+   .btn-live-pill/.btn-send got the same treatment elsewhere in this
+   file) — these descendant text rules never did, so they silently kept
+   resolving to --chat-white's dark-mode value (#15172F) and went
+   near-invisible against the still-navy .msg-mine bubble underneath
+   them. Pin them to real white here, same as those already-fixed
+   elements, instead of following --chat-white's theme swap. */
+body.theme-dark .msg-mine .msg-link,
+body.theme-dark .msg-mine .msg-file,
+body.theme-dark .msg-mine .msg-link-preview-title,
+body.theme-dark .msg-mine .msg-doc-name,
+body.theme-dark .msg-mine .msg-reply-quote .reply-author {
+  color: #FFFFFF;
+}
+body.theme-dark .msg-mine .msg-reply-quote {
+  border-left-color: #FFFFFF;
+}
+
 /* FIX: placeholder shown once a message's attached image/video/PDF/file has
    aged out 168h after being sent — see isMessageMediaExpired() in app.js.
    Mirrors .msg-deleted's plain-bubble-plus-icon look (no dedicated CSS of
