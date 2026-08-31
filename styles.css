@@ -422,6 +422,16 @@ button { font-family: inherit; }
     color: var(--ink-faint);
     font-size: 34px;
   }
+  /* FIX: sizes the inline SVG that replaced the fa-comments glyph above —
+     an <svg>, unlike an <i> icon font glyph, doesn't scale off
+     .chat-welcome-icon's font-size, so it needs its own explicit
+     width/height. fill="currentColor" on the SVG itself still picks up
+     .chat-welcome-icon's `color`, so no color rule is needed here. */
+  .chat-welcome-icon-svg {
+    width: 40px;
+    height: 40px;
+    display: block;
+  }
   .chat-welcome-title {
     font-family: var(--font-display);
     font-weight: 800;
