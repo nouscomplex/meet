@@ -653,8 +653,23 @@
             <div class="profile-card-meta" id="profileChannelMeta">—</div>
             <p class="profile-card-desc" id="profileChannelDesc"></p>
             
-            <!-- Admin description edit -->
+            <!-- Admin description edit
+                 FIX: added a small text-formatting toolbar (Bold/Italic/
+                 Strikethrough/Monospace) above the input so an admin can
+                 style the group description without hand-typing markup.
+                 Buttons wrap the current text-selection in #channelDescInput
+                 with WhatsApp-style markers (*bold*, _italic_, ~strike~,
+                 ```mono```) via initFormatToolbar()/wrapSelectionWithMarker()
+                 in app.js; the same markers are what richText() renders back
+                 into real <strong>/<em>/<s>/<code> tags wherever the
+                 description is displayed (see loadChannelDescription()). -->
             <div id="adminDescEdit" class="hidden" style="margin-top:12px;">
+              <div id="descFormatToolbar" class="format-toolbar" role="toolbar" aria-label="Text formatting">
+                <button type="button" class="format-toolbar-btn" data-format="bold" title="Bold" aria-label="Bold"><i class="fas fa-bold"></i></button>
+                <button type="button" class="format-toolbar-btn" data-format="italic" title="Italic" aria-label="Italic"><i class="fas fa-italic"></i></button>
+                <button type="button" class="format-toolbar-btn" data-format="strike" title="Strikethrough" aria-label="Strikethrough"><i class="fas fa-strikethrough"></i></button>
+                <button type="button" class="format-toolbar-btn" data-format="mono" title="Monospace" aria-label="Monospace"><i class="fas fa-code"></i></button>
+              </div>
               <div style="display:flex; gap:8px;">
                 <input id="channelDescInput" class="field-sm" placeholder="Group description..." style="flex:1;">
                 <button id="updateDescBtn" class="btn-admin-sm"><i class="fas fa-save"></i></button>
