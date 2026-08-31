@@ -3096,7 +3096,15 @@
 
     if (DOM.msgSelectCopyBtn) DOM.msgSelectCopyBtn.classList.toggle('hidden', !msg.content);
     if (DOM.msgSelectDeleteBtn) DOM.msgSelectDeleteBtn.classList.toggle('hidden', !state.isAdmin);
-    if (DOM.msgSelectInfoBtn) DOM.msgSelectInfoBtn.classList.toggle('hidden', !isMine);
+    // FIX: root cause of "admin can't see the viewers of teachers or
+    // students message" — this only showed the "Message info" ("Seen by")
+    // button for a message's own sender, so an admin looking at a teacher's
+    // or student's message had no way to open the read-receipt list, even
+    // though loadMessageReads() already loads read receipts for every
+    // message in the channel, not just the current user's own — the data
+    // was there, the button just wasn't. Admins can now open it for
+    // anyone's message; non-admins still only get it for their own.
+    if (DOM.msgSelectInfoBtn) DOM.msgSelectInfoBtn.classList.toggle('hidden', !(isMine || state.isAdmin));
   }
 
   function exitMessageSelection() {
@@ -3235,7 +3243,15 @@
       .sort((a, b) => new Date(a.seen_at) - new Date(b.seen_at));
     const readUsernames = new Set(reads.map((r) => r.username));
 
-    const others = state.currentMembers.filter((m) => m.username !== state.currentUser?.username);
+    // FIX: was `m.username !== state.currentUser?.username` only — correct
+    // back when this modal could only ever be opened for your OWN message
+    // (currentUser was always the sender), but now an admin can open it for
+    // a teacher's/student's message too, where currentUser (the admin) and
+    // msg.username (the sender) are two different people. Without also
+    // excluding the sender here, the sender showed up listed as "delivered"
+    // or "not delivered" on their own message, which doesn't make sense —
+    // a message obviously reached its own author.
+    const others = state.currentMembers.filter((m) => m.username !== state.currentUser?.username && m.username !== msg.username);
     const delivered = [];
     const notDelivered = [];
     others.forEach((m) => {
