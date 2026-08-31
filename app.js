@@ -4743,6 +4743,17 @@
     renderSharedVideos();
   }
 
+  // FIX: root cause of "in show less mode images are being shown in 2
+  // rows — it should always show 1 row for images and 1 row for videos" —
+  // this grid is a fixed 5-column layout (.shared-media-grid, styles.css,
+  // shared by both the photos and videos grids), but the collapsed/"Show
+  // Less" preview cap here was still the old pre-5-column number (6) left
+  // over from before that grid became a fixed row size — 6 items in a
+  // 5-column grid wraps to a second row for just the 6th tile. One shared
+  // constant (below) now drives both grids' preview caps, so they can't
+  // drift out of sync with the grid's actual column count again.
+  const SHARED_MEDIA_ROW_PREVIEW_COUNT = 5;
+
   // FIX: "make separate folder in share media one for images and one for
   // video" — was one mixed grid/filter (isImageFile() || isVideoFile());
   // now two fully independent grids/preview caps/"See All" states, each
@@ -4756,10 +4767,10 @@
       return;
     }
     const showAll = DOM.sharedPhotosGrid.dataset.showAll === 'true';
-    const shown = showAll ? photos : photos.slice(-6);
+    const shown = showAll ? photos : photos.slice(-SHARED_MEDIA_ROW_PREVIEW_COUNT);
     state.sharedMediaUrls = shown.map((m) => m.file_url);
     DOM.sharedPhotosGrid.innerHTML = shown.map((m, i) => `<img class="shared-media-tile" src="${escapeHtml(m.file_url)}" data-media-url="${escapeHtml(m.file_url)}" data-media-index="${i}" alt="Shared photo" loading="lazy" style="cursor:pointer;">`).join('');
-    DOM.profileSeeAllPhotos.classList.toggle('hidden', photos.length <= 6);
+    DOM.profileSeeAllPhotos.classList.toggle('hidden', photos.length <= SHARED_MEDIA_ROW_PREVIEW_COUNT);
     // FIX: root cause of "the See All link works only for expansion not
     // for contraction" — the link's label never changed off "See All", so
     // there was no visible affordance to collapse back down (its click
@@ -4771,12 +4782,6 @@
     DOM.profileSeeAllPhotos.textContent = showAll ? 'Show Less' : 'See All';
   }
 
-  // FIX: "make the video grid small 5 video in one grid" — the grid itself
-  // is fixed at 5 columns (.shared-video-grid, styles.css); this preview
-  // cap keeps the collapsed (pre-"See All") state to exactly one full row
-  // of 5, matching that layout instead of an arbitrary count.
-  const SHARED_VIDEOS_PREVIEW_COUNT = 5;
-
   function renderSharedVideos() {
     const videos = state.messages.filter((m) => isVideoFile(m.file_url) && !isMessageMediaExpired(m));
     if (!videos.length) {
@@ -4785,14 +4790,14 @@
       return;
     }
     const showAll = DOM.sharedVideosGrid.dataset.showAll === 'true';
-    const shown = showAll ? videos : videos.slice(-SHARED_VIDEOS_PREVIEW_COUNT);
+    const shown = showAll ? videos : videos.slice(-SHARED_MEDIA_ROW_PREVIEW_COUNT);
     DOM.sharedVideosGrid.innerHTML = shown.map((m) => `
       <div class="shared-media-tile shared-media-video-tile" data-media-url="${escapeHtml(m.file_url)}" style="cursor:pointer;">
         <video src="${escapeHtml(m.file_url)}" preload="metadata" muted playsinline></video>
         <span class="shared-media-play-badge" aria-hidden="true"><i class="fas fa-play"></i></span>
       </div>
     `).join('');
-    DOM.profileSeeAllVideos.classList.toggle('hidden', videos.length <= SHARED_VIDEOS_PREVIEW_COUNT);
+    DOM.profileSeeAllVideos.classList.toggle('hidden', videos.length <= SHARED_MEDIA_ROW_PREVIEW_COUNT);
     // FIX: see the matching FIX comment in renderSharedPhotos() above —
     // same root cause, same fix, just for the videos grid/link pair.
     DOM.profileSeeAllVideos.textContent = showAll ? 'Show Less' : 'See All';
