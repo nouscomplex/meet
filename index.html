@@ -654,26 +654,39 @@
             <p class="profile-card-desc" id="profileChannelDesc"></p>
             
             <!-- Admin description edit
-                 FIX: added a small text-formatting toolbar (Bold/Italic/
-                 Strikethrough/Monospace) above the input so an admin can
-                 style the group description without hand-typing markup.
-                 Buttons wrap the current text-selection in #channelDescInput
-                 with WhatsApp-style markers (*bold*, _italic_, ~strike~,
-                 ```mono```) via initFormatToolbar()/wrapSelectionWithMarker()
-                 in app.js; the same markers are what richText() renders back
-                 into real <strong>/<em>/<s>/<code> tags wherever the
-                 description is displayed (see loadChannelDescription()). -->
+                 FIX: added a text-formatting toolbar (Bold/Italic/
+                 Strikethrough/Monospace/Line break/Align left-center-right)
+                 above the field so an admin can style the group description
+                 without hand-typing markup. The inline buttons wrap the
+                 current text-selection in #channelDescInput with
+                 WhatsApp-style markers (*bold*, _italic_, ~strike~,
+                 ```mono```); Align sets a whole-block [[align:...]]
+                 directive; Line break inserts a real newline — see
+                 initFormatToolbar()/wrapSelectionWithMarker()/
+                 insertAtCursor()/applyTextAlign() in app.js. All of it is
+                 rendered back wherever the description is shown (see
+                 richText()/parseAlignedText() + loadChannelDescription()).
+
+                 FIX: #channelDescInput was a single-line <input>, so there
+                 was no way to actually type a line break into a
+                 description — Enter just triggered Save. It's now a
+                 <textarea>: Enter inserts a newline like any normal text
+                 box, and Ctrl/Cmd+Enter saves instead (see the updated
+                 keydown listener in app.js). -->
             <div id="adminDescEdit" class="hidden" style="margin-top:12px;">
               <div id="descFormatToolbar" class="format-toolbar" role="toolbar" aria-label="Text formatting">
                 <button type="button" class="format-toolbar-btn" data-format="bold" title="Bold" aria-label="Bold"><i class="fas fa-bold"></i></button>
                 <button type="button" class="format-toolbar-btn" data-format="italic" title="Italic" aria-label="Italic"><i class="fas fa-italic"></i></button>
                 <button type="button" class="format-toolbar-btn" data-format="strike" title="Strikethrough" aria-label="Strikethrough"><i class="fas fa-strikethrough"></i></button>
                 <button type="button" class="format-toolbar-btn" data-format="mono" title="Monospace" aria-label="Monospace"><i class="fas fa-code"></i></button>
+                <button type="button" class="format-toolbar-btn" data-format="linebreak" title="Insert line break" aria-label="Insert line break"><i class="fas fa-paragraph"></i></button>
+                <span class="format-toolbar-divider" aria-hidden="true"></span>
+                <button type="button" class="format-toolbar-btn" data-format="align-left" title="Align left" aria-label="Align left"><i class="fas fa-align-left"></i></button>
+                <button type="button" class="format-toolbar-btn" data-format="align-center" title="Align center" aria-label="Align center"><i class="fas fa-align-center"></i></button>
+                <button type="button" class="format-toolbar-btn" data-format="align-right" title="Align right" aria-label="Align right"><i class="fas fa-align-right"></i></button>
               </div>
-              <div style="display:flex; gap:8px;">
-                <input id="channelDescInput" class="field-sm" placeholder="Group description..." style="flex:1;">
-                <button id="updateDescBtn" class="btn-admin-sm"><i class="fas fa-save"></i></button>
-              </div>
+              <textarea id="channelDescInput" class="field-sm" rows="3" placeholder="Group description... (Enter for a new line, Ctrl+Enter to save)" style="width:100%; resize:vertical;"></textarea>
+              <button id="updateDescBtn" class="btn-admin-sm" title="Save (Ctrl+Enter)" style="width:100%; margin-top:8px;"><i class="fas fa-save"></i> Save description</button>
             </div>
           </div>
 
