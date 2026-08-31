@@ -686,6 +686,15 @@
                 <button type="button" class="format-toolbar-btn" data-format="align-right" title="Align right" aria-label="Align right"><i class="fas fa-align-right"></i></button>
               </div>
               <textarea id="channelDescInput" class="field-sm" rows="3" placeholder="Group description... (Enter for a new line, Ctrl+Enter to save)" style="width:100%; resize:vertical;"></textarea>
+              <!-- Live preview: renders the exact same richText() output the
+                   real Profile-screen description uses (bold/italic/strike/
+                   mono + alignment), updated on every keystroke and every
+                   toolbar click — see wireLivePreview() in app.js. Answers
+                   "let the admin see how it'll actually look" without
+                   turning this field into a full contenteditable rich-text
+                   editor (a much riskier change on a mobile PWA). -->
+              <span class="format-preview-label">Preview</span>
+              <div id="descFormatPreview" class="format-preview"></div>
               <button id="updateDescBtn" class="btn-admin-sm" title="Save (Ctrl+Enter)" style="width:100%; margin-top:8px;"><i class="fas fa-save"></i> Save description</button>
             </div>
           </div>
