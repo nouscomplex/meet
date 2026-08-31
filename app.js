@@ -787,12 +787,30 @@
   // populateRichEditor(). Each top-level block (line) becomes one line of
   // output, prefixed with its own [[align:...]] directive if it isn't
   // left-aligned.
+  // Every top-level child <div> of the editor is already one full line —
+  // the block boundary itself IS the line break. When a line is empty (the
+  // user pressed Enter to leave a blank row, or populateRichEditor() filled
+  // one in), the browser leaves a lone trailing <br> inside that <div> just
+  // so it has height and somewhere for the cursor to land — it's a
+  // placeholder, not a second, extra line break. Serializing that <br> as
+  // '\n' too (on top of the '\n' that already separates this block from
+  // the next) doubled every blank line on save. Strip trailing <br>s before
+  // serializing a line's content; a <br> that has real content AFTER it
+  // (e.g. a genuine forced break from Shift+Enter) is left alone.
+  function stripTrailingBrs(nodeList) {
+    const out = nodeList.slice();
+    while (out.length && out[out.length - 1].nodeType === Node.ELEMENT_NODE && out[out.length - 1].tagName === 'BR') {
+      out.pop();
+    }
+    return out;
+  }
+
   function editorToMarkerValue(editorEl) {
     if (!editorEl) return '';
     const blocks = Array.from(editorEl.children).filter((c) => c.nodeType === 1);
     const lineToText = (block) => {
       const align = block.style.textAlign;
-      const text = inlineNodesToMarkerText(Array.from(block.childNodes));
+      const text = inlineNodesToMarkerText(stripTrailingBrs(Array.from(block.childNodes)));
       return (align === 'center' || align === 'right') ? `[[align:${align}]]${text}` : text;
     };
     if (!blocks.length) {
