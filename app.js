@@ -299,10 +299,12 @@
     setScheduleBtn: $('setScheduleBtn'),
     groupScheduleList: $('groupScheduleList'),
     
+    channelDescEditBtn: $('channelDescEditBtn'),
     adminDescEdit: $('adminDescEdit'),
     descFormatToolbar: $('descFormatToolbar'),
     channelDescInput: $('channelDescInput'),
     updateDescBtn: $('updateDescBtn'),
+    cancelDescEditBtn: $('cancelDescEditBtn'),
 
     statusModal: $('statusModal'),
     statusSegments: $('statusSegments'),
@@ -4600,7 +4602,17 @@
     DOM.profileChannelDesc.innerHTML = renderRichBlocks(desc);
     populateRichEditor(DOM.channelDescInput, state.currentChannel.description || '');
 
-    DOM.adminDescEdit.classList.toggle('hidden', !state.isAdmin);
+    // FIX: root cause of "the group description editable box appears
+    // always to admin" — this used to toggle #adminDescEdit (the whole
+    // toolbar + editor + Save button) straight off state.isAdmin, so it
+    // sat open for every admin on every visit to this screen instead of
+    // only when they actually wanted to make a change. Now only the
+    // pencil "Edit description" button is admin-gated here; the edit
+    // panel itself always starts closed (also closing it back down if it
+    // happened to be left open from a previous channel/visit) and is
+    // opened only by that button's click handler below.
+    DOM.channelDescEditBtn.classList.toggle('hidden', !state.isAdmin);
+    DOM.adminDescEdit.classList.add('hidden');
   }
 
   async function updateChannelDescription(channelId, description) {
@@ -7416,8 +7428,29 @@
 
   initFormatToolbar(DOM.descFormatToolbar, DOM.channelDescInput);
 
+  // FIX: opens the previously-always-open editor panel — see the FIX
+  // comment in loadChannelDescription() above. Re-populates from the
+  // currently saved description each time it's opened, so re-clicking
+  // Edit after a Cancel (or after switching away and back) never shows
+  // stale half-typed text from a previous session.
+  DOM.channelDescEditBtn.addEventListener('click', () => {
+    if (!state.currentChannel) return;
+    populateRichEditor(DOM.channelDescInput, state.currentChannel.description || '');
+    DOM.adminDescEdit.classList.remove('hidden');
+    DOM.channelDescEditBtn.classList.add('hidden');
+    DOM.channelDescInput.focus();
+  });
+
+  DOM.cancelDescEditBtn.addEventListener('click', () => {
+    DOM.adminDescEdit.classList.add('hidden');
+    DOM.channelDescEditBtn.classList.remove('hidden');
+  });
+
   DOM.updateDescBtn.addEventListener('click', () => {
     if (!state.currentChannel) return;
+    // updateChannelDescription() re-runs loadChannelDescription() on
+    // success, which closes this panel back down and re-shows the Edit
+    // button — no separate collapse call needed here.
     updateChannelDescription(state.currentChannel.id, editorToMarkerValue(DOM.channelDescInput).trim());
   });
 
