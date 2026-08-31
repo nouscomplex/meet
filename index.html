@@ -25,7 +25,7 @@
   <!-- Cache-busting query param — bump alongside the one on app.js
      whenever styles.css changes, for the same reason (see the comment
      on the app.js <script> tag below). -->
-<link rel="stylesheet" href="styles.css?v=20260831a">
+<link rel="stylesheet" href="styles.css?v=20260831b">
 
   <!-- FIX: root cause of "opening the app shows a blank screen for a few
        seconds instead of the loading/home screen" — these three <script>
@@ -464,7 +464,18 @@
         <div class="chat-scroll" id="chatContainer">
           <div id="chatMessages">
             <div class="chat-welcome">
-              <div class="chat-welcome-icon"><i class="fas fa-comments"></i></div>
+              <!-- FIX: "change the icon when the session is not selected with
+                   attached one icon" — was the Font Awesome fa-comments glyph
+                   (two overlapping bubble outlines); swapped for the same
+                   solid single-bubble-with-tail mark already used for the
+                   bottom nav's Sessions tab (see .nav-icon-svg's path in the
+                   BOTTOM NAVIGATION section below), matching the icon
+                   supplied for this screen. fill="currentColor" means it
+                   still picks up .chat-welcome-icon's color exactly like the
+                   old <i> glyph did. -->
+              <div class="chat-welcome-icon">
+                <svg class="chat-welcome-icon-svg" viewBox="0 0 512 512" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M45,60 L27,92 L21,122 L22,313 L29,339 L47,368 L77,392 L107,403 L107,474 L115,486 L126,490 L140,486 L262,404 L396,404 L428,395 L448,383 L471,359 L482,339 L490,303 L490,122 L485,95 L475,73 L466,60 L447,42 L419,27 L389,21 L122,21 L95,26 L73,36 Z M148,253 L152,243 L165,234 L346,234 L359,243 L363,258 L359,268 L346,277 L165,277 L152,268 Z M106,165 L115,152 L125,148 L386,148 L396,152 L402,158 L405,165 L405,176 L395,189 L388,192 L123,192 L109,182 L106,176 Z"/></svg>
+              </div>
               <div class="chat-welcome-title">Nous Complex Orbit</div>
               <div class="chat-welcome-sub">Select a session from the list to start messaging.</div>
             </div>
@@ -961,7 +972,7 @@
      anything) every time app.js changes so browsers/CDNs that cached the
      old file under the plain "app.js" URL are forced to fetch the new
      one instead of silently keeping serving stale code. -->
-<script src="app.js?v=20260830j" defer></script>
+<script src="app.js?v=20260831a" defer></script>
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
