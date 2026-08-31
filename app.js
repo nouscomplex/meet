@@ -3562,6 +3562,45 @@
     }
   }
 
+  // FIX: companion to the "shared videos are not being considered media"
+  // fix in updateProfileScreen() — tapping a video tile in the Shared
+  // Media grid used to do nothing (no click target matched it at all). This
+  // is a deliberately simpler single-item viewer, not a video-aware
+  // extension of openImageLightbox() above: that function's prev/next
+  // gallery swaps `<img>.src` between calls, which can't play a video, and
+  // teaching it to juggle mixed image/video items for what's a fairly rare
+  // click path wasn't worth the added complexity. Same .lightbox-overlay
+  // shell (and the same state.activeLightbox teardown contract — see
+  // closeActiveLightbox() around state.activeLightbox usage elsewhere) as
+  // openImageLightbox()/openDocViewer(), just with a <video controls> in
+  // place of the <img>.
+  function openVideoLightbox(url) {
+    if (!url) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'lightbox-overlay';
+    overlay.innerHTML = `
+      <button class="lightbox-close" aria-label="Close"><i class="fas fa-times"></i></button>
+      <video class="lightbox-video" src="${escapeHtml(url)}" controls autoplay playsinline></video>
+    `;
+    document.body.appendChild(overlay);
+    state.activeLightbox = overlay;
+
+    const onKeydown = (e) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKeydown);
+
+    const close = () => {
+      if (state.activeLightbox === overlay) state.activeLightbox = null;
+      document.removeEventListener('keydown', onKeydown);
+      const videoEl = overlay.querySelector('video');
+      if (videoEl) videoEl.pause();
+      overlay.remove();
+    };
+    overlay._lightboxCleanup = () => document.removeEventListener('keydown', onKeydown);
+
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('.lightbox-close').addEventListener('click', close);
+  }
+
   DOM.replyPreviewCancel.addEventListener('click', () => {
     state.replyingTo = null;
     DOM.replyPreview.classList.add('hidden');
@@ -4698,7 +4737,14 @@
       renderSchedulePerDateList();
     }
 
-    const media = state.messages.filter((m) => isImageFile(m.file_url) && !isMessageMediaExpired(m));
+    // FIX: root cause of "shared videos are not being considered media" —
+    // this filter only ever kept isImageFile() matches, so any sent video
+    // (isVideoFile() — .mp4/.webm/.mov/etc., already handled fine inline in
+    // the chat bubble itself, see the isVideoFile() branch in
+    // buildMessageEl()) was silently excluded from the Shared Media grid
+    // entirely: not counted, not shown, not part of "See All". Videos now
+    // count as shared media too.
+    const media = state.messages.filter((m) => (isImageFile(m.file_url) || isVideoFile(m.file_url)) && !isMessageMediaExpired(m));
     if (!media.length) {
       DOM.sharedMediaGrid.innerHTML = '<div class="empty-note">No shared media yet</div>';
       DOM.profileSeeAllMedia.classList.add('hidden');
@@ -4706,8 +4752,26 @@
     }
     const showAll = DOM.sharedMediaGrid.dataset.showAll === 'true';
     const shown = showAll ? media : media.slice(-6);
-    state.sharedMediaUrls = shown.map((m) => m.file_url);
-    DOM.sharedMediaGrid.innerHTML = shown.map((m, i) => `<img src="${escapeHtml(m.file_url)}" data-media-url="${escapeHtml(m.file_url)}" data-media-index="${i}" alt="Shared media" loading="lazy" style="cursor:pointer;">`).join('');
+    // openImageLightbox()'s prev/next gallery only knows how to display
+    // <img>s (see its `imgEl.src = gallery[index]` swap), so the gallery
+    // array stays image-only — a video tile opens its own single-item
+    // openVideoLightbox() below instead of joining that gallery.
+    const imageUrls = shown.filter((m) => isImageFile(m.file_url)).map((m) => m.file_url);
+    state.sharedMediaUrls = imageUrls;
+    let imageIdx = 0;
+    DOM.sharedMediaGrid.innerHTML = shown.map((m) => {
+      const url = m.file_url;
+      if (isVideoFile(url)) {
+        return `
+          <div class="shared-media-tile shared-media-video-tile" data-media-url="${escapeHtml(url)}" data-media-type="video" style="cursor:pointer;">
+            <video src="${escapeHtml(url)}" preload="metadata" muted playsinline></video>
+            <span class="shared-media-play-badge" aria-hidden="true"><i class="fas fa-play"></i></span>
+          </div>
+        `;
+      }
+      const idx = imageIdx++;
+      return `<img class="shared-media-tile" src="${escapeHtml(url)}" data-media-url="${escapeHtml(url)}" data-media-type="image" data-media-index="${idx}" alt="Shared media" loading="lazy" style="cursor:pointer;">`;
+    }).join('');
     DOM.profileSeeAllMedia.classList.toggle('hidden', media.length <= 6);
   }
 
@@ -7524,12 +7588,19 @@
     updateProfileScreen();
   });
 
+  // FIX: was `img[data-media-url]` only, so a video tile (now rendered as
+  // a <div class="shared-media-video-tile"> — see updateProfileScreen())
+  // never matched and its click did nothing at all. Matches either kind of
+  // tile now and branches on data-media-type.
   DOM.sharedMediaGrid.addEventListener('click', (e) => {
-    const img = e.target.closest('img[data-media-url]');
-    if (img) {
-      const idx = parseInt(img.dataset.mediaIndex, 10);
-      openImageLightbox(img.dataset.mediaUrl, state.sharedMediaUrls, Number.isNaN(idx) ? undefined : idx);
+    const tile = e.target.closest('[data-media-url]');
+    if (!tile) return;
+    if (tile.dataset.mediaType === 'video') {
+      openVideoLightbox(tile.dataset.mediaUrl);
+      return;
     }
+    const idx = parseInt(tile.dataset.mediaIndex, 10);
+    openImageLightbox(tile.dataset.mediaUrl, state.sharedMediaUrls, Number.isNaN(idx) ? undefined : idx);
   });
 
   DOM.closeStatusModal.addEventListener('click', closeStatusViewer);
