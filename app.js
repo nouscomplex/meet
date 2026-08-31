@@ -749,16 +749,37 @@
     const tag = node.tagName.toLowerCase();
     if (tag === 'br') return '\n';
     const inner = inlineNodesToMarkerText(Array.from(node.childNodes));
-    switch (tag) {
-      case 'b': case 'strong': return inner ? `*${inner}*` : '';
-      case 'i': case 'em': return inner ? `_${inner}_` : '';
-      case 'strike': case 's': case 'del': return inner ? `~${inner}~` : '';
-      case 'code': return inner ? '```' + inner + '```' : '';
-      default: return inner; // span/div/font etc. from pasted content — keep the text, drop the wrapper
-    }
+    return wrapInlineMarker(tag, inner);
   }
   function inlineNodesToMarkerText(nodeList) {
     return nodeList.map(inlineNodeToMarkerText).join('');
+  }
+
+  // tag -> marker character(s) for the inline formatting tags produced by
+  // inlineHtmlForEditorLine()/applyInlineFormatting(); anything else (span,
+  // div, font, etc. from pasted content) passes its text through unwrapped.
+  const INLINE_MARKER_BY_TAG = {
+    b: '*', strong: '*',
+    i: '_', em: '_',
+    strike: '~', s: '~', del: '~',
+    code: '```',
+  };
+
+  // Wraps `inner` in the marker pair for `tag`, but only when `inner` has
+  // real visible text. Clicking a formatting button on an empty/unselected
+  // line (or one that's just a line break) leaves behind an empty wrapper
+  // like <b><br></b>; since inner would then be the non-empty string '\n',
+  // a naive truthiness check treated it as real content and serialized it
+  // as a marker pair spanning a newline (e.g. '*\n*'), which later renders
+  // as bare '*' characters on their own line. Guard against that here, and
+  // — for the rarer case where an inline tag genuinely wraps multiple
+  // lines — only wrap the non-blank line segments, since a marker pair can
+  // never span a newline (the parser doesn't support that either).
+  function wrapInlineMarker(tag, inner) {
+    const marker = INLINE_MARKER_BY_TAG[tag];
+    if (!marker) return inner;
+    if (!inner.replace(/\n/g, '').trim()) return '';
+    return inner.split('\n').map((seg) => (seg.trim() ? `${marker}${seg}${marker}` : '')).join('\n');
   }
 
   // Serializes the whole editor's current DOM back into the plain
