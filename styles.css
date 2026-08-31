@@ -855,6 +855,28 @@ button { font-family: inherit; }
 .avatar-admin { background: linear-gradient(155deg, var(--role-admin), #7A70F0); }
 .avatar-teacher { background: linear-gradient(155deg, var(--role-teacher), #3FC98C); }
 .avatar-student { background: linear-gradient(155deg, var(--role-student), #EE79A8); }
+/* FIX: the group's own avatar circle (channelAvatarHtml() in app.js) —
+   just a plain white backing behind the (already-square) logo image, no
+   role-color gradient needed since every group shows the same photo. */
+.avatar-group { background: #fff; }
+
+/* FIX: "make nous complex logo a group profile logo and teachers and
+   students profile logo" — the logo image now fills the same circular
+   .avatar slot that used to just hold a role-colored initial (see
+   avatarHtml()/channelAvatarHtml()/setAvatarEl() in app.js). object-fit:
+   cover crops it edge-to-edge into the circle without distorting it —
+   the source PNG is already a tightly-cropped square, so this shows the
+   whole logo, not just a sliver of it. Lives on the <img> itself (not
+   .avatar) so .avatar-dot — a sibling, not a child of the image — is
+   never affected by any clipping here. */
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #fff;
+  display: block;
+}
 
 .avatar-dot {
   position: absolute;
@@ -2708,6 +2730,22 @@ body.theme-dark .btn-send { color: #FFFFFF; }
   user-select: none;
   -webkit-user-select: none;
   touch-action: manipulation;
+}
+/* FIX: "make nous complex logo a group profile logo" — the group info
+   screen never had a picture at all before this, just name/meta/
+   description text (see #profileChannelLogo in index.html — a plain
+   hardcoded <img>, not something app.js populates, since every group
+   shows this same logo). */
+.profile-card-logo {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #fff;
+  display: block;
+  margin: 0 auto 14px;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
 }
 .profile-card-name { font-family: var(--font-display); font-weight: 800; font-size: 1.3rem; color: var(--ink); }
 .profile-card-meta { font-size: 12.5px; font-weight: 700; color: var(--accent); margin-top: 4px; }
