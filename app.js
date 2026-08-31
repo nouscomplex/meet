@@ -6595,6 +6595,39 @@
     setupTabFocusManager();
   }
 
+  // FIX: "make the selection unselected when we click on empty space of
+  // sessions panel" — there used to be no way to go from "a channel is
+  // selected" back to the neutral state short of picking a different
+  // channel. This is selectChannel()'s teardown counterpart: it undoes
+  // everything selectChannel() sets up (subscriptions, typing indicator,
+  // schedule watch) and clears state.currentChannel, then reuses
+  // updateChatEmptyState()/highlightActiveChatRow() — the same two calls
+  // selectChannel() itself uses to reflect selection — to flip the UI
+  // back to the "Select a session" welcome screen (desktop) and drop the
+  // active highlight from the list row. Wired up below on #channelList's
+  // own background click (see EVENT BINDINGS).
+  function deselectChannel() {
+    if (!state.currentChannel) return;
+    if (typeof exitMessageSelection === 'function') exitMessageSelection();
+    clearTypingIndicator(state.currentChannel.id);
+    teardownMessagesSubscription();
+    teardownReadsSubscription();
+    if (scheduleSubscription) {
+      supabase.removeChannel(scheduleSubscription);
+      scheduleSubscription = null;
+    }
+    clearScheduleExpiryTimer();
+
+    state.currentChannel = null;
+    state.messages = [];
+    state.currentMembers = [];
+    state.currentSchedule = null;
+
+    updateChatEmptyState();
+    highlightActiveChatRow();
+    updateLiveButtonState();
+  }
+
   function updateChatDetailHeader() {
     if (!state.currentChannel) return;
     DOM.chatDetailName.textContent = state.currentChannel.name;
@@ -7208,6 +7241,16 @@
   });
 
   DOM.chatSearchInput.addEventListener('input', () => filterChatList(DOM.chatSearchInput.value));
+
+  // FIX: "make the selection unselected when we click on empty space of
+  // sessions panel" — e.target === DOM.channelList only matches the bare
+  // container background (below the last row, or the blank area under a
+  // short list); a click anywhere inside an actual .chat-row lands on
+  // that row or one of its children instead, so this never fires for a
+  // normal "open this chat" click. See deselectChannel().
+  DOM.channelList.addEventListener('click', (e) => {
+    if (e.target === DOM.channelList) deselectChannel();
+  });
 
   DOM.backFromChat.addEventListener('click', () => goToScreen('chats'));
   DOM.backFromUpdates.addEventListener('click', () => goToScreen('chats'));
