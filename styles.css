@@ -2779,6 +2779,12 @@ body.theme-dark .btn-send { color: #FFFFFF; }
   gap: 6px;
   margin: 0 18px;
 }
+/* FIX: "make the video grid small 5 video in one grid" — fixed 5-column
+   layout instead of the photo grid's auto-fill, so it's always exactly 5
+   tiles per row (narrower than the ~56px auto-fill tiles above, since 5
+   columns squeezed into the same card width is inherently smaller) rather
+   than however many happen to fit at a 56px minimum. */
+.shared-video-grid { grid-template-columns: repeat(5, 1fr); }
 
 
 .shared-media-grid img,
