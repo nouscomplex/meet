@@ -127,6 +127,7 @@
     readsSubscription: null,
     statusViews: new Map(),
     statusViewsSubscription: null,
+    statusesSubscription: null,
     activeLightbox: null,
     sharedMediaUrls: [],
     myMemberships: new Map(),
@@ -4677,6 +4678,8 @@
     }
     await loadStatusViews(state.statuses.map((s) => s.id));
     subscribeToStatusViews();
+    subscribeToStatuses();
+    startStatusExpiryWatcher();
     renderStatuses();
     updateStatusNavBadge();
   }
@@ -4739,6 +4742,92 @@
         }
       })
       .subscribe();
+  }
+
+  // FIX: root cause of "status doesn't appear and hide in real-time" —
+  // loadStatuses() only ran once at login/session-restore (plus after this
+  // device's own post/delete), with no realtime subscription on the
+  // `statuses` table itself. So a status someone else just posted never
+  // showed up in the Updates tray until this device happened to reload the
+  // whole app, and a status that expired while the tray was sitting open
+  // never disappeared either — state.statuses was only ever re-filtered by
+  // expires_at at the moment of that one-time fetch. Two pieces fix this:
+  // this postgres_changes subscription (statuses appear/update/delete live,
+  // mirroring subscribeToStatusViews() above) and the expiry watcher below
+  // it (statuses that simply age past expires_at while nobody touched the
+  // table also get swept away on a short timer, not just on the next
+  // insert/delete from someone else).
+  function teardownStatusesSubscription() {
+    if (!state.statusesSubscription) return;
+    supabase.removeChannel(state.statusesSubscription);
+    state.statusesSubscription = null;
+  }
+
+  function isStatusExpired(row, nowMs) {
+    return !!(row.expires_at && new Date(row.expires_at).getTime() <= nowMs);
+  }
+
+  function subscribeToStatuses() {
+    teardownStatusesSubscription();
+    state.statusesSubscription = supabase
+      .channel('statuses:all')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: CONFIG.SUPABASE.TABLES.STATUSES,
+      }, (payload) => {
+        const nowMs = Date.now();
+        if (payload.eventType === 'INSERT') {
+          const row = payload.new;
+          if (isStatusExpired(row, nowMs)) return; // clock-skew edge case — arrived already expired
+          if (state.statuses.some((s) => s.id === row.id)) return;
+          state.statuses = [row, ...state.statuses]
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+            .slice(0, 10);
+        } else if (payload.eventType === 'UPDATE') {
+          const row = payload.new;
+          state.statuses = isStatusExpired(row, nowMs)
+            ? state.statuses.filter((s) => s.id !== row.id)
+            : state.statuses.map((s) => (s.id === row.id ? row : s));
+        } else if (payload.eventType === 'DELETE') {
+          const oldId = payload.old?.id;
+          if (!oldId) return;
+          state.statuses = state.statuses.filter((s) => s.id !== oldId);
+        } else {
+          return;
+        }
+        renderStatuses();
+        updateStatusNavBadge();
+      })
+      .subscribe();
+  }
+
+  // 30s is plenty granular against the shortest expiry option (1h) and
+  // matches the existing startMediaExpiryWatcher() pattern used to solve
+  // the identical "nothing re-evaluates a timestamp once time has actually
+  // passed" problem for expired message media.
+  const STATUS_EXPIRY_WATCH_INTERVAL = 30 * 1000;
+  let statusExpiryWatcherTimer = null;
+
+  function startStatusExpiryWatcher() {
+    stopStatusExpiryWatcher();
+    statusExpiryWatcherTimer = setInterval(() => {
+      if (!state.statuses.length) return;
+      const nowMs = Date.now();
+      const before = state.statuses.length;
+      state.statuses = state.statuses.filter((s) => !isStatusExpired(s, nowMs));
+      if (state.statuses.length !== before) {
+        renderStatuses();
+        updateStatusNavBadge();
+      }
+    }, STATUS_EXPIRY_WATCH_INTERVAL);
+  }
+
+  function stopStatusExpiryWatcher() {
+    if (statusExpiryWatcherTimer) {
+      clearInterval(statusExpiryWatcherTimer);
+      statusExpiryWatcherTimer = null;
+    }
   }
 
   async function recordStatusView(status) {
@@ -6570,6 +6659,8 @@
     teardownMessagesSubscription();
     teardownReadsSubscription();
     teardownStatusViewsSubscription();
+    teardownStatusesSubscription();
+    stopStatusExpiryWatcher();
     unsubscribeFromChannelListUpdates();
     stopChannelPreviewPolling();
     stopMediaExpiryWatcher();
