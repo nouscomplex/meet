@@ -733,12 +733,30 @@
             <i class="fas fa-people-group"></i> Members
           </button>
 
+          <!-- FIX: "make separate folder in share media one for images and
+               one for video" — was a single mixed grid (#sharedMediaGrid);
+               now two independent sections, each with its own preview cap
+               and "See All" toggle, populated separately in
+               updateProfileScreen() (app.js). -->
           <div class="profile-section-row">
-            <span class="section-label">Shared Media</span>
-            <a href="#" id="profileSeeAllMedia" class="see-all-link hidden">See All</a>
+            <span class="section-label">Shared Photos</span>
+            <a href="#" id="profileSeeAllPhotos" class="see-all-link hidden">See All</a>
           </div>
-          <div id="sharedMediaGrid" class="shared-media-grid">
-            <div class="empty-note">No Shared Media Yet</div>
+          <div id="sharedPhotosGrid" class="shared-media-grid">
+            <div class="empty-note">No shared photos yet</div>
+          </div>
+
+          <div class="profile-section-row">
+            <span class="section-label">Shared Videos</span>
+            <a href="#" id="profileSeeAllVideos" class="see-all-link hidden">See All</a>
+          </div>
+          <!-- FIX: "make the video grid small 5 video in one grid" — a
+               dedicated modifier (.shared-video-grid, styles.css) fixes
+               this grid at exactly 5 columns instead of the photo grid's
+               auto-fill, and the collapsed/un-"See All"'d state below shows
+               exactly one row (5 videos) — see updateProfileScreen(). -->
+          <div id="sharedVideosGrid" class="shared-media-grid shared-video-grid">
+            <div class="empty-note">No shared videos yet</div>
           </div>
 
           <!-- FIX: root cause of "show the list of scheduled classes in
