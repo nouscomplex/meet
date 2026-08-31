@@ -469,26 +469,42 @@
     return 'student';
   }
 
+  // FIX: "make nous complex logo a group profile logo and teachers and
+  // students profile logo" — the app previously had no photo assets at
+  // all for avatars, just a colored circle with a role-tinted gradient and
+  // the person/group's first initial (see avatar-admin/-teacher/-student
+  // below in styles.css). The Nous Complex wordmark (nouscomplex.png —
+  // already shipped alongside app.js/index.html/styles.css for the header
+  // logo, favicon, and PWA install icon) now doubles as: every group's
+  // profile photo (channelAvatarHtml() below, plus the bigger picture at
+  // the top of the group Profile screen — see #profileChannelLogo in
+  // index.html, set directly in markup since it's the same image for every
+  // group, no per-channel JS needed), and the default photo for teacher and
+  // student accounts (avatarHtml()/setAvatarEl() below). Admin keeps the
+  // original colored-initial avatar — only teachers and students were
+  // asked for.
+  const LOGO_AVATAR_IMG_HTML = '<img class="avatar-img" src="nouscomplex.png" alt="" draggable="false">';
+
+  function isLogoAvatarRole(key) {
+    return key === 'teacher' || key === 'student';
+  }
+
   function avatarHtml(username, size) {
     const key = roleKey(username);
     const displayName = getDisplayName(username);
     const initial = (displayName || '?').charAt(0).toUpperCase();
     const sizeClass = size === 'sm' ? ' sm' : size === 'lg' ? ' lg' : '';
     const online = state.onlineUsers.has((username || '').toLowerCase());
-    return `<div class="avatar avatar-${key}${sizeClass}">${initial}<span class="avatar-dot${online ? ' online' : ''}"></span></div>`;
-  }
-
-  function channelColorKey(ch) {
-    const keys = ['admin', 'teacher', 'student'];
-    let hash = 0;
-    for (const c of String(ch.id)) hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
-    return keys[hash % keys.length];
+    const content = isLogoAvatarRole(key) ? LOGO_AVATAR_IMG_HTML : initial;
+    return `<div class="avatar avatar-${key}${sizeClass}">${content}<span class="avatar-dot${online ? ' online' : ''}"></span></div>`;
   }
 
   function channelAvatarHtml(ch) {
-    const key = channelColorKey(ch);
-    const initial = (ch.name || '?').charAt(0).toUpperCase();
-    return `<div class="avatar avatar-${key}">${initial}</div>`;
+    // Every group shows the same Nous Complex logo as its profile picture
+    // now, so there's no more need for channelColorKey()'s per-channel
+    // color-hash background — avatar-group is just a plain white backing
+    // circle behind the (already-square) logo image.
+    return `<div class="avatar avatar-group">${LOGO_AVATAR_IMG_HTML}</div>`;
   }
 
   function setAvatarEl(el, username, extraClass) {
@@ -496,7 +512,11 @@
     const key = roleKey(username);
     const displayName = getDisplayName(username);
     el.className = `avatar avatar-${key}${extraClass ? ' ' + extraClass : ''}`;
-    el.textContent = (displayName || '?').charAt(0).toUpperCase();
+    if (isLogoAvatarRole(key)) {
+      el.innerHTML = LOGO_AVATAR_IMG_HTML;
+    } else {
+      el.textContent = (displayName || '?').charAt(0).toUpperCase();
+    }
   }
 
   function generateEmail(username) {
