@@ -282,8 +282,10 @@
     profileChannelMeta: $('profileChannelMeta'),
     profileChannelDesc: $('profileChannelDesc'),
     profileMembersBtn: $('profileMembersBtn'),
-    profileSeeAllMedia: $('profileSeeAllMedia'),
-    sharedMediaGrid: $('sharedMediaGrid'),
+    profileSeeAllPhotos: $('profileSeeAllPhotos'),
+    sharedPhotosGrid: $('sharedPhotosGrid'),
+    profileSeeAllVideos: $('profileSeeAllVideos'),
+    sharedVideosGrid: $('sharedVideosGrid'),
     adminProfileSchedule: $('adminProfileSchedule'),
     scheduleTeacherInput: $('scheduleTeacherInput'),
     scheduleCalPrevBtn: $('scheduleCalPrevBtn'),
@@ -4737,42 +4739,51 @@
       renderSchedulePerDateList();
     }
 
-    // FIX: root cause of "shared videos are not being considered media" —
-    // this filter only ever kept isImageFile() matches, so any sent video
-    // (isVideoFile() — .mp4/.webm/.mov/etc., already handled fine inline in
-    // the chat bubble itself, see the isVideoFile() branch in
-    // buildMessageEl()) was silently excluded from the Shared Media grid
-    // entirely: not counted, not shown, not part of "See All". Videos now
-    // count as shared media too.
-    const media = state.messages.filter((m) => (isImageFile(m.file_url) || isVideoFile(m.file_url)) && !isMessageMediaExpired(m));
-    if (!media.length) {
-      DOM.sharedMediaGrid.innerHTML = '<div class="empty-note">No shared media yet</div>';
-      DOM.profileSeeAllMedia.classList.add('hidden');
+    renderSharedPhotos();
+    renderSharedVideos();
+  }
+
+  // FIX: "make separate folder in share media one for images and one for
+  // video" — was one mixed grid/filter (isImageFile() || isVideoFile());
+  // now two fully independent grids/preview caps/"See All" states, each
+  // with its own dataset.showAll flag on its own grid element.
+  function renderSharedPhotos() {
+    const photos = state.messages.filter((m) => isImageFile(m.file_url) && !isMessageMediaExpired(m));
+    if (!photos.length) {
+      DOM.sharedPhotosGrid.innerHTML = '<div class="empty-note">No shared photos yet</div>';
+      DOM.profileSeeAllPhotos.classList.add('hidden');
+      state.sharedMediaUrls = [];
       return;
     }
-    const showAll = DOM.sharedMediaGrid.dataset.showAll === 'true';
-    const shown = showAll ? media : media.slice(-6);
-    // openImageLightbox()'s prev/next gallery only knows how to display
-    // <img>s (see its `imgEl.src = gallery[index]` swap), so the gallery
-    // array stays image-only — a video tile opens its own single-item
-    // openVideoLightbox() below instead of joining that gallery.
-    const imageUrls = shown.filter((m) => isImageFile(m.file_url)).map((m) => m.file_url);
-    state.sharedMediaUrls = imageUrls;
-    let imageIdx = 0;
-    DOM.sharedMediaGrid.innerHTML = shown.map((m) => {
-      const url = m.file_url;
-      if (isVideoFile(url)) {
-        return `
-          <div class="shared-media-tile shared-media-video-tile" data-media-url="${escapeHtml(url)}" data-media-type="video" style="cursor:pointer;">
-            <video src="${escapeHtml(url)}" preload="metadata" muted playsinline></video>
-            <span class="shared-media-play-badge" aria-hidden="true"><i class="fas fa-play"></i></span>
-          </div>
-        `;
-      }
-      const idx = imageIdx++;
-      return `<img class="shared-media-tile" src="${escapeHtml(url)}" data-media-url="${escapeHtml(url)}" data-media-type="image" data-media-index="${idx}" alt="Shared media" loading="lazy" style="cursor:pointer;">`;
-    }).join('');
-    DOM.profileSeeAllMedia.classList.toggle('hidden', media.length <= 6);
+    const showAll = DOM.sharedPhotosGrid.dataset.showAll === 'true';
+    const shown = showAll ? photos : photos.slice(-6);
+    state.sharedMediaUrls = shown.map((m) => m.file_url);
+    DOM.sharedPhotosGrid.innerHTML = shown.map((m, i) => `<img class="shared-media-tile" src="${escapeHtml(m.file_url)}" data-media-url="${escapeHtml(m.file_url)}" data-media-index="${i}" alt="Shared photo" loading="lazy" style="cursor:pointer;">`).join('');
+    DOM.profileSeeAllPhotos.classList.toggle('hidden', photos.length <= 6);
+  }
+
+  // FIX: "make the video grid small 5 video in one grid" — the grid itself
+  // is fixed at 5 columns (.shared-video-grid, styles.css); this preview
+  // cap keeps the collapsed (pre-"See All") state to exactly one full row
+  // of 5, matching that layout instead of an arbitrary count.
+  const SHARED_VIDEOS_PREVIEW_COUNT = 5;
+
+  function renderSharedVideos() {
+    const videos = state.messages.filter((m) => isVideoFile(m.file_url) && !isMessageMediaExpired(m));
+    if (!videos.length) {
+      DOM.sharedVideosGrid.innerHTML = '<div class="empty-note">No shared videos yet</div>';
+      DOM.profileSeeAllVideos.classList.add('hidden');
+      return;
+    }
+    const showAll = DOM.sharedVideosGrid.dataset.showAll === 'true';
+    const shown = showAll ? videos : videos.slice(-SHARED_VIDEOS_PREVIEW_COUNT);
+    DOM.sharedVideosGrid.innerHTML = shown.map((m) => `
+      <div class="shared-media-tile shared-media-video-tile" data-media-url="${escapeHtml(m.file_url)}" style="cursor:pointer;">
+        <video src="${escapeHtml(m.file_url)}" preload="metadata" muted playsinline></video>
+        <span class="shared-media-play-badge" aria-hidden="true"><i class="fas fa-play"></i></span>
+      </div>
+    `).join('');
+    DOM.profileSeeAllVideos.classList.toggle('hidden', videos.length <= SHARED_VIDEOS_PREVIEW_COUNT);
   }
 
   // ============================================================
@@ -7582,25 +7593,32 @@
   });
 
   DOM.backFromProfile.addEventListener('click', () => goToScreen('chatDetail'));
-  DOM.profileSeeAllMedia.addEventListener('click', (e) => {
-    e.preventDefault();
-    DOM.sharedMediaGrid.dataset.showAll = 'true';
-    updateProfileScreen();
-  });
 
-  // FIX: was `img[data-media-url]` only, so a video tile (now rendered as
-  // a <div class="shared-media-video-tile"> — see updateProfileScreen())
-  // never matched and its click did nothing at all. Matches either kind of
-  // tile now and branches on data-media-type.
-  DOM.sharedMediaGrid.addEventListener('click', (e) => {
-    const tile = e.target.closest('[data-media-url]');
+  // FIX: "make separate folder in share media one for images and one for
+  // video" — was one combined "See All"/click pair for a mixed grid; now
+  // each grid (photos/videos) has its own independent pair, each only
+  // touching its own dataset.showAll flag and its own render function.
+  DOM.profileSeeAllPhotos.addEventListener('click', (e) => {
+    e.preventDefault();
+    DOM.sharedPhotosGrid.dataset.showAll = 'true';
+    renderSharedPhotos();
+  });
+  DOM.sharedPhotosGrid.addEventListener('click', (e) => {
+    const tile = e.target.closest('img[data-media-url]');
     if (!tile) return;
-    if (tile.dataset.mediaType === 'video') {
-      openVideoLightbox(tile.dataset.mediaUrl);
-      return;
-    }
     const idx = parseInt(tile.dataset.mediaIndex, 10);
     openImageLightbox(tile.dataset.mediaUrl, state.sharedMediaUrls, Number.isNaN(idx) ? undefined : idx);
+  });
+
+  DOM.profileSeeAllVideos.addEventListener('click', (e) => {
+    e.preventDefault();
+    DOM.sharedVideosGrid.dataset.showAll = 'true';
+    renderSharedVideos();
+  });
+  DOM.sharedVideosGrid.addEventListener('click', (e) => {
+    const tile = e.target.closest('[data-media-url]');
+    if (!tile) return;
+    openVideoLightbox(tile.dataset.mediaUrl);
   });
 
   DOM.closeStatusModal.addEventListener('click', closeStatusViewer);
