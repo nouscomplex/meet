@@ -649,6 +649,14 @@
 
         <div class="profile-scroll-container">
           <div class="profile-card">
+            <!-- FIX: "make nous complex logo a group profile logo" — every
+                 group shows the same Nous Complex logo as its picture, so
+                 this is hardcoded straight to nouscomplex.png (the same
+                 file already used for the header logo/favicon/PWA icon —
+                 see config.js CONFIG.BRANDING.LOGO.PATH) rather than
+                 something loadChannelDescription() needs to set per
+                 channel in app.js. -->
+            <img id="profileChannelLogo" class="profile-card-logo" src="nouscomplex.png" alt="Group photo">
             <div class="profile-card-name" id="profileChannelName">—</div>
             <div class="profile-card-meta" id="profileChannelMeta">—</div>
             <!-- FIX: was a <p>. renderRichBlocks() (app.js) now fills this
