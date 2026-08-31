@@ -943,7 +943,7 @@ button { font-family: inherit; }
      lined up even though both sit in the same flex row. Now matches
      .brand-word's font-family/size/weight/letter-spacing exactly, and
      line-height:1 + vertical-align:middle keeps both spans' baselines
-     level within the flex row instead of drifting per-font. -->
+     level within the flex row instead of drifting per-font. */
   font-family: var(--font-display);
   font-size: 1.5rem;
   font-weight: 800;
