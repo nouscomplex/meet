@@ -4760,6 +4760,15 @@
     state.sharedMediaUrls = shown.map((m) => m.file_url);
     DOM.sharedPhotosGrid.innerHTML = shown.map((m, i) => `<img class="shared-media-tile" src="${escapeHtml(m.file_url)}" data-media-url="${escapeHtml(m.file_url)}" data-media-index="${i}" alt="Shared photo" loading="lazy" style="cursor:pointer;">`).join('');
     DOM.profileSeeAllPhotos.classList.toggle('hidden', photos.length <= 6);
+    // FIX: root cause of "the See All link works only for expansion not
+    // for contraction" — the link's label never changed off "See All", so
+    // there was no visible affordance to collapse back down (its click
+    // handler below only ever set showAll to 'true', never back to
+    // 'false', for the same reason: nothing here ever told it a collapse
+    // was even possible). Swapping the label whenever this actually
+    // renders the expanded state gives the click handler something
+    // meaningful to toggle.
+    DOM.profileSeeAllPhotos.textContent = showAll ? 'Show Less' : 'See All';
   }
 
   // FIX: "make the video grid small 5 video in one grid" — the grid itself
@@ -4784,6 +4793,9 @@
       </div>
     `).join('');
     DOM.profileSeeAllVideos.classList.toggle('hidden', videos.length <= SHARED_VIDEOS_PREVIEW_COUNT);
+    // FIX: see the matching FIX comment in renderSharedPhotos() above —
+    // same root cause, same fix, just for the videos grid/link pair.
+    DOM.profileSeeAllVideos.textContent = showAll ? 'Show Less' : 'See All';
   }
 
   // ============================================================
@@ -7598,9 +7610,15 @@
   // video" — was one combined "See All"/click pair for a mixed grid; now
   // each grid (photos/videos) has its own independent pair, each only
   // touching its own dataset.showAll flag and its own render function.
+  // FIX: root cause of "See All works only for expansion not for
+  // contraction" — this unconditionally set showAll to 'true', so a second
+  // click (and every click after that) just re-set it to the same 'true'
+  // and re-rendered the identical expanded state; there was no path back
+  // to 'false' at all. Reads the current state and flips it instead.
   DOM.profileSeeAllPhotos.addEventListener('click', (e) => {
     e.preventDefault();
-    DOM.sharedPhotosGrid.dataset.showAll = 'true';
+    const expanded = DOM.sharedPhotosGrid.dataset.showAll === 'true';
+    DOM.sharedPhotosGrid.dataset.showAll = expanded ? 'false' : 'true';
     renderSharedPhotos();
   });
   DOM.sharedPhotosGrid.addEventListener('click', (e) => {
@@ -7610,9 +7628,11 @@
     openImageLightbox(tile.dataset.mediaUrl, state.sharedMediaUrls, Number.isNaN(idx) ? undefined : idx);
   });
 
+  // FIX: same root cause and fix as profileSeeAllPhotos above.
   DOM.profileSeeAllVideos.addEventListener('click', (e) => {
     e.preventDefault();
-    DOM.sharedVideosGrid.dataset.showAll = 'true';
+    const expanded = DOM.sharedVideosGrid.dataset.showAll === 'true';
+    DOM.sharedVideosGrid.dataset.showAll = expanded ? 'false' : 'true';
     renderSharedVideos();
   });
   DOM.sharedVideosGrid.addEventListener('click', (e) => {
