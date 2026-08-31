@@ -301,6 +301,7 @@
     adminDescEdit: $('adminDescEdit'),
     descFormatToolbar: $('descFormatToolbar'),
     channelDescInput: $('channelDescInput'),
+    descFormatPreview: $('descFormatPreview'),
     updateDescBtn: $('updateDescBtn'),
 
     statusModal: $('statusModal'),
@@ -758,6 +759,30 @@
         wrapSelectionWithMarker(targetEl, marker[0], marker[1]);
       });
     });
+  }
+
+  // Live "how it'll actually look" preview for a formatting-enabled field.
+  // Rather than trying to render bold/italic/alignment directly inside the
+  // <input>/<textarea> itself (that would mean replacing it with a
+  // contenteditable rich-text editor — a much bigger, more fragile change
+  // on a mobile-first PWA: IME/composition, mobile Safari cursor and
+  // selection quirks, copy-paste, undo/redo all get harder to get right),
+  // this renders the exact same richText() output used for the real
+  // group-description/status views into a preview box below the field,
+  // live on every keystroke and every toolbar click (wrapSelectionWithMarker/
+  // insertAtCursor/applyTextAlign all dispatch a synthetic 'input' event
+  // after they edit the field, which is what drives this).
+  function wireLivePreview(fieldEl, previewEl) {
+    if (!fieldEl || !previewEl) return;
+    const render = () => {
+      const parsed = parseAlignedText(fieldEl.value);
+      previewEl.style.textAlign = parsed.align;
+      previewEl.innerHTML = parsed.body.trim()
+        ? richText(parsed.body)
+        : '<span class="format-preview-empty">Nothing to preview yet…</span>';
+    };
+    fieldEl.addEventListener('input', render);
+    render();
   }
 
   function firstUrlIn(text) {
@@ -4380,10 +4405,21 @@
     // the plain saved string. richText() escapes the text itself (via
     // linkifyText()'s internal escapeHtml()) before turning markers into
     // real tags, so this stays safe against HTML injection.
+    // FIX: root cause of "left/right alignment not working, everything
+    // shows centered" — this used to only set an explicit style.textAlign
+    // for 'center'/'right' and CLEAR it (style.textAlign = '') for 'left',
+    // trusting the browser's own left-by-default behavior. But
+    // .profile-card-desc sits inside .profile-card, which sets its own
+    // text-align: center (for the card's name/meta above it) — and
+    // text-align is an inherited CSS property, so clearing the inline
+    // override on 'left' let that ancestor's center win instead of
+    // browser-default left. Always setting the value explicitly (never
+    // clearing it) fixes 'left' and is simpler besides.
     const parsedDesc = parseAlignedText(desc);
-    DOM.profileChannelDesc.style.textAlign = parsedDesc.align === 'left' ? '' : parsedDesc.align;
+    DOM.profileChannelDesc.style.textAlign = parsedDesc.align;
     DOM.profileChannelDesc.innerHTML = richText(parsedDesc.body);
     DOM.channelDescInput.value = state.currentChannel.description || '';
+    DOM.channelDescInput.dispatchEvent(new Event('input', { bubbles: true }));
 
     DOM.adminDescEdit.classList.toggle('hidden', !state.isAdmin);
   }
@@ -4804,7 +4840,9 @@
           <button type="button" class="format-toolbar-btn" data-format="align-center" title="Align center" aria-label="Align center"><i class="fas fa-align-center"></i></button>
           <button type="button" class="format-toolbar-btn" data-format="align-right" title="Align right" aria-label="Align right"><i class="fas fa-align-right"></i></button>
         </div>
-        <textarea id="statusComposeText" class="field" rows="3" placeholder="Write something... (Enter for a new line)" style="resize:vertical; margin-bottom:10px;"></textarea>
+        <textarea id="statusComposeText" class="field" rows="3" placeholder="Write something... (Enter for a new line)" style="resize:vertical;"></textarea>
+        <span class="format-preview-label">Preview</span>
+        <div id="statusFormatPreview" class="format-preview"></div>
 
         <label class="section-label" style="display:block; margin-bottom:6px;">Photo or video (optional)</label>
         <input id="statusComposeFile" type="file" accept="image/*,video/*" class="field" style="margin-bottom:4px;">
@@ -4834,6 +4872,7 @@
     const expiryEl = modal.querySelector('#statusComposeExpiry');
 
     initFormatToolbar(modal.querySelector('#statusFormatToolbar'), textEl);
+    wireLivePreview(textEl, modal.querySelector('#statusFormatPreview'));
 
     fileEl.addEventListener('change', () => {
       fileNameEl.textContent = fileEl.files[0] ? `📎 ${fileEl.files[0].name}` : '';
@@ -4876,8 +4915,12 @@
     // (#statusFormatToolbar) inserts, so a formatted update showed its
     // raw markup instead of styled text. richText() = linkifyText() +
     // applyInlineFormatting().
+    // FIX: same root cause as loadChannelDescription() — .status-viewer-body p
+    // has its own default text-align: center, and clearing the inline
+    // style for 'left' let that class default win instead of showing left.
+    // Always set it explicitly.
     const parsedStatus = parseAlignedText(status.content || '');
-    DOM.statusModalContent.style.textAlign = parsedStatus.align === 'left' ? '' : parsedStatus.align;
+    DOM.statusModalContent.style.textAlign = parsedStatus.align;
     DOM.statusModalContent.innerHTML = richText(parsedStatus.body);
 
     if (DOM.statusLinkPreview) {
@@ -7092,6 +7135,7 @@
   });
 
   initFormatToolbar(DOM.descFormatToolbar, DOM.channelDescInput);
+  wireLivePreview(DOM.channelDescInput, DOM.descFormatPreview);
 
   DOM.updateDescBtn.addEventListener('click', () => {
     if (!state.currentChannel) return;
