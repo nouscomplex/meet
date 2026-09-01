@@ -488,16 +488,27 @@
   // students profile logo" — the app previously had no photo assets at
   // all for avatars, just a colored circle with a role-tinted gradient and
   // the person/group's first initial (see avatar-admin/-teacher/-student
-  // below in styles.css). The Nous Complex wordmark (nouscomplex.png —
-  // already shipped alongside app.js/index.html/styles.css for the header
-  // logo, favicon, and PWA install icon) now doubles as: every group's
-  // profile photo (channelAvatarHtml() below, plus the bigger picture at
-  // the top of the group Profile screen — see #profileChannelLogo in
-  // index.html, set directly in markup since it's the same image for every
-  // group, no per-channel JS needed), and the default photo for every
-  // account role — admin, teacher, and student (avatarHtml()/setAvatarEl()
-  // below, gated by isLogoAvatarRole()) — fully consistent branding
-  // everywhere an avatar shows up.
+  // below in styles.css). This now doubles as: every group's profile photo
+  // (channelAvatarHtml() below, plus the bigger picture at the top of the
+  // group Profile screen — see #profileChannelLogo in index.html, set
+  // directly in markup since it's the same image for every group, no
+  // per-channel JS needed), and the default photo for every account role —
+  // admin, teacher, and student (avatarHtml()/setAvatarEl() below, gated by
+  // isLogoAvatarRole()) — fully consistent branding everywhere an avatar
+  // shows up.
+  //
+  // FIX: root cause of "group profile and user profile logo is blur" was the
+  // old nouscomplex.png being a low-quality/undersized asset — replaced with
+  // a tightly-trimmed, high-res (1087x516) export of the real logo.
+  //
+  // FIX: "use full logo not just bulb" — briefly swapped this to a square
+  // crop of just the lightbulb-in-the-O mark (nouscomplex-icon.png) so
+  // object-fit: cover wouldn't have to crop the wide wordmark into a circle.
+  // Reverted at the user's request: back to the full "NOUS Complex"
+  // wordmark (nouscomplex.png). Paired with the object-fit: contain switch
+  // in .avatar-img (styles.css) so the whole wordmark is visible,
+  // letterboxed inside the circle, rather than cover cropping it down to a
+  // sliver.
   const LOGO_AVATAR_IMG_HTML = '<img class="avatar-img" src="nouscomplex.png" alt="" draggable="false">';
 
   function isLogoAvatarRole(key) {
