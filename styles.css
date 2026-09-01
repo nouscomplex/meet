@@ -370,10 +370,25 @@ button { font-family: inherit; }
   /* Subtle dotted "wallpaper" behind messages, like WhatsApp Web's
      chat background. Uses existing theme variables so it adapts
      automatically to light/dark without any new colors. */
+  /* FIX: "scrolling on chat is not smooth" (desktop) — this used to be a
+     live radial-gradient() background. A CSS gradient isn't a bitmap: on
+     a tall, fast-scrolling container the browser has to keep re-painting
+     the gradient function itself as new area is revealed, which is a
+     well-known source of scroll jank in Chromium/Electron. An inline SVG
+     data-URI paints once and is then cached/composited as an ordinary
+     tiled raster image instead — same dotted look, no per-frame
+     recompute. currentColor inside a data-URI referenced via
+     background-image does NOT reliably inherit the host element's
+     `color` across browsers (unlike mask-image), so the dot color is
+     baked directly into each URI below, one per theme, matching the
+     existing --border values (#ebebed light / #262A4C dark) instead. */
   .chat-scroll {
     background-color: var(--chat-white);
-    background-image: radial-gradient(var(--border) 1px, transparent 1px);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='1' cy='1' r='1' fill='%23ebebed'/%3E%3C/svg%3E");
     background-size: 24px 24px;
+  }
+  body.theme-dark .chat-scroll {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='1' cy='1' r='1' fill='%23262A4C'/%3E%3C/svg%3E");
   }
 
   /* Cap bubble width on wide screens — 84% of a 1600px window is huge */
@@ -1480,6 +1495,14 @@ body.theme-dark .btn-live-pill.btn-live-pill-live { color: #FFFFFF; }
   min-height: 0;
   background: var(--chat-white);
   -webkit-overflow-scrolling: touch;
+  /* FIX: "scrolling on chat is not smooth" — with hundreds of message
+     bubbles (each carrying its own border-radius/box-shadow), a plain
+     overflow:auto container isn't always promoted to its own compositor
+     layer, so Chromium/Electron can fall back to repainting on the main
+     thread every scroll frame instead of just re-positioning a cached
+     layer. will-change:scroll-position is the standard hint that tells
+     the browser to give this element its own scrolling layer up front. */
+  will-change: scroll-position;
 }
 
 #chatMessages {
@@ -1967,15 +1990,23 @@ body.theme-dark .msg-time {
   max-width: 260px;
   display: block;
 }
+/* FIX: "scrolling on chat is not smooth" — this had `max-height` but no
+   `height`, so before an attached image finished loading its intrinsic
+   size was 0, collapsing the bubble to nothing; the instant it loaded,
+   the bubble snapped open to its full height. Scrolling past a run of
+   unloaded images meant the content under your cursor kept jumping.
+   A fixed `height` reserves the space up front (object-fit:cover still
+   crops the loaded image to fill it), so there's nothing left to jump. */
 .msg-media-img {
   display: block;
   width: 100%;
+  height: 220px;
   max-height: 220px;
   object-fit: cover;
   background: var(--chat-grey);
 }
 .msg-media-video-wrap { cursor: default; }
-.msg-media-video-wrap .msg-media-img { max-height: 260px; object-fit: contain; background: #000; }
+.msg-media-video-wrap .msg-media-img { height: 260px; max-height: 260px; object-fit: contain; background: #000; }
 .msg-media-expand {
   position: absolute;
   bottom: 6px;
@@ -2592,7 +2623,10 @@ body.theme-dark .btn-send { color: #FFFFFF; }
    ============================================================ */
 .admin-add-row { display: flex; gap: 6px; margin: 0 18px 12px; flex-shrink: 0; }
 .members-wrap { flex: 1; display: flex; min-height: 0; padding-bottom: 90px; }
-.member-list { flex: 1; overflow-y: auto; padding: 0 8px 18px 18px; display: flex; flex-direction: column; -webkit-overflow-scrolling: touch; }
+/* FIX: "scrolling on group profile is not smooth" — will-change:scroll-position
+   promotes the member list to its own compositor scrolling layer too;
+   see .chat-scroll / .profile-scroll-container above for the full reason. */
+.member-list { flex: 1; overflow-y: auto; padding: 0 8px 18px 18px; display: flex; flex-direction: column; -webkit-overflow-scrolling: touch; will-change: scroll-position; }
 .member-row {
   display: flex; align-items: center; gap: 12px;
   padding: 9px 6px; border-radius: var(--radius-md);
@@ -2782,6 +2816,14 @@ body.theme-dark .btn-send { color: #FFFFFF; }
   overflow-y: auto;
   padding: 0 0 20px 0;
   -webkit-overflow-scrolling: touch;
+  /* FIX: "scrolling on group profile is not smooth" — same cause as
+     .chat-scroll: a stack of .profile-card elements each with their own
+     box-shadow/border-radius sits inside a plain overflow:auto panel,
+     which isn't guaranteed its own compositor layer, so the browser can
+     end up repainting those shadows on the main thread every scroll
+     frame. will-change:scroll-position hints the browser to give this
+     container a dedicated scrolling layer up front. */
+  will-change: scroll-position;
 }
 
 .profile-card {
