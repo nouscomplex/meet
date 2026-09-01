@@ -2651,10 +2651,38 @@
     return promise;
   }
 
+  // FIX: root cause of "scrolling up/down is not smooth and it keeps
+  // returning to the last message" — isNearBottom() re-checks the LIVE
+  // scroll position, on demand, instead of trusting a boolean snapshot
+  // taken once at some earlier point in time. See stickToBottomOnMediaLoad()
+  // below for why that distinction matters.
+  const NEAR_BOTTOM_PX = 80;
+  function isNearBottom() {
+    if (!DOM.chatContainer) return true;
+    return DOM.chatContainer.scrollHeight - DOM.chatContainer.scrollTop - DOM.chatContainer.clientHeight < NEAR_BOTTOM_PX;
+  }
+
+  // FIX: root cause of "scrolling up/down is not smooth and it keeps
+  // returning to the last message" — `pinToBottom` here is just a snapshot
+  // of "was the user near the bottom" taken once, back when the message
+  // bubble was first built (see buildMessageEl()). But images use
+  // loading="lazy", PDF thumbnails render asynchronously via pdf.js, and
+  // link previews are fetched over the network — all of which can finish
+  // loading seconds later, often while the user has since scrolled away to
+  // read older messages. The old code fired scrollTop = scrollHeight
+  // unconditionally whenever that load event eventually landed, with no
+  // regard for where the user was actually scrolled to *at that moment* —
+  // yanking them back to the bottom mid-scroll. `pinToBottom` is still
+  // used as a cheap gate (skip attaching the listener at all for bubbles
+  // built while already scrolled away), but the actual decision to jump is
+  // made live, via isNearBottom(), at the instant the media finishes
+  // loading — not from the stale snapshot.
   function stickToBottomOnMediaLoad(mediaEl, eventName, pinToBottom) {
     if (!mediaEl || !pinToBottom) return;
     mediaEl.addEventListener(eventName, () => {
-      if (DOM.chatContainer) DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
+      if (DOM.chatContainer && isNearBottom()) {
+        DOM.chatContainer.scrollTop = DOM.chatContainer.scrollHeight;
+      }
     }, { once: true });
   }
 
@@ -2969,9 +2997,7 @@
       }
     });
 
-    const wasNearBottom = forceScrollBottom || !DOM.chatContainer || (
-      DOM.chatContainer.scrollHeight - DOM.chatContainer.scrollTop - DOM.chatContainer.clientHeight < 80
-    );
+    const wasNearBottom = forceScrollBottom || isNearBottom();
 
     let prevNode = null;
     let changed = false;
