@@ -3775,9 +3775,28 @@
   // 7b. PRESENCE (who's online)
   // ============================================================
   let presenceChannel = null;
+  let presenceReconnectTimer = null;
+  let presenceWatchdog = null;
 
+  // FIX: root cause of "'Active now' status is not real-time" — this
+  // channel used to be set up once at login and then never checked again.
+  // The messages channel has a whole connectionWatchdog/inactivity/tab-focus
+  // system (below) to detect a dropped socket and reconnect it; presence had
+  // none of that. So the moment this specific socket dropped — phone app
+  // backgrounded, laptop slept, a brief network blip, a mobile browser
+  // throttling a background tab — the 'sync' event just stopped firing
+  // forever. state.onlineUsers froze at whatever it was at the moment of the
+  // drop (people could look permanently "Active now" or permanently
+  // "Offline") and nothing brought it back except a full page reload.
+  // Now: (1) a non-SUBSCRIBED status schedules a resubscribe, (2) a periodic
+  // watchdog is a backstop in case that status callback is ever missed
+  // (e.g. it fires while the tab is suspended and gets dropped by the
+  // browser), and (3) regaining tab focus forces an immediate health check
+  // instead of waiting up to 20s for the watchdog to notice.
   function setupPresence() {
     if (!state.currentUser) return;
+    teardownPresence();
+
     presenceChannel = supabase.channel('presence:orbit', {
       config: { presence: { key: state.currentUser.username.toLowerCase() } },
     });
@@ -3792,12 +3811,72 @@
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
+          if (presenceReconnectTimer) {
+            clearTimeout(presenceReconnectTimer);
+            presenceReconnectTimer = null;
+          }
           await presenceChannel.track({ username: state.currentUser.username, online_at: new Date().toISOString() });
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn(`🩺 Presence channel unhealthy (${status}), scheduling reconnect...`);
+          schedulePresenceReconnect();
         }
       });
+
+    startPresenceWatchdog();
+  }
+
+  function schedulePresenceReconnect() {
+    if (presenceReconnectTimer || !state.currentUser) return;
+    presenceReconnectTimer = setTimeout(() => {
+      presenceReconnectTimer = null;
+      if (!state.currentUser) return;
+      console.log('🔄 Reconnecting presence channel...');
+      setupPresence();
+    }, 3000);
+  }
+
+  function startPresenceWatchdog() {
+    if (presenceWatchdog) clearInterval(presenceWatchdog);
+    presenceWatchdog = setInterval(() => {
+      if (!state.currentUser) return;
+      const dead = !presenceChannel || presenceChannel.state === 'closed' || presenceChannel.state === 'errored';
+      if (dead) {
+        console.warn('🩺 Presence watchdog: connection unhealthy, reconnecting...');
+        setupPresence();
+      }
+    }, 20000);
+  }
+
+  function stopPresenceWatchdog() {
+    if (presenceWatchdog) {
+      clearInterval(presenceWatchdog);
+      presenceWatchdog = null;
+    }
+  }
+
+  // Re-checks the presence channel the instant the tab regains focus,
+  // instead of waiting for the (up to 20s) watchdog interval to catch it —
+  // this is the case people actually notice, since it's the moment someone
+  // is looking at the screen expecting the list to be current.
+  function ensurePresenceHealthy() {
+    if (!state.currentUser) return;
+    const dead = !presenceChannel || presenceChannel.state === 'closed' || presenceChannel.state === 'errored';
+    if (dead) {
+      console.log('🔄 Presence check on refocus: connection dead, reconnecting...');
+      setupPresence();
+    } else {
+      // Connection looks alive — re-send our own track() so our online_at
+      // timestamp is fresh and we don't appear stale to others either.
+      presenceChannel.track({ username: state.currentUser.username, online_at: new Date().toISOString() }).catch(() => {});
+    }
   }
 
   function teardownPresence() {
+    if (presenceReconnectTimer) {
+      clearTimeout(presenceReconnectTimer);
+      presenceReconnectTimer = null;
+    }
+    stopPresenceWatchdog();
     if (presenceChannel) {
       supabase.removeChannel(presenceChannel);
       presenceChannel = null;
@@ -6502,7 +6581,14 @@
       } else {
         console.log("🟢 Tab focused again! Reconnecting...");
         state.isTabFocused = true;
-        
+
+        // FIX: see the FIX comment above setupPresence() — this is the
+        // "regaining tab focus forces an immediate health check" half of
+        // that fix. Without this, a presence socket that died while the
+        // tab was backgrounded wouldn't recover until the (up to 20s)
+        // watchdog interval happened to notice.
+        ensurePresenceHealthy();
+
         if (!state.tabChannel && state.currentChannel) {
           state.tabChannel = supabase.channel(`tab-focus-${state.currentChannel.id}`);
           state.tabChannel.subscribe();
