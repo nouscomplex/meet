@@ -322,6 +322,19 @@
     statusPauseBtn: $('statusPauseBtn'),
   };
 
+  // FIX: "unselecting a channel shows the last channel's chat history
+  // instead of the empty screen" — renderMessages() overwrites
+  // #chatMessages' innerHTML with real message bubbles the first time a
+  // channel is opened, permanently destroying the static ".chat-welcome"
+  // placeholder markup that ships in index.html. deselectChannel() only
+  // toggled the `.no-chat` CSS class back on, which re-centers whatever
+  // is currently inside #chatMessages — but by then that's stale message
+  // bubbles, not the welcome screen, so the old chat stayed visible.
+  // Snapshot the original welcome markup here, at script init, before
+  // any render has had a chance to replace it, so it can be restored
+  // on demand.
+  const CHAT_WELCOME_HTML = DOM.chatMessages ? DOM.chatMessages.innerHTML : '';
+
   // ============================================================
   // 5. LOGO HANDLING
   // ============================================================
@@ -1220,7 +1233,15 @@
 
   function updateChatEmptyState() {
     if (!DOM.screenChatDetail) return;
-    DOM.screenChatDetail.classList.toggle('no-chat', !state.currentChannel);
+    const noChat = !state.currentChannel;
+    DOM.screenChatDetail.classList.toggle('no-chat', noChat);
+    // FIX: restore the original welcome placeholder into #chatMessages
+    // whenever there's no channel selected, instead of leaving whatever
+    // messages were last rendered there. Without this, the `.no-chat`
+    // class alone just re-centers the previous channel's chat history.
+    if (noChat && DOM.chatMessages && CHAT_WELCOME_HTML) {
+      DOM.chatMessages.innerHTML = CHAT_WELCOME_HTML;
+    }
   }
 
   function goToScreen(name) {
