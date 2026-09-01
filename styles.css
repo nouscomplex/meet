@@ -882,7 +882,7 @@ button { font-family: inherit; }
   position: relative;
 }
 .avatar.sm { width: 32px; height: 32px; font-size: 13px; }
-.avatar.lg { width: 56px; height: 56px; font-size: 20px; }
+.avatar.lg { width: 68px; height: 68px; font-size: 24px; }
 
 .avatar-admin { background: linear-gradient(155deg, var(--role-admin), #7A70F0); }
 .avatar-teacher { background: linear-gradient(155deg, var(--role-teacher), #3FC98C); }
@@ -2845,8 +2845,8 @@ body.theme-dark .btn-send { color: #FFFFFF; }
    hardcoded <img>, not something app.js populates, since every group
    shows this same logo). */
 .profile-card-logo {
-  width: 96px;
-  height: 96px;
+  width: 116px;
+  height: 116px;
   border-radius: 50%;
   object-fit: cover;
   background: #fff;
