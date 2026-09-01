@@ -2873,12 +2873,18 @@ body.theme-dark .btn-send { color: #FFFFFF; }
    square-cropped icon, so it needs to be scaled to fit inside the circle
    instead of cropped to fill it.
 
-   FIX: "too much space in circles, logo not visible" — same fix as
-   .avatar-img above: flat 14% padding was the wrong shape for a wide
-   wordmark in a square box, so contain shrank it again to fit, leaving big
-   blank bands top/bottom. 10%/31% padding matches the logo's own ~2.1:1
-   aspect ratio instead, so it fills its padded box without further
-   shrinking — see the full explanation on .avatar-img. */
+   FIX: root cause of "instead of being increased it got decreased" — the
+   31%/10% padding that correctly enlarged the logo on .avatar-img (above)
+   made this one *shrink* instead, because percentage padding is resolved
+   against the containing block's width — and unlike .avatar-img (whose
+   parent .avatar is sized to match the image exactly), this <img>'s parent
+   is .profile-card, a card that spans most of the screen width (see
+   .profile-card above — no fixed width, just margin/padding). 31%/10% of
+   a ~300-380px-wide card is roughly 93-118px/30-38px — top+bottom alone
+   could exceed this element's entire 116px height, collapsing the visible
+   logo down to almost nothing. Fixed px values sidestep the containing-
+   block issue entirely: 36px/12px is the same 31%/10% ratio, just computed
+   against this element's own 116px size instead of its parent's. */
 .profile-card-logo {
   width: 116px;
   height: 116px;
@@ -2889,7 +2895,7 @@ body.theme-dark .btn-send { color: #FFFFFF; }
   margin: 0 auto 14px;
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--border);
-  padding: 31% 10%;
+  padding: 36px 12px;
   box-sizing: border-box;
 }
 .profile-card-name { font-family: var(--font-display); font-weight: 800; font-size: 1.3rem; color: var(--ink); }
