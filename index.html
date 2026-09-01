@@ -675,11 +675,26 @@
           <div class="profile-card">
             <!-- FIX: "make nous complex logo a group profile logo" — every
                  group shows the same Nous Complex logo as its picture, so
-                 this is hardcoded straight to nouscomplex.png (the same
-                 file already used for the header logo/favicon/PWA icon —
-                 see config.js CONFIG.BRANDING.LOGO.PATH) rather than
+                 this is hardcoded straight to a shared image rather than
                  something loadChannelDescription() needs to set per
-                 channel in app.js. -->
+                 channel in app.js.
+
+                 FIX: root cause of "group profile and user profile logo is
+                 blur" was the old nouscomplex.png being a low-quality/
+                 undersized asset — replaced with a tightly-trimmed, high-res
+                 (1087x516) export of the real logo.
+
+                 FIX: "use full logo not just bulb" — briefly swapped this to
+                 nouscomplex-icon.png (a square crop of just the
+                 lightbulb-in-the-O mark). Reverted at the user's request:
+                 back to the full "NOUS Complex" wordmark, nouscomplex.png —
+                 see the matching FIX comment above LOGO_AVATAR_IMG_HTML in
+                 app.js, which every other avatar in the app now uses too;
+                 this one's hardcoded in markup rather than JS only because
+                 it's the same image for every group. Paired with the
+                 object-fit: contain switch on .profile-card-logo below so
+                 the whole wordmark shows, letterboxed, instead of getting
+                 cropped down to a sliver. -->
             <img id="profileChannelLogo" class="profile-card-logo" src="nouscomplex.png" alt="Group photo">
             <div class="profile-card-name" id="profileChannelName">—</div>
             <div class="profile-card-meta" id="profileChannelMeta">—</div>
