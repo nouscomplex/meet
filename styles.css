@@ -905,12 +905,22 @@ button { font-family: inherit; }
    would crop most of the text off to fill the circle. Reverted to the full
    wordmark at the user's request, so cover had to change too: contain
    scales the whole image down to fit inside the circle instead of cropping
-   it, and the padding keeps it from touching the circle's edge (contain
-   alone would let it stretch edge-to-edge on its longer axis). The
-   trade-off is the logo now reads as small/letterboxed at the smaller
-   avatar sizes (32-40px) rather than filling the circle — inherent to
-   showing a whole wide wordmark in a small circle, not something CSS can
-   avoid. */
+   it.
+
+   FIX: root cause of "too much space in circles, logo not visible" — the
+   padding here used to be a flat 14% on every side. That's the right shape
+   for a square image, but this logo is a wide ~2.1:1 wordmark going into a
+   square padded box — object-fit: contain then had to shrink it *again* to
+   fit that box's height, stacking on top of the padding and leaving huge
+   blank bands above/below the (now tiny) logo. Padding needs to match the
+   logo's own aspect ratio instead of being uniform: 10% left/right and 31%
+   top/bottom sizes the padded box to ~80% wide x ~38% tall of the circle's
+   diameter — matching the wordmark's ~2.1:1 ratio almost exactly, so
+   contain has nothing left to shrink. 80%/38% was chosen as a deliberate
+   margin under the ~90%/43% a rectangle can reach before its corners touch
+   the circle (geometry: for a w:h ratio r inscribed in a circle of diameter
+   D, corner-touching size is w=D·r/√(r²+1), h=D/√(r²+1)) — big enough to
+   read clearly, without touching the edge. */
 .avatar-img {
   width: 100%;
   height: 100%;
@@ -918,7 +928,7 @@ button { font-family: inherit; }
   object-fit: contain;
   background: #fff;
   display: block;
-  padding: 14%;
+  padding: 31% 10%;
   box-sizing: border-box;
 }
 
@@ -2857,11 +2867,18 @@ body.theme-dark .btn-send { color: #FFFFFF; }
    hardcoded <img>, not something app.js populates, since every group
    shows this same logo).
 
-   FIX: "use full logo not just bulb" — same object-fit: cover -> contain +
-   padding switch as .avatar-img above, and for the same reason: this shows
-   the full "NOUS Complex" wordmark (nouscomplex.png) rather than a
+   FIX: "use full logo not just bulb" — same object-fit: cover -> contain
+   switch as .avatar-img above, and for the same reason: this shows the
+   full "NOUS Complex" wordmark (nouscomplex.png) rather than a
    square-cropped icon, so it needs to be scaled to fit inside the circle
-   instead of cropped to fill it. */
+   instead of cropped to fill it.
+
+   FIX: "too much space in circles, logo not visible" — same fix as
+   .avatar-img above: flat 14% padding was the wrong shape for a wide
+   wordmark in a square box, so contain shrank it again to fit, leaving big
+   blank bands top/bottom. 10%/31% padding matches the logo's own ~2.1:1
+   aspect ratio instead, so it fills its padded box without further
+   shrinking — see the full explanation on .avatar-img. */
 .profile-card-logo {
   width: 116px;
   height: 116px;
@@ -2872,7 +2889,7 @@ body.theme-dark .btn-send { color: #FFFFFF; }
   margin: 0 auto 14px;
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--border);
-  padding: 14%;
+  padding: 31% 10%;
   box-sizing: border-box;
 }
 .profile-card-name { font-family: var(--font-display); font-weight: 800; font-size: 1.3rem; color: var(--ink); }
