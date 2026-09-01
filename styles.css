@@ -895,19 +895,31 @@ button { font-family: inherit; }
 /* FIX: "make nous complex logo a group profile logo and teachers and
    students profile logo" — the logo image now fills the same circular
    .avatar slot that used to just hold a role-colored initial (see
-   avatarHtml()/channelAvatarHtml()/setAvatarEl() in app.js). object-fit:
-   cover crops it edge-to-edge into the circle without distorting it —
-   the source PNG is already a tightly-cropped square, so this shows the
-   whole logo, not just a sliver of it. Lives on the <img> itself (not
-   .avatar) so .avatar-dot — a sibling, not a child of the image — is
-   never affected by any clipping here. */
+   avatarHtml()/channelAvatarHtml()/setAvatarEl() in app.js). Lives on the
+   <img> itself (not .avatar) so .avatar-dot — a sibling, not a child of the
+   image — is never affected by any clipping here.
+
+   FIX: "use full logo not just bulb" — this was object-fit: cover with the
+   source swapped to a square icon-only crop (nouscomplex-icon.png), because
+   cover on the full wide wordmark ("NOUS Complex", ~2.1:1 aspect ratio)
+   would crop most of the text off to fill the circle. Reverted to the full
+   wordmark at the user's request, so cover had to change too: contain
+   scales the whole image down to fit inside the circle instead of cropping
+   it, and the padding keeps it from touching the circle's edge (contain
+   alone would let it stretch edge-to-edge on its longer axis). The
+   trade-off is the logo now reads as small/letterboxed at the smaller
+   avatar sizes (32-40px) rather than filling the circle — inherent to
+   showing a whole wide wordmark in a small circle, not something CSS can
+   avoid. */
 .avatar-img {
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  object-fit: cover;
+  object-fit: contain;
   background: #fff;
   display: block;
+  padding: 14%;
+  box-sizing: border-box;
 }
 
 .avatar-dot {
@@ -2843,17 +2855,25 @@ body.theme-dark .btn-send { color: #FFFFFF; }
    screen never had a picture at all before this, just name/meta/
    description text (see #profileChannelLogo in index.html — a plain
    hardcoded <img>, not something app.js populates, since every group
-   shows this same logo). */
+   shows this same logo).
+
+   FIX: "use full logo not just bulb" — same object-fit: cover -> contain +
+   padding switch as .avatar-img above, and for the same reason: this shows
+   the full "NOUS Complex" wordmark (nouscomplex.png) rather than a
+   square-cropped icon, so it needs to be scaled to fit inside the circle
+   instead of cropped to fill it. */
 .profile-card-logo {
   width: 116px;
   height: 116px;
   border-radius: 50%;
-  object-fit: cover;
+  object-fit: contain;
   background: #fff;
   display: block;
   margin: 0 auto 14px;
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--border);
+  padding: 14%;
+  box-sizing: border-box;
 }
 .profile-card-name { font-family: var(--font-display); font-weight: 800; font-size: 1.3rem; color: var(--ink); }
 .profile-card-meta { font-size: 12.5px; font-weight: 700; color: var(--accent); margin-top: 4px; }
