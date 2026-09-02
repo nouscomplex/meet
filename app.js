@@ -335,10 +335,11 @@
     statusLinkPreview: $('statusLinkPreview'),
     statusViewerBody: $('statusViewerBody'),
     statusPauseBtn: $('statusPauseBtn'),
-    // FIX: "load older messages" pagination — button injected at the top
-    // of #chatMessages by renderLoadOlderBtn() below; referenced here so
-    // the rest of the code can show/hide it without querying the DOM each
-    // time.
+    // FIX: "load older messages" pagination — small loading-circle
+    // indicator injected at the top of #chatMessages by
+    // renderLoadOlderIndicator() below, shown only while a fetch is in
+    // flight; referenced here so the rest of the code can show/hide it
+    // without querying the DOM each time.
     loadOlderBtn: null,
   };
 
@@ -2769,11 +2770,9 @@
   async function loadOlderMessages() {
     if (isLoadingOlderMessages || !state.currentChannel || !state.oldestLoadedTimestamp) return;
     isLoadingOlderMessages = true;
-
-    if (DOM.loadOlderBtn) {
-      DOM.loadOlderBtn.disabled = true;
-      DOM.loadOlderBtn.textContent = 'Loading…';
-    }
+    // FIX: replaced the button's "Loading…" text state with a loading
+    // circle — show it the moment the fetch starts.
+    renderLoadOlderIndicator();
 
     try {
       const { data, error } = await supabase
@@ -2825,7 +2824,7 @@
             DOM.chatContainer.scrollTop += (anchorTopAfter - anchorTopBefore);
           }
         }
-        renderLoadOlderBtn();
+        renderLoadOlderIndicator();
       });
 
       console.log(`📜 Loaded ${page.length} older messages${hasMore ? ' (even more available)' : ' (reached beginning of chat)'}`);
@@ -2833,20 +2832,23 @@
       console.error('Error loading older messages:', err);
     } finally {
       isLoadingOlderMessages = false;
-      if (DOM.loadOlderBtn) {
-        DOM.loadOlderBtn.disabled = false;
-        DOM.loadOlderBtn.textContent = 'Load older messages';
-      }
+      // FIX: hide the loading circle once the fetch settles (success,
+      // empty page, or error).
+      renderLoadOlderIndicator();
     }
   }
 
-  // Injects (or removes) the "Load older messages" button at the very top
-  // of #chatMessages based on state.hasOlderMessages.
-  function renderLoadOlderBtn() {
+  // Injects (or removes) a small loading-circle indicator at the very top
+  // of #chatMessages. FIX: this used to be a clickable "Load older
+  // messages" button whose label swapped to the text "Loading…" mid-fetch;
+  // it's now a non-interactive spinner that only appears while
+  // isLoadingOlderMessages is true. Older history loads automatically as
+  // the user scrolls near the top of the chat (see the scroll listener in
+  // EVENT BINDINGS), so there's no idle "click to load" state to render.
+  function renderLoadOlderIndicator() {
     if (!DOM.chatMessages) return;
 
-    if (!state.hasOlderMessages) {
-      // Remove the button if it exists
+    if (!isLoadingOlderMessages) {
       if (DOM.loadOlderBtn && DOM.loadOlderBtn.isConnected) {
         DOM.loadOlderBtn.remove();
       }
@@ -2855,12 +2857,11 @@
     }
 
     if (!DOM.loadOlderBtn || !DOM.loadOlderBtn.isConnected) {
-      const btn = document.createElement('button');
-      btn.id = 'loadOlderBtn';
-      btn.className = 'load-older-btn';
-      btn.innerHTML = '<i class="fas fa-clock-rotate-left"></i> Load older messages';
-      btn.addEventListener('click', loadOlderMessages);
-      DOM.loadOlderBtn = btn;
+      const indicator = document.createElement('div');
+      indicator.id = 'loadOlderBtn';
+      indicator.className = 'load-older-indicator';
+      indicator.innerHTML = '<span class="load-older-spinner" aria-hidden="true"></span>';
+      DOM.loadOlderBtn = indicator;
     }
 
     // Always keep it as the very first child
@@ -3354,9 +3355,9 @@
 
     chatNeedsInitialPaint = false;
 
-    // FIX: keep the "Load older messages" button in sync with
-    // state.hasOlderMessages every time the message list is rendered.
-    renderLoadOlderBtn();
+    // FIX: keep the loading-circle indicator in sync (e.g. re-anchor it
+    // as the first child) every time the message list is rendered.
+    renderLoadOlderIndicator();
 
     reapplySelectionHighlight();
   }
