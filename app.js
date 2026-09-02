@@ -88,6 +88,12 @@
   const state = {
     currentUser: null,
     currentChannel: null,
+    // FIX: see isChatDetailVisible() and selectChannel() below — tracks
+    // whether state.currentChannel got there because the user actually
+    // clicked/tapped it, versus the app silently defaulting to the first
+    // channel in the list on load (see renderChannels()). Read-receipt and
+    // unread-badge logic should only fire for the former.
+    channelExplicitlyOpened: false,
     currentMembers: [],
     statuses: [],
     messages: [],
@@ -1234,8 +1240,24 @@
   const CHAT_GROUP_SCREENS = ['chats', 'chatDetail', 'members', 'profile'];
   const isDesktopLayout = () => window.matchMedia('(min-width: 1024px)').matches;
 
+  // FIX: root cause of "received message is marked read / the unread badge
+  // disappears for a channel the user never actually opened" — on desktop,
+  // CHAT_GROUP_SCREENS (below) deliberately includes 'chats' so the right-
+  // hand message pane stays visible while browsing the channel list, since
+  // that's a real split-pane layout choice. But this function was also
+  // being used to gate read-receipts (markDelivered/markSeen — see the
+  // message INSERT handler and selectChannel()), and it used the exact
+  // same "screen is one of CHAT_GROUP_SCREENS" check for that. That meant
+  // ANY channel sitting in state.currentChannel — including the one
+  // renderChannels() silently auto-selects on first load, before the user
+  // has clicked anything — counted as "visible" and got its messages
+  // marked seen and its badge cleared automatically. Requiring
+  // channelExplicitlyOpened here keeps the pane-visibility behavior for
+  // rendering, but only allows read-receipts once the user has actually
+  // clicked/tapped into that specific channel at least once.
   function isChatDetailVisible(channelId) {
     if (!state.currentChannel || String(state.currentChannel.id) !== String(channelId)) return false;
+    if (!state.channelExplicitlyOpened) return false;
     if (isDesktopLayout()) {
       return CHAT_GROUP_SCREENS.includes(state.currentScreen);
     }
@@ -1538,7 +1560,16 @@
     renderChatList(channels);
 
     if (!state.currentChannel && channels.length) {
-      selectChannel(channels[0], { markSeenNow: isDesktopLayout() });
+      // FIX: root cause of "the first message read status shows blue tick
+      // and unread badge disappears for a channel the user never opened"
+      // — this used to pass markSeenNow: isDesktopLayout(), which silently
+      // called markDelivered()/markSeen() for whichever channel happens to
+      // be first in the list the moment the app loads, before the user has
+      // clicked anything. userInitiated: false (paired with the
+      // isChatDetailVisible() fix above) keeps the desktop split-pane
+      // showing that channel's messages for convenience, without treating
+      // it as "read" until the user actually opens it themselves.
+      selectChannel(channels[0], { markSeenNow: false, userInitiated: false });
     }
   }
 
@@ -6702,13 +6733,20 @@
   // ============================================================
   // SELECT CHANNEL
   // ============================================================
-  async function selectChannel(channel, { markSeenNow = true } = {}) {
+  async function selectChannel(channel, { markSeenNow = true, userInitiated = true } = {}) {
     if (typeof exitMessageSelection === 'function') exitMessageSelection();
     chatNeedsInitialPaint = true;
     if (state.currentChannel && state.currentChannel.id !== channel.id) {
       clearTypingIndicator(state.currentChannel.id);
     }
     state.currentChannel = channel;
+    // FIX: see isChatDetailVisible() above. Only a genuine user click/tap
+    // (openChannel(), a calendar item link, creating a channel, etc. — all
+    // of which call selectChannel() with the default userInitiated: true)
+    // should count as "the user opened this chat" for read-receipt
+    // purposes. renderChannels()'s silent fallback-to-first-channel on
+    // load passes userInitiated: false specifically so it doesn't.
+    state.channelExplicitlyOpened = userInitiated;
     updateChatEmptyState();
     highlightActiveChatRow();
 
@@ -6763,6 +6801,7 @@
     clearScheduleExpiryTimer();
 
     state.currentChannel = null;
+    state.channelExplicitlyOpened = false;
     state.messages = [];
     state.currentMembers = [];
     state.currentSchedule = null;
