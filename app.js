@@ -1566,6 +1566,7 @@
   async function renderChannels() {
     const channels = await loadChannels();
     allChannels = channels;
+    syncChannelBadgeSubscriptions(channels.map((c) => c.id));
     state.channelPreviews = await loadChannelPreviews(channels.map((c) => c.id));
     renderChatList(channels);
 
@@ -1871,6 +1872,7 @@
     allChannels = allChannels.filter((c) => String(c.id) !== removedChannelId);
     delete state.unreadByChannel[removedChannelId];
     delete state.channelPreviews[removedChannelId];
+    unsubscribeChannelBadge(removedChannelId);
 
     const wasOpen = state.currentChannel && String(state.currentChannel.id) === removedChannelId;
     if (wasOpen) {
@@ -1956,6 +1958,21 @@
     }, delay);
   }
 
+  // FIX: "still doesn't show realtime notification numbers on groups" —
+  // this channel used to also carry an UNFILTERED postgres_changes INSERT
+  // listener on the whole messages table (no `filter`) to catch messages
+  // for every group at once. The per-channel subscription used for
+  // whichever chat is actually open (subscribeToMessages(), below) has
+  // always used a FILTERED listener (`filter: channel_id=eq.${id}`) and
+  // that one reliably receives events. Supabase Realtime evaluates RLS
+  // differently for unfiltered postgres_changes subscriptions than for
+  // filtered ones on some project configurations, which is consistent
+  // with "works for whichever chat happens to be open, silent for every
+  // other group" — exactly this bug. Rather than depend on the unfiltered
+  // form, badges/notifications for every group now come from one FILTERED
+  // subscription per group the user belongs to (see
+  // syncChannelBadgeSubscriptions() below), reusing the exact pattern
+  // that's already proven to work for the open chat.
   function subscribeToChannelListUpdates() {
     if (channelListReconnectTimer) {
       clearTimeout(channelListReconnectTimer);
@@ -1971,11 +1988,6 @@
 
     channelListSubscription = supabase
       .channel('channel-list-updates')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: CONFIG.SUPABASE.TABLES.MESSAGES,
-      }, (payload) => handleGlobalMessageInsert(payload.new))
       .on('postgres_changes', {
         event: 'DELETE',
         schema: 'public',
@@ -2016,6 +2028,67 @@
       channelListIntentionalTeardown = false;
       channelListSubscription = null;
     }
+  }
+
+  // ============================================================
+  // PER-CHANNEL BADGE/NOTIFICATION REALTIME
+  // ============================================================
+  // FIX: see the FIX comment on subscribeToChannelListUpdates() above.
+  // One small FILTERED postgres_changes subscription per group the user
+  // belongs to — each identical in shape to the subscription
+  // subscribeToMessages() already uses for whichever chat happens to be
+  // open, which is the one we know reliably delivers events. This is what
+  // makes badges/notifications work for every group in real time,
+  // including while no chat is selected at all, instead of depending on a
+  // single broad subscription.
+  const channelBadgeSubscriptions = new Map();
+
+  function subscribeToChannelBadge(channelId) {
+    const key = String(channelId);
+    if (channelBadgeSubscriptions.has(key)) return;
+    const sub = supabase
+      .channel(`badge:${key}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: CONFIG.SUPABASE.TABLES.MESSAGES,
+        filter: `channel_id=eq.${key}`,
+      }, (payload) => handleGlobalMessageInsert(payload.new))
+      .subscribe((status, err) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          console.warn(`⚠️ badge subscription for channel ${key}: ${status}`, err || '');
+          channelBadgeSubscriptions.delete(key);
+          // Only resubscribe if this channel is still one the user belongs
+          // to — syncChannelBadgeSubscriptions() re-adds it on the next
+          // channel-list refresh regardless, this just recovers sooner.
+          if (isKnownChannelId(key)) subscribeToChannelBadge(key);
+        }
+      });
+    channelBadgeSubscriptions.set(key, sub);
+  }
+
+  function unsubscribeChannelBadge(channelId) {
+    const key = String(channelId);
+    const sub = channelBadgeSubscriptions.get(key);
+    if (sub) {
+      supabase.removeChannel(sub);
+      channelBadgeSubscriptions.delete(key);
+    }
+  }
+
+  // Keeps exactly one badge subscription alive per current member channel —
+  // called whenever the channel list is (re)loaded (see renderChannels()),
+  // so joining/leaving/creating groups keeps this in sync automatically.
+  function syncChannelBadgeSubscriptions(channelIds) {
+    const idSet = new Set(channelIds.map(String));
+    Array.from(channelBadgeSubscriptions.keys()).forEach((key) => {
+      if (!idSet.has(key)) unsubscribeChannelBadge(key);
+    });
+    idSet.forEach((id) => subscribeToChannelBadge(id));
+  }
+
+  function unsubscribeAllChannelBadges() {
+    Array.from(channelBadgeSubscriptions.keys()).forEach(unsubscribeChannelBadge);
   }
 
   // ============================================================
@@ -7046,6 +7119,7 @@
     teardownStatusesSubscription();
     stopStatusExpiryWatcher();
     unsubscribeFromChannelListUpdates();
+    unsubscribeAllChannelBadges();
     stopChannelPreviewPolling();
     stopMediaExpiryWatcher();
     if (scheduleSubscription) {
