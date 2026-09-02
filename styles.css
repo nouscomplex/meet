@@ -1529,6 +1529,40 @@ body.theme-dark .btn-live-pill.btn-live-pill-live { color: #FFFFFF; }
 
 /* Centered "Today / Yesterday / Wed, Aug 12" pill between groups of
    messages from different calendar days, WhatsApp-style. */
+/* ============================================================
+   LOAD OLDER MESSAGES BUTTON
+   FIX: shown at the top of #chatMessages when state.hasOlderMessages
+   is true — lets users page back through chat history that fell outside
+   the initial 50-message load window. Styled as a subtle pill so it
+   doesn't compete visually with the day-dividers.
+   ============================================================ */
+.load-older-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: calc(100% - 32px);
+  margin: 10px 16px 4px;
+  padding: 9px 16px;
+  background: var(--surface);
+  color: var(--accent);
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  box-sizing: border-box;
+}
+.load-older-btn:hover {
+  background: var(--surface-sunken);
+  border-color: var(--accent);
+}
+.load-older-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .day-divider {
   align-self: center;
   margin: 4px 0;
