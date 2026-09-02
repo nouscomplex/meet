@@ -1530,37 +1530,30 @@ body.theme-dark .btn-live-pill.btn-live-pill-live { color: #FFFFFF; }
 /* Centered "Today / Yesterday / Wed, Aug 12" pill between groups of
    messages from different calendar days, WhatsApp-style. */
 /* ============================================================
-   LOAD OLDER MESSAGES BUTTON
-   FIX: shown at the top of #chatMessages when state.hasOlderMessages
-   is true — lets users page back through chat history that fell outside
-   the initial 50-message load window. Styled as a subtle pill so it
-   doesn't compete visually with the day-dividers.
+   LOAD OLDER MESSAGES INDICATOR
+   FIX: was a clickable pill button reading "Load older messages" that
+   swapped to plain text "Loading…" while fetching. History now loads
+   automatically as the user scrolls near the top of the chat, so this
+   is just a small non-interactive loading circle shown at the top of
+   #chatMessages for the duration of the fetch (reuses the
+   orbit-loading-spin keyframes defined above for the splash spinner).
    ============================================================ */
-.load-older-btn {
+.load-older-indicator {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  width: calc(100% - 32px);
-  margin: 10px 16px 4px;
-  padding: 9px 16px;
-  background: var(--surface);
-  color: var(--accent);
-  border: 1.5px solid var(--border);
-  border-radius: 20px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  width: 100%;
+  margin: 10px 0 4px;
+  padding: 6px 0;
   box-sizing: border-box;
 }
-.load-older-btn:hover {
-  background: var(--surface-sunken);
-  border-color: var(--accent);
-}
-.load-older-btn:disabled {
-  opacity: 0.55;
-  cursor: default;
+.load-older-spinner {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2.5px solid var(--border);
+  border-top-color: var(--accent);
+  animation: orbit-loading-spin 0.8s linear infinite;
 }
 
 .day-divider {
