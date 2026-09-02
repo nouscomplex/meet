@@ -142,6 +142,15 @@
     currentSchedule: null,
     activeCallScheduleId: null,
     lastTypingBroadcastAt: 0,
+    // FIX: "load older messages" pagination support.
+    // hasOlderMessages: true when the DB has messages older than the
+    // earliest one currently in state.messages — a "Load older" button is
+    // shown at the top of the chat when this is true.
+    // oldestLoadedTimestamp: the created_at of the oldest message in
+    // state.messages, used as the exclusive upper bound when fetching the
+    // previous page.
+    hasOlderMessages: false,
+    oldestLoadedTimestamp: null,
   };
 
   // ============================================================
@@ -326,6 +335,11 @@
     statusLinkPreview: $('statusLinkPreview'),
     statusViewerBody: $('statusViewerBody'),
     statusPauseBtn: $('statusPauseBtn'),
+    // FIX: "load older messages" pagination — button injected at the top
+    // of #chatMessages by renderLoadOlderBtn() below; referenced here so
+    // the rest of the code can show/hide it without querying the DOM each
+    // time.
+    loadOlderBtn: null,
   };
 
   // FIX: "unselecting a channel shows the last channel's chat history
@@ -2353,7 +2367,11 @@
   function saveCachedMessages(channelId, messages) {
     try {
       const cacheKey = `cached_chat_history_${channelId}`;
-      const toCache = messages.slice(-50);
+      // FIX: increased from 50 to 100 so that after a "load older" page
+      // the newly fetched older messages aren't immediately evicted from
+      // cache on the next save, causing them to re-disappear after a
+      // channel switch.
+      const toCache = messages.slice(-100);
       localStorage.setItem(cacheKey, JSON.stringify(toCache));
       console.log(`💾 Cached ${toCache.length} messages for channel ${channelId}`);
     } catch (e) {
@@ -2379,12 +2397,14 @@
     try {
       console.log('🔄 Fetching fresh message history...');
       
+      // FIX: same +1 trick as loadMessages() so hasOlderMessages is
+      // correctly maintained after a reconnect / tab-focus refresh too.
       const { data, error } = await supabase
         .from(CONFIG.SUPABASE.TABLES.MESSAGES)
         .select('*')
         .eq('channel_id', channelId)
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(MESSAGES_PER_PAGE + 1);
 
       if (error) {
         console.warn('Failed to fetch fresh history:', error);
@@ -2392,8 +2412,14 @@
       }
 
       if (data && data.length > 0) {
-        mergeMessagesSafely(data);
-        console.log(`✅ Fetched ${data.length} fresh messages`);
+        const hasMore = data.length > MESSAGES_PER_PAGE;
+        const page = hasMore ? data.slice(0, MESSAGES_PER_PAGE) : data;
+        state.hasOlderMessages = hasMore;
+        if (hasMore || !state.oldestLoadedTimestamp) {
+          state.oldestLoadedTimestamp = page[page.length - 1]?.created_at || null;
+        }
+        mergeMessagesSafely(page);
+        console.log(`✅ Fetched ${page.length} fresh messages`);
       }
       
       updateProfileScreen();
@@ -2665,16 +2691,31 @@
   // ============================================================
   // LOAD MESSAGES
   // ============================================================
+  const MESSAGES_PER_PAGE = 50;
+
   async function loadMessages(channelId) {
     if (!channelId) return;
 
     try {
+      // FIX: root cause of "why the chat has been removed from a one
+      // channel from day before yesterday including picture, videos, and
+      // everything" — the old query fetched exactly 50 rows with no
+      // pagination, so any channel with more than 50 messages simply
+      // didn't show the older ones. The messages were never deleted; they
+      // just fell outside the 50-row window.
+      //
+      // We now fetch 51 rows. If we get 51 back, we know there are more
+      // in the DB older than row #51, so we slice it to 50 for display
+      // and set hasOlderMessages = true — which causes renderMessages()
+      // to show the "Load older messages" button at the top of the chat.
+      // If we get ≤ 50 rows, we know we have the full history and
+      // hasOlderMessages stays false.
       const { data, error } = await supabase
         .from(CONFIG.SUPABASE.TABLES.MESSAGES)
         .select('*')
         .eq('channel_id', channelId)
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(MESSAGES_PER_PAGE + 1);
 
       if (error) {
         console.warn('Messages fallback:', error);
@@ -2686,9 +2727,19 @@
       }
 
       if (data && data.length > 0) {
-        mergeMessagesSafely(data, true);
-        console.log(`📥 Loaded ${data.length} messages from Supabase`);
+        const hasMore = data.length > MESSAGES_PER_PAGE;
+        const page = hasMore ? data.slice(0, MESSAGES_PER_PAGE) : data;
+
+        state.hasOlderMessages = hasMore;
+        // The page is sorted descending from Supabase; the last item in
+        // this slice is the oldest one currently loaded.
+        state.oldestLoadedTimestamp = page[page.length - 1]?.created_at || null;
+
+        mergeMessagesSafely(page, true);
+        console.log(`📥 Loaded ${page.length} messages from Supabase${hasMore ? ' (more available — "Load older" button shown)' : ' (full history)'}`);
       } else if (state.messages.length === 0) {
+        state.hasOlderMessages = false;
+        state.oldestLoadedTimestamp = null;
         state.messages = [];
         renderMessages(true);
       }
@@ -2703,6 +2754,121 @@
     }
   }
 
+  // ============================================================
+  // LOAD OLDER MESSAGES (pagination)
+  // ============================================================
+  // FIX: previously there was no way to see messages older than the
+  // initial 50-row window. This function loads the next page of 50
+  // messages older than the earliest message currently in state.messages,
+  // using the oldest message's created_at as a cursor (exclusive upper
+  // bound via `.lt`). The button at the top of the chat that calls this
+  // is rendered by renderMessages() whenever state.hasOlderMessages is
+  // true and hidden once we know we have the full history.
+  let isLoadingOlderMessages = false;
+
+  async function loadOlderMessages() {
+    if (isLoadingOlderMessages || !state.currentChannel || !state.oldestLoadedTimestamp) return;
+    isLoadingOlderMessages = true;
+
+    if (DOM.loadOlderBtn) {
+      DOM.loadOlderBtn.disabled = true;
+      DOM.loadOlderBtn.textContent = 'Loading…';
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+        .select('*')
+        .eq('channel_id', state.currentChannel.id)
+        .lt('created_at', state.oldestLoadedTimestamp)
+        .order('created_at', { ascending: false })
+        .limit(MESSAGES_PER_PAGE + 1);
+
+      if (error) {
+        console.warn('Failed to load older messages:', error);
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        state.hasOlderMessages = false;
+        state.oldestLoadedTimestamp = null;
+        renderMessages();
+        return;
+      }
+
+      const hasMore = data.length > MESSAGES_PER_PAGE;
+      const page = hasMore ? data.slice(0, MESSAGES_PER_PAGE) : data;
+
+      state.hasOlderMessages = hasMore;
+      // Update cursor to the oldest message in this new page
+      state.oldestLoadedTimestamp = page[page.length - 1]?.created_at || null;
+
+      // Preserve scroll position: record the first currently-visible
+      // message's DOM node before we inject older messages above it, then
+      // restore its position in the viewport after the render so the user
+      // stays anchored where they were.
+      const firstVisible = DOM.chatMessages?.querySelector('.msg');
+      const scrollAnchorId = firstVisible?.dataset?.id || null;
+      const anchorTopBefore = firstVisible ? firstVisible.getBoundingClientRect().top : 0;
+
+      // Merge without forcing scroll to bottom (forceScroll = false)
+      mergeMessagesSafely(page, false);
+      saveCachedMessages(state.currentChannel.id, state.messages);
+
+      // After the render settles, restore scroll position so the user
+      // doesn't jump to the top.
+      requestAnimationFrame(() => {
+        if (scrollAnchorId) {
+          const anchorEl = DOM.chatMessages?.querySelector(`.msg[data-id="${CSS.escape(scrollAnchorId)}"]`);
+          if (anchorEl && DOM.chatContainer) {
+            const anchorTopAfter = anchorEl.getBoundingClientRect().top;
+            DOM.chatContainer.scrollTop += (anchorTopAfter - anchorTopBefore);
+          }
+        }
+        renderLoadOlderBtn();
+      });
+
+      console.log(`📜 Loaded ${page.length} older messages${hasMore ? ' (even more available)' : ' (reached beginning of chat)'}`);
+    } catch (err) {
+      console.error('Error loading older messages:', err);
+    } finally {
+      isLoadingOlderMessages = false;
+      if (DOM.loadOlderBtn) {
+        DOM.loadOlderBtn.disabled = false;
+        DOM.loadOlderBtn.textContent = 'Load older messages';
+      }
+    }
+  }
+
+  // Injects (or removes) the "Load older messages" button at the very top
+  // of #chatMessages based on state.hasOlderMessages.
+  function renderLoadOlderBtn() {
+    if (!DOM.chatMessages) return;
+
+    if (!state.hasOlderMessages) {
+      // Remove the button if it exists
+      if (DOM.loadOlderBtn && DOM.loadOlderBtn.isConnected) {
+        DOM.loadOlderBtn.remove();
+      }
+      DOM.loadOlderBtn = null;
+      return;
+    }
+
+    if (!DOM.loadOlderBtn || !DOM.loadOlderBtn.isConnected) {
+      const btn = document.createElement('button');
+      btn.id = 'loadOlderBtn';
+      btn.className = 'load-older-btn';
+      btn.innerHTML = '<i class="fas fa-clock-rotate-left"></i> Load older messages';
+      btn.addEventListener('click', loadOlderMessages);
+      DOM.loadOlderBtn = btn;
+    }
+
+    // Always keep it as the very first child
+    if (DOM.chatMessages.firstChild !== DOM.loadOlderBtn) {
+      DOM.chatMessages.insertBefore(DOM.loadOlderBtn, DOM.chatMessages.firstChild);
+    }
+  }
+
   function ticksHtml(msg) {
     if (msg.seen_at) return `<span class="msg-ticks seen" title="Seen"><i class="fas fa-check-double"></i></span>`;
     if (msg.delivered_at) return `<span class="msg-ticks delivered" title="Delivered"><i class="fas fa-check-double"></i></span>`;
@@ -2713,26 +2879,15 @@
   // RENDER MESSAGES
   // ============================================================
   function messageSignature(msg) {
-    // FIX: root cause of "media that's aged past the 168h auto-expiry
-    // window keeps showing as a live image/video/file instead of the
-    // 'no longer available' placeholder" — renderMessages() below only
-    // rebuilds a message's DOM node when its signature changes (see the
-    // `node.dataset.sig === signature` check). Expiry is purely a function
-    // of "how much time has passed since created_at", so a message that
-    // was already on screen before it expired had an identical signature
-    // before and after crossing the 7-day line — nothing about the
-    // message itself changed, so the diff considered it unchanged and
-    // left the stale (now actually-expired) media bubble in place
-    // indefinitely, even once the underlying file was gone. Folding
-    // isMessageMediaExpired(msg) into the signature means the moment that
-    // boolean flips, the signature changes too, so the next renderMessages()
-    // pass (see startMediaExpiryWatcher() below, which exists specifically
-    // to make sure a pass actually happens) rebuilds this message and shows
-    // the placeholder.
+    // isMessageMediaExpired(msg) is included so that when a media message
+    // crosses the 168h window, its signature changes and renderMessages()
+    // rebuilds its bubble to show the "no longer available" placeholder.
+    // Text-only messages are unaffected — isMessageMediaExpired returns
+    // false for them because hasAttachment is false (no file_url).
     return JSON.stringify([
       msg.content, msg.file_url, msg.reply_to, msg.reply_username, msg.reply_content,
       msg.username, msg.created_at, msg.seen_at, msg.delivered_at, msg.isPending,
-      msg.deleted_at, msg.deleted_by, isMessageMediaExpired(msg)
+      msg.deleted_at, msg.deleted_by, isMessageMediaExpired(msg),
     ]);
   }
 
@@ -2905,6 +3060,12 @@
     });
   }
 
+  // Media (pictures, videos, PDFs) expire after 168 hours — the "no longer
+  // available" placeholder replaces the attachment bubble once this window
+  // passes. Text-only messages are never affected: hasAttachment (see
+  // buildMessageEl) is false when file_url is null, so mediaExpired is
+  // always false for pure-text messages regardless of age. They are kept
+  // permanently until the group is deleted.
   const MESSAGE_MEDIA_EXPIRY_MS = 168 * 60 * 60 * 1000;
 
   function isMessageMediaExpired(msg) {
@@ -3192,6 +3353,10 @@
     }
 
     chatNeedsInitialPaint = false;
+
+    // FIX: keep the "Load older messages" button in sync with
+    // state.hasOlderMessages every time the message list is rendered.
+    renderLoadOlderBtn();
 
     reapplySelectionHighlight();
   }
@@ -6837,6 +7002,15 @@
       clearTypingIndicator(state.currentChannel.id);
     }
     state.currentChannel = channel;
+    // FIX: reset pagination state when switching channels so the "Load
+    // older" button doesn't linger from the previous channel and
+    // loadOlderMessages() uses the right cursor.
+    state.hasOlderMessages = false;
+    state.oldestLoadedTimestamp = null;
+    if (DOM.loadOlderBtn && DOM.loadOlderBtn.isConnected) {
+      DOM.loadOlderBtn.remove();
+    }
+    DOM.loadOlderBtn = null;
     // FIX: see isChatDetailVisible() above. Only a genuine user click/tap
     // (openChannel(), a calendar item link, creating a channel, etc. — all
     // of which call selectChannel() with the default userInitiated: true)
@@ -6902,6 +7076,14 @@
     state.messages = [];
     state.currentMembers = [];
     state.currentSchedule = null;
+    // FIX: clear pagination state on deselect so it doesn't carry over
+    // if the same channel is re-opened.
+    state.hasOlderMessages = false;
+    state.oldestLoadedTimestamp = null;
+    if (DOM.loadOlderBtn && DOM.loadOlderBtn.isConnected) {
+      DOM.loadOlderBtn.remove();
+    }
+    DOM.loadOlderBtn = null;
 
     updateChatEmptyState();
     highlightActiveChatRow();
@@ -7534,6 +7716,22 @@
   });
 
   DOM.backFromChat.addEventListener('click', () => goToScreen('chats'));
+
+  // FIX: auto-load older messages when the user scrolls to within 120px
+  // of the top of the chat — the same infinite-scroll-upward pattern used
+  // by WhatsApp and Telegram so history feels seamless rather than
+  // requiring repeated button clicks.
+  if (DOM.chatContainer) {
+    DOM.chatContainer.addEventListener('scroll', () => {
+      if (
+        DOM.chatContainer.scrollTop < 120 &&
+        state.hasOlderMessages &&
+        !isLoadingOlderMessages
+      ) {
+        loadOlderMessages();
+      }
+    }, { passive: true });
+  }
   DOM.backFromUpdates.addEventListener('click', () => goToScreen('chats'));
   DOM.chatDetailTitleBtn.addEventListener('click', () => {
     if (!state.currentChannel) return;
