@@ -377,7 +377,17 @@
   }
   ['click', 'keydown', 'touchstart'].forEach((evt) => window.addEventListener(evt, unlockAudioContext, { once: false }));
 
-  function playNotifySound() {
+  // FIX: senderName used to read state.currentUser (the person who's
+  // signed in and receiving the notification) instead of the message's
+  // actual author — every notification announced you talking to yourself.
+  // channelName used to read state.currentChannel unconditionally, which
+  // only ever matched the channel the notification was actually about by
+  // coincidence; now that playNotifySound() is called from
+  // handleGlobalMessageInsert() for any channel (see the FIX comment
+  // there), that mismatch would show every other channel's notification
+  // labeled with whatever channel happens to be open. Both now come from
+  // the message/channel that was actually passed in.
+  function playNotifySound(msg, channel) {
     try {
       audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
       if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -403,8 +413,8 @@
       if (typeof Notification !== 'undefined' && 
           Notification.permission === 'granted' && 
           document.hidden) {
-        const senderName = state.currentUser ? getDisplayName(state.currentUser.username) : 'Someone';
-        const channelName = state.currentChannel?.name || 'Class';
+        const senderName = msg && msg.username ? getDisplayName(msg.username) : 'Someone';
+        const channelName = channel?.name || 'Class';
         
         const notification = new Notification(`💬 ${senderName} in ${channelName}`, {
           body: 'New message! Tap to open.',
@@ -1816,6 +1826,21 @@
     return allChannels.some((c) => String(c.id) === String(channelId));
   }
 
+  // FIX: root cause of "no realtime notification numbers on groups when no
+  // chat is selected — behaves like the browser tab is closed" —
+  // playNotifySound() (audio ping + OS Notification popup) used to only be
+  // called from inside subscribeToMessages()'s own INSERT handler, which
+  // only exists for the ONE channel currently selected (see selectChannel()
+  // → subscribeToMessages()). That meant: new messages in every OTHER
+  // channel never played a sound or triggered an OS notification at all,
+  // and when no channel was selected (state.currentChannel === null),
+  // there was no per-channel subscription running for anything, so
+  // nothing ever notified, full stop — exactly like the tab wasn't
+  // receiving realtime updates at all. handleGlobalMessageInsert() below
+  // is the one subscription that's always active for every channel the
+  // user belongs to (see subscribeToChannelListUpdates()), so it's the
+  // right place to own notifications — gated on !isOpenChannel so it
+  // still stays quiet for whichever chat the user is actually looking at.
   function handleGlobalMessageInsert(msg) {
     if (!msg || !isKnownChannelId(msg.channel_id)) return;
 
@@ -1830,6 +1855,7 @@
       const total = Object.values(state.unreadByChannel).reduce((a, b) => a + b, 0);
       DOM.navChatsBadge.textContent = total > 99 ? '99+' : String(total);
       DOM.navChatsBadge.classList.toggle('hidden', total === 0);
+      playNotifySound(msg, allChannels.find((c) => String(c.id) === String(msg.channel_id)));
     }
 
     renderChatList(allChannels);
@@ -2380,7 +2406,6 @@
 
             if (newMessage.username !== state.currentUser?.username) {
               console.log('🔔 New message from someone else - marking delivered');
-              playNotifySound();
               if (isChatDetailVisible(channelId)) {
                 await markDelivered(channelId);
                 await markSeen(channelId);
@@ -2402,7 +2427,6 @@
         
         if (newMessage.username !== state.currentUser?.username) {
           console.log('🔔 New message from someone else - marking delivered');
-          playNotifySound();
           if (isChatDetailVisible(channelId)) {
             await markDelivered(channelId);
             await markSeen(channelId);
