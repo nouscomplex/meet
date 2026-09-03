@@ -1731,6 +1731,13 @@ body.theme-dark .msg-ticks.seen {
   border: 1px solid var(--chat-grey);
   color: var(--chat-ink);
   word-break: break-word;
+  /* FIX: multi-line messages were collapsing into one line on send.
+     msg.content's real "\n" characters were making it into the DOM fine
+     (via escapeHtml/linkifyText), but HTML's default white-space:normal
+     collapses newlines into a single space just like any other text —
+     nothing renders them as actual line breaks unless told to. pre-wrap
+     keeps real line breaks while still wrapping long lines normally. */
+  white-space: pre-wrap;
   /* FIX: "clicking any text selects it" / "link is still plain text" —
      these two complaints share one root cause. user-select:text here let
      the browser's native text-selection gesture compete with every click
