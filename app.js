@@ -7718,6 +7718,17 @@
 
   DOM.backFromChat.addEventListener('click', () => goToScreen('chats'));
 
+  // FIX: #messageInput is now an auto-growing <textarea> instead of a
+  // single-line <input> (see index.html) so it can actually hold
+  // multiple lines. This resizes it to fit its content on every
+  // keystroke, capped by the CSS max-height (the field itself scrolls
+  // internally beyond that).
+  function autoGrowMessageInput() {
+    if (!DOM.messageInput) return;
+    DOM.messageInput.style.height = 'auto';
+    DOM.messageInput.style.height = `${DOM.messageInput.scrollHeight}px`;
+  }
+
   // FIX: auto-load older messages when the user scrolls to within 120px
   // of the top of the chat — the same infinite-scroll-upward pattern used
   // by WhatsApp and Telegram so history feels seamless rather than
@@ -7751,11 +7762,13 @@
     DOM.messageInput.value = '';
     DOM.fileInput.value = '';
     DOM.filePreview.classList.add('hidden');
+    autoGrowMessageInput();
 
     const sent = await sendMessage(content, file);
 
     if (!sent && content) {
       DOM.messageInput.value = content;
+      autoGrowMessageInput();
     }
 
     if (state.inactivityTimer) {
@@ -7764,8 +7777,29 @@
     }
   });
 
-  DOM.messageInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
+  // FIX: on touchscreen devices, plain Enter should never send — it
+  // should just insert a newline like Shift+Enter does on desktop.
+  // Two reasons: (1) phones have no physical Shift key, so there'd be no
+  // way to add a line break at all if Enter always sent; (2) Android
+  // soft keyboards drive text entry through IME composition, where a
+  // 'keydown' for Enter often doesn't fire the way it does with a
+  // physical keyboard, so trying to intercept it is unreliable anyway.
+  // Simplest fix: skip the interception entirely on coarse-pointer
+  // (touch) devices and let the textarea's default Enter-inserts-a-
+  // newline behavior happen; mobile users tap the send button instead
+  // (same as WhatsApp/Telegram).
+  const isTouchDevice = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+
+  // FIX: was a 'keypress' listener that sent on every plain Enter with no
+  // way to type a newline at all — messageInput used to be a single-line
+  // <input>, which can't hold newlines regardless. Now that it's a
+  // <textarea>, Enter still sends (standard chat convention) but
+  // Shift+Enter is left alone so it inserts a real line break instead of
+  // sending. 'keydown' (not 'keypress', which is deprecated and fires
+  // after the character/newline is already inserted) so preventDefault()
+  // here reliably blocks the newline on a plain Enter.
+  DOM.messageInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !isTouchDevice) {
       e.preventDefault();
       DOM.sendMsgBtn.click();
     }
@@ -7777,6 +7811,7 @@
 
   DOM.messageInput.addEventListener('input', () => {
     broadcastTyping();
+    autoGrowMessageInput();
   });
 
   DOM.messageInput.addEventListener('focus', () => {
