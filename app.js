@@ -1462,7 +1462,7 @@
       if (/email not confirmed/i.test(e.message || '')) {
         throw new Error('This account is waiting on an email confirmation. Ask your admin to turn off "Confirm email" in Supabase.');
       }
-      throw new Error('Incorrect School ID or password.');
+      throw new Error('Incorrect Orbit ID or Password.');
     }
   }
 
