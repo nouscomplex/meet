@@ -2375,6 +2375,7 @@ body.theme-dark .msg-time {
   color: var(--chat-ink);
   resize: none;
   overflow-y: hidden;
+  min-height: 43px;
   max-height: 120px;
   line-height: 1.35;
   font-family: inherit;
