@@ -2355,23 +2355,43 @@ body.theme-dark .msg-time {
   z-index: 3;
   flex-shrink: 0;
 }
+/* FIX: the scrollbar that appears past ~5 lines was visually poking
+   outside the rounded corners of #messageInput. Browsers don't reliably
+   clip a native scrollbar to an element's own border-radius — it renders
+   as a straight-edged widget that can extend past a curved top-right/
+   bottom-right corner. Rather than fight that per-browser, the rounded
+   border/background now live on this wrapper, which clips its content
+   (including whatever the textarea draws, scrollbar included) with a
+   plain overflow: hidden — a mask that isn't subject to the same
+   scrollbar-vs-radius rendering inconsistency. */
+.composer .field-shell {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  border-radius: 20px;
+  background: var(--chat-white);
+  border: 1.5px solid var(--chat-grey);
+  overflow: hidden;
+}
+.composer .field-shell:focus-within { border-color: var(--chat-accent); }
 .composer .field {
   flex: 1;
   min-width: 0;
   /* FIX: was a single-line <input> with a full 999px pill radius, which
      only ever looked right at one line of height. Now that #messageInput
      is an auto-growing <textarea> (see the 'input' listener in
-     EVENT BINDINGS), a fixed 20px radius keeps it looking like a rounded
-     composer bubble whether it's one line or several, instead of the
-     pill curvature warping as it grows taller. resize is disabled since
-     height is managed by JS, and max-height caps growth at ~5 lines;
-     overflow-y is toggled between hidden/auto by autoGrowMessageInput()
-     in app.js rather than left permanently on 'auto', which used to show
-     a stray scrollbar track even on an empty single-line box.
+     EVENT BINDINGS), .field-shell above owns the visible rounded
+     border/background; this element is a bare scroll surface inside it
+     — no border/radius/background of its own — so resize is disabled
+     since height is managed by JS, and max-height caps growth at ~5
+     lines; overflow-y is toggled between hidden/auto by
+     autoGrowMessageInput() in app.js rather than left permanently on
+     'auto', which used to show a stray scrollbar track even on an empty
+     single-line box.
   */
-  border-radius: 20px;
-  background: var(--chat-white);
-  border: 1.5px solid var(--chat-grey);
+  border: none;
+  border-radius: 0;
+  background: transparent;
   color: var(--chat-ink);
   resize: none;
   overflow-y: hidden;
@@ -2390,7 +2410,7 @@ body.theme-dark .msg-time {
   -webkit-appearance: none;
   appearance: none;
 }
-.composer .field:focus { box-shadow: none; border-color: var(--chat-accent); }
+.composer .field:focus { box-shadow: none; outline: none; }
 .composer .icon-btn { color: var(--chat-accent); -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
 .composer .icon-btn:hover { background: rgba(107, 180, 250, 0.16); color: var(--chat-accent); }
 
