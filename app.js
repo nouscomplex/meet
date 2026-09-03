@@ -7021,6 +7021,12 @@
     state.channelExplicitlyOpened = userInitiated;
     updateChatEmptyState();
     highlightActiveChatRow();
+    // FIX: the composer sits behind the ".chat-welcome" placeholder until
+    // updateChatEmptyState() above reveals it, so this is the first point
+    // where measuring #messageInput's height is actually meaningful —
+    // see the offsetParent guard in autoGrowMessageInput() for why the
+    // startup call alone wasn't enough.
+    autoGrowMessageInput();
 
     const cachedMessages = getCachedMessages(channel.id);
     state.messages = cachedMessages || [];
@@ -7725,12 +7731,16 @@
   // internally beyond that).
   function autoGrowMessageInput() {
     if (!DOM.messageInput) return;
-    // FIX: a plain `overflow-y: auto` made the scrollbar track appear
-    // even on an empty single-line textarea — browsers can report
-    // scrollHeight as 1px taller than clientHeight due to line-height
-    // rounding, so it looked "overflowed" before any text was typed.
-    // Toggle overflow manually instead: only scroll once content really
-    // exceeds MAX_HEIGHT, otherwise keep it hidden.
+    // FIX: was locking in a collapsed 0px inline height whenever this ran
+    // while the composer sat behind the ".chat-welcome" placeholder (no
+    // channel selected yet) — a hidden (display:none) element always
+    // reports scrollHeight 0, and that 0 then got written to
+    // style.height and stuck around even after a channel was opened,
+    // which is what made the box look clipped/shrunk. offsetParent is
+    // null for anything not currently laid out, so skip measuring then;
+    // selectChannel() calls this again once the composer is actually
+    // visible, so it still gets sized correctly right away.
+    if (DOM.messageInput.offsetParent === null) return;
     const MAX_HEIGHT = 120; // keep in sync with .composer .field max-height in styles.css
     DOM.messageInput.style.height = 'auto';
     const contentHeight = DOM.messageInput.scrollHeight;
