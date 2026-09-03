@@ -2357,16 +2357,17 @@ body.theme-dark .msg-time {
      EVENT BINDINGS), a fixed 20px radius keeps it looking like a rounded
      composer bubble whether it's one line or several, instead of the
      pill curvature warping as it grows taller. resize is disabled since
-     height is managed by JS, and max-height + overflow-y cap growth at
-     ~5 lines so a long paste scrolls internally rather than pushing the
-     composer off-screen.
+     height is managed by JS, and max-height caps growth at ~5 lines;
+     overflow-y is toggled between hidden/auto by autoGrowMessageInput()
+     in app.js rather than left permanently on 'auto', which used to show
+     a stray scrollbar track even on an empty single-line box.
   */
   border-radius: 20px;
   background: var(--chat-white);
   border: 1.5px solid var(--chat-grey);
   color: var(--chat-ink);
   resize: none;
-  overflow-y: auto;
+  overflow-y: hidden;
   max-height: 120px;
   line-height: 1.35;
   font-family: inherit;
