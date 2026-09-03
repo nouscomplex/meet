@@ -3265,7 +3265,7 @@
     const isInitialPaint = chatNeedsInitialPaint;
 
     if (!state.messages.length) {
-      DOM.chatMessages.innerHTML = '<div class="empty-note center-text" style="width:100%;">No messages yet — say hello</div>';
+      DOM.chatMessages.innerHTML = '<div class="empty-note center-text" style="width:100%;">No Messages Yet</div>';
       return;
     }
 
