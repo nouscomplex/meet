@@ -7725,8 +7725,17 @@
   // internally beyond that).
   function autoGrowMessageInput() {
     if (!DOM.messageInput) return;
+    // FIX: a plain `overflow-y: auto` made the scrollbar track appear
+    // even on an empty single-line textarea — browsers can report
+    // scrollHeight as 1px taller than clientHeight due to line-height
+    // rounding, so it looked "overflowed" before any text was typed.
+    // Toggle overflow manually instead: only scroll once content really
+    // exceeds MAX_HEIGHT, otherwise keep it hidden.
+    const MAX_HEIGHT = 120; // keep in sync with .composer .field max-height in styles.css
     DOM.messageInput.style.height = 'auto';
-    DOM.messageInput.style.height = `${DOM.messageInput.scrollHeight}px`;
+    const contentHeight = DOM.messageInput.scrollHeight;
+    DOM.messageInput.style.height = `${Math.min(contentHeight, MAX_HEIGHT)}px`;
+    DOM.messageInput.style.overflowY = contentHeight > MAX_HEIGHT ? 'auto' : 'hidden';
   }
 
   // FIX: auto-load older messages when the user scrolls to within 120px
@@ -7813,6 +7822,12 @@
     broadcastTyping();
     autoGrowMessageInput();
   });
+
+  // FIX: run once at startup too — otherwise the very first paint uses
+  // whatever height the browser's UA stylesheet gives a fresh
+  // rows="1" textarea, which is what was producing the stray scrollbar
+  // on load before any typing had happened.
+  autoGrowMessageInput();
 
   DOM.messageInput.addEventListener('focus', () => {
     if (state.inactivityTimer) {
