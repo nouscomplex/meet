@@ -2379,6 +2379,16 @@ body.theme-dark .msg-time {
   max-height: 120px;
   line-height: 1.35;
   font-family: inherit;
+  /* FIX: "stray line" next to the composer box — #messageInput used to
+     be a plain <input>, which browsers style with minimal native chrome.
+     A <textarea> is a different form control and some browsers (Safari
+     in particular) render their own default inset border/shadow for it
+     regardless of the border/box-shadow rules above, which showed up as
+     a faint extra vertical line near the field's edge. appearance: none
+     strips that native control styling so only the CSS above applies.
+  */
+  -webkit-appearance: none;
+  appearance: none;
 }
 .composer .field:focus { box-shadow: none; border-color: var(--chat-accent); }
 .composer .icon-btn { color: var(--chat-accent); -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
