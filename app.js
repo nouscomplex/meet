@@ -1606,7 +1606,7 @@
     if (!channels || channels.length === 0) {
       DOM.channelList.innerHTML = state.isAdmin
         ? '<div class="empty-note">No channels yet — tap + to create one</div>'
-        : '<div class="empty-note">You haven\'t been added to a group yet — ask your admin.</div>';
+        : '<div class="empty-note">You haven\'t been added to an Orbit yet.</div>';
       return;
     }
 
