@@ -2348,7 +2348,29 @@ body.theme-dark .msg-time {
   z-index: 3;
   flex-shrink: 0;
 }
-.composer .field { flex: 1; min-width: 0; border-radius: var(--radius-pill); background: var(--chat-white); border: 1.5px solid var(--chat-grey); color: var(--chat-ink); }
+.composer .field {
+  flex: 1;
+  min-width: 0;
+  /* FIX: was a single-line <input> with a full 999px pill radius, which
+     only ever looked right at one line of height. Now that #messageInput
+     is an auto-growing <textarea> (see the 'input' listener in
+     EVENT BINDINGS), a fixed 20px radius keeps it looking like a rounded
+     composer bubble whether it's one line or several, instead of the
+     pill curvature warping as it grows taller. resize is disabled since
+     height is managed by JS, and max-height + overflow-y cap growth at
+     ~5 lines so a long paste scrolls internally rather than pushing the
+     composer off-screen.
+  */
+  border-radius: 20px;
+  background: var(--chat-white);
+  border: 1.5px solid var(--chat-grey);
+  color: var(--chat-ink);
+  resize: none;
+  overflow-y: auto;
+  max-height: 120px;
+  line-height: 1.35;
+  font-family: inherit;
+}
 .composer .field:focus { box-shadow: none; border-color: var(--chat-accent); }
 .composer .icon-btn { color: var(--chat-accent); -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
 .composer .icon-btn:hover { background: rgba(107, 180, 250, 0.16); color: var(--chat-accent); }
