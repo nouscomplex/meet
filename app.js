@@ -3126,12 +3126,22 @@
 
     let replyHtml = '';
     if (msg.reply_to) {
-      replyHtml = `
-        <div class="msg-reply-quote" data-reply-to-id="${escapeHtml(String(msg.reply_to))}" role="button" tabindex="0">
-          <span class="reply-author">${escapeHtml(getDisplayName(msg.reply_username || 'Message'))}</span>
-          <span class="reply-text">${escapeHtml(truncate(msg.reply_content || '', 60))}</span>
-        </div>
-      `;
+      // FIX: "reply bubble is huge / distorted" — this used to be a
+      // multi-line template literal. That's normally invisible, but this
+      // markup gets injected straight into .msg-bubble, which sets
+      // white-space:pre-wrap so real newlines in a user's message render
+      // as real line breaks. pre-wrap doesn't know the difference between
+      // "a newline the user typed" and "indentation left over from how the
+      // JS template literal was formatted" — it preserved both, so the
+      // whitespace between </div>/<span> tags rendered as visible blank
+      // lines, inflating the quote box height. Built as one unbroken
+      // string now so there's no stray whitespace/newline text nodes left
+      // for pre-wrap to render. (Also backstopped in CSS — see
+      // .msg-reply-quote's white-space:normal in styles.css — in case this
+      // ever gets reformatted back into a multi-line template by mistake.)
+      const replyAuthor = escapeHtml(getDisplayName(msg.reply_username || 'Message'));
+      const replyText = escapeHtml(truncate(msg.reply_content || '', 60));
+      replyHtml = `<div class="msg-reply-quote" data-reply-to-id="${escapeHtml(String(msg.reply_to))}" role="button" tabindex="0"><span class="reply-author">${replyAuthor}</span><span class="reply-text">${replyText}</span></div>`;
     }
 
     const ticksMarkup = (isMine && !msg.deleted_at) ? ticksHtml(msg) : '';
