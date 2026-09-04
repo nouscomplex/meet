@@ -2269,6 +2269,19 @@ body.theme-dark .msg-time {
   /* FIX: was inert — now jumps to the original message (see
      jumpToMessage() in app.js), so it needs to read as tappable. */
   cursor: pointer;
+  /* FIX: root cause of the reply quote box rendering as a tall, distorted
+     square with big empty gaps around "Nuaim Ahmad" / the quoted text —
+     .msg-bubble (the parent) sets white-space:pre-wrap so real line breaks
+     in a user's own message render correctly. This quote box isn't
+     user-typed content though, it's markup buildMessageEl() injects
+     (app.js) — pre-wrap was inheriting into it and rendering any
+     incidental whitespace/newlines in that markup as visible blank lines.
+     Reset to normal here so this box's layout is only ever driven by its
+     actual text, never by how the HTML happens to be formatted upstream.
+     .reply-text's own white-space:nowrap override below still applies (it's
+     more specific), so the truncated one-line-plus-ellipsis look is
+     unaffected. */
+  white-space: normal;
 }
 .msg-reply-quote:hover, .msg-reply-quote:focus-visible { background: rgba(107, 180, 250, 0.22); }
 .msg-reply-quote:focus-visible { outline: 2px solid var(--chat-blue); outline-offset: 1px; }
