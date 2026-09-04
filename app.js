@@ -136,6 +136,15 @@
     statusesSubscription: null,
     activeLightbox: null,
     sharedMediaUrls: [],
+    // FIX: "can't see unloaded media of group in shared media section" —
+    // see the loadSharedMedia()/renderSharedPhotos()/renderSharedVideos()
+    // FIX comments further down for the full explanation. These hold the
+    // channel's media fetched directly from the DB, independent of
+    // whatever page of chat history happens to be scrolled into
+    // state.messages right now.
+    sharedPhotoMessages: [],
+    sharedVideoMessages: [],
+    sharedMediaChannelId: null,
     myMemberships: new Map(),
     sessionWatchdog: null,
     myUserRoleId: null,
@@ -5277,6 +5286,52 @@
     DOM.profileChannelMeta.textContent = total ? `${total} member${total === 1 ? '' : 's'} · ${online} online` : '';
   }
 
+  // FIX: root cause of "can't see the unloaded media of group in shared
+  // media section" — renderSharedPhotos()/renderSharedVideos() filtered
+  // state.messages, but state.messages is NOT the channel's full history:
+  // loadMessages()/loadOlderMessages() page it in 50 rows at a time (see
+  // MESSAGES_PER_PAGE), so at any moment state.messages only holds
+  // whichever page(s) of chat the person has scrolled through. Any photo
+  // or video sent in a message older than what's currently scrolled into
+  // view simply wasn't in that array yet — Shared Media looked empty or
+  // incomplete for exactly that media, even though it was never deleted
+  // and isn't expired. It only ever "worked" by accident, when someone
+  // happened to have scrolled far enough back for it to already be
+  // loaded. This queries the DB directly for the channel's media instead,
+  // completely independent of chat scroll position/pagination.
+  async function loadSharedMedia(channelId) {
+    if (!channelId) return;
+    try {
+      const { data, error } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+        .select('id, file_url, created_at')
+        .eq('channel_id', channelId)
+        .not('file_url', 'is', null)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: true })
+        .limit(500);
+
+      if (error) {
+        console.warn('Failed to load shared media:', error);
+        return;
+      }
+
+      state.sharedMediaChannelId = channelId;
+      state.sharedPhotoMessages = (data || []).filter((m) => isImageFile(m.file_url) && !isMessageMediaExpired(m));
+      state.sharedVideoMessages = (data || []).filter((m) => isVideoFile(m.file_url) && !isMessageMediaExpired(m));
+
+      // Only repaint if the person is still looking at this same
+      // channel's profile screen — this fetch is async and the person may
+      // have already navigated elsewhere by the time it resolves.
+      if (state.currentChannel && state.currentChannel.id === channelId) {
+        renderSharedPhotos();
+        renderSharedVideos();
+      }
+    } catch (e) {
+      console.warn('Error loading shared media:', e);
+    }
+  }
+
   function updateProfileScreen() {
     if (!state.currentChannel) return;
     DOM.profileChannelName.textContent = state.currentChannel.name;
@@ -5292,19 +5347,24 @@
       renderSchedulePerDateList();
     }
 
+    // Render immediately from whatever's already cached for this channel
+    // (instant, no flash of "No shared photos yet" while the fetch below
+    // is in flight if we've already loaded this channel's media before),
+    // then kick off a fresh load to catch anything new or, on first visit
+    // to this channel, populate the cache for the first time.
     renderSharedPhotos();
     renderSharedVideos();
+    loadSharedMedia(state.currentChannel.id);
   }
 
-  // FIX: root cause of "in show less mode images are being shown in 2
-  // rows — it should always show 1 row for images and 1 row for videos" —
-  // this grid is a fixed 5-column layout (.shared-media-grid, styles.css,
-  // shared by both the photos and videos grids), but the collapsed/"Show
-  // Less" preview cap here was still the old pre-5-column number (6) left
-  // over from before that grid became a fixed row size — 6 items in a
-  // 5-column grid wraps to a second row for just the 6th tile. One shared
-  // constant (below) now drives both grids' preview caps, so they can't
-  // drift out of sync with the grid's actual column count again.
+  // FIX: this grid is a fixed 5-column layout (.shared-media-grid,
+  // styles.css, shared by both the photos and videos grids), but the
+  // collapsed/"Show Less" preview cap here was still the old pre-5-column
+  // number (6) left over from before that grid became a fixed row size —
+  // 6 items in a 5-column grid wraps to a second row for just the 6th
+  // tile. One shared constant (below) now drives both grids' preview
+  // caps, so they can't drift out of sync with the grid's actual column
+  // count again.
   const SHARED_MEDIA_ROW_PREVIEW_COUNT = 5;
 
   // FIX: "make separate folder in share media one for images and one for
@@ -5312,7 +5372,7 @@
   // now two fully independent grids/preview caps/"See All" states, each
   // with its own dataset.showAll flag on its own grid element.
   function renderSharedPhotos() {
-    const photos = state.messages.filter((m) => isImageFile(m.file_url) && !isMessageMediaExpired(m));
+    const photos = state.sharedPhotoMessages;
     if (!photos.length) {
       DOM.sharedPhotosGrid.innerHTML = '<div class="empty-note">No shared photos yet</div>';
       DOM.profileSeeAllPhotos.classList.add('hidden');
@@ -5336,7 +5396,7 @@
   }
 
   function renderSharedVideos() {
-    const videos = state.messages.filter((m) => isVideoFile(m.file_url) && !isMessageMediaExpired(m));
+    const videos = state.sharedVideoMessages;
     if (!videos.length) {
       DOM.sharedVideosGrid.innerHTML = '<div class="empty-note">No shared videos yet</div>';
       DOM.profileSeeAllVideos.classList.add('hidden');
@@ -7206,6 +7266,12 @@
     state.messages = [];
     state.currentMembers = [];
     state.currentSchedule = null;
+    // FIX: clear the shared-media cache along with everything else on
+    // deselect — otherwise the next channel opened briefly shows this
+    // channel's photos/videos until its own loadSharedMedia() resolves.
+    state.sharedPhotoMessages = [];
+    state.sharedVideoMessages = [];
+    state.sharedMediaChannelId = null;
     // FIX: clear pagination state on deselect so it doesn't carry over
     // if the same channel is re-opened.
     state.hasOlderMessages = false;
@@ -7455,6 +7521,9 @@
     state.isChannelActive = false;
     state.isTabFocused = true;
     state.currentSchedule = null;
+    state.sharedPhotoMessages = [];
+    state.sharedVideoMessages = [];
+    state.sharedMediaChannelId = null;
     updateLiveButtonState();
 
     allChannels = [];
