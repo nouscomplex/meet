@@ -1769,13 +1769,36 @@
   // ============================================================
   // UNREAD BADGE REFRESH
   // ============================================================
+  // FIX: "unread count stays stuck even though the message is open and
+  // visible" — refreshUnreadBadges() does two sequential DB round trips
+  // (fetch messages, fetch read receipts) before it applies the result.
+  // It's called from several places that can legitimately overlap in
+  // time — most commonly here: subscribeToMessages()'s INSERT handler
+  // calls it once immediately for every new message, then (if the chat is
+  // open) calls it again at the tail of markSeen(). When two messages
+  // arrive close together, two of these overlapping call chains are in
+  // flight at once, each awaiting its own network round trips — nothing
+  // ties their completion order to their start order. It was entirely
+  // possible for an OLDER refresh (started before markSeen() had recorded
+  // the read receipt) to finish its network round trip AFTER a NEWER,
+  // already-correct refresh, and stomp the correct "0 unread" back to a
+  // stale "1 unread" on its way out. requestId is a simple "ignore stale
+  // responses" guard: every call grabs a ticket, and only the call still
+  // holding the most recently issued ticket by the time its data comes
+  // back is allowed to touch state/DOM. See also queueMarkSeen() below,
+  // which addresses the other half of this same race by preventing the
+  // markDelivered/markSeen writes themselves from overlapping in the
+  // first place.
+  let unreadBadgeRequestId = 0;
   async function refreshUnreadBadges() {
     if (!state.currentUser) return;
+    const myRequestId = ++unreadBadgeRequestId;
 
     try {
       const channelIds = allChannels.map((c) => c.id);
 
       if (!channelIds.length) {
+        if (myRequestId !== unreadBadgeRequestId) return; // stale — a newer refresh has since started
         state.unreadByChannel = {};
         DOM.navChatsBadge.textContent = '0';
         DOM.navChatsBadge.classList.add('hidden');
@@ -1817,7 +1840,12 @@
           counts[row.channel_id] = (counts[row.channel_id] || 0) + 1;
         }
       });
-      
+
+      // FIX: see the requestId comment above buildwise this function —
+      // don't let a slower, older call apply its (now-stale) result on top
+      // of a newer call that already finished and rendered.
+      if (myRequestId !== unreadBadgeRequestId) return;
+
       state.unreadByChannel = counts;
 
       const total = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -2150,6 +2178,33 @@
   // ============================================================
   // DELIVERED / SEEN TRACKING
   // ============================================================
+  // FIX: the other half of the "unread badge doesn't clear in realtime"
+  // race — see the requestId comment on refreshUnreadBadges() above for
+  // the read side of it. This is the write side: markDelivered()/
+  // markSeen() are each a short chain of sequential DB calls (SELECT,
+  // UPSERT, UPDATE). subscribeToMessages()'s INSERT handler used to just
+  // call `await markDelivered(channelId); await markSeen(channelId);`
+  // directly — safe for a single message, but every new INSERT event
+  // triggers its own independent call to that same handler, and nothing
+  // stopped two of those chains from running concurrently when messages
+  // arrived close together. Two overlapping markSeen() calls can both
+  // SELECT "unread messages" before either has finished UPSERTing read
+  // receipts, so both think they still need to write rows the other is
+  // about to write anyway — wasted work at best, and it's what let the
+  // read side observe an inconsistent in-between state. queueMarkSeen()
+  // chains every call onto one promise per tab, so this channel's
+  // delivered/seen writes always run one at a time, strictly in the order
+  // their messages arrived, and each one only starts once the previous
+  // one (and its own trailing refreshUnreadBadges()) has fully finished.
+  let markReadQueue = Promise.resolve();
+  function queueMarkSeen(channelId) {
+    markReadQueue = markReadQueue
+      .then(() => markDelivered(channelId))
+      .then(() => markSeen(channelId))
+      .catch((e) => console.warn('queueMarkSeen error:', e));
+    return markReadQueue;
+  }
+
   async function markDelivered(channelId) {
     if (!state.currentUser) return;
     
@@ -2507,8 +2562,7 @@
             if (newMessage.username !== state.currentUser?.username) {
               console.log('🔔 New message from someone else - marking delivered');
               if (isChatDetailVisible(channelId)) {
-                await markDelivered(channelId);
-                await markSeen(channelId);
+                await queueMarkSeen(channelId);
               }
             }
             return;
@@ -2523,14 +2577,21 @@
           renderChatList(allChannels);
         }
 
-        await refreshUnreadBadges();
-        
-        if (newMessage.username !== state.currentUser?.username) {
+        // FIX: this used to unconditionally call refreshUnreadBadges()
+        // here, then (below) separately queue up markDelivered/markSeen
+        // when the chat is open — two independent async chains touching
+        // the same badge state. When the chat IS open, skip straight to
+        // queueMarkSeen(): it already ends with its own refreshUnreadBadges()
+        // once the read receipt is actually recorded, so the badge still
+        // updates, just without the redundant earlier call that was the
+        // other half of the race described above queueMarkSeen()'s
+        // definition. Only channels the user *isn't* currently looking at
+        // need this standalone refresh to show their new unread count.
+        if (newMessage.username !== state.currentUser?.username && isChatDetailVisible(channelId)) {
           console.log('🔔 New message from someone else - marking delivered');
-          if (isChatDetailVisible(channelId)) {
-            await markDelivered(channelId);
-            await markSeen(channelId);
-          }
+          await queueMarkSeen(channelId);
+        } else {
+          await refreshUnreadBadges();
         }
 
         if (state.inactivityTimer) {
@@ -6966,8 +7027,7 @@
             console.log("✅ Catch-up complete!");
 
             if (isChatDetailVisible(state.currentChannel.id)) {
-              await markDelivered(state.currentChannel.id);
-              await markSeen(state.currentChannel.id);
+              await queueMarkSeen(state.currentChannel.id);
             }
           } catch (e) {
             console.warn('Catch-up failed:', e);
@@ -7056,7 +7116,7 @@
     updateProfileScreen();
 
     if (markSeenNow) {
-      markDelivered(channel.id).then(() => markSeen(channel.id));
+      queueMarkSeen(channel.id);
     } else {
       refreshUnreadBadges();
     }
