@@ -1806,25 +1806,32 @@
         return;
       }
 
-      const { data: fromOthers, error: msgError } = await supabase
-        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
-        .select('id, channel_id')
-        .in('channel_id', channelIds)
-        .neq('username', state.currentUser.username)
-        .is('deleted_at', null);
+      // FIX: "badge disappears, but it takes a while" (part 1) — these two
+      // selects don't depend on each other at all, but were awaited one
+      // after another, so the badge sat waiting for two round trips back
+      // to back instead of one. Firing them together and awaiting both
+      // roughly halves this function's own latency.
+      const [
+        { data: fromOthers, error: msgError },
+        { data: myReads, error: readsError },
+      ] = await Promise.all([
+        supabase
+          .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+          .select('id, channel_id')
+          .in('channel_id', channelIds)
+          .neq('username', state.currentUser.username)
+          .is('deleted_at', null),
+        supabase
+          .from('message_reads')
+          .select('message_id')
+          .eq('username', state.currentUser.username),
+      ]);
 
       if (msgError) {
         console.warn('Failed to fetch messages for badge:', msgError);
         setConnectionIssue('badges', true);
         return;
       }
-      setConnectionIssue('badges', false);
-
-      const { data: myReads, error: readsError } = await supabase
-        .from('message_reads')
-        .select('message_id')
-        .eq('username', state.currentUser.username);
-
       if (readsError) {
         console.warn('Failed to fetch read receipts for badge:', readsError);
         setConnectionIssue('badges', true);
@@ -2178,6 +2185,31 @@
   // ============================================================
   // DELIVERED / SEEN TRACKING
   // ============================================================
+  // FIX: "badge disappears, but it takes a while" — correctness (previous
+  // fix) meant the badge always eventually lands on the right number, but
+  // it still only updated after markDelivered + markSeen's DB writes and
+  // refreshUnreadBadges' reads all round-tripped — several sequential
+  // network calls the person has to sit through before the number they're
+  // already looking past just... goes away. The person reading the chat
+  // is the actual "read" event; the DB writes are bookkeeping that other
+  // devices/tabs need eventually, not something this tab's own badge
+  // should visibly wait on. clearUnreadBadgeForChannel() updates
+  // state.unreadByChannel and the DOM immediately, synchronously, the
+  // moment we know the channel is genuinely visible — the network calls
+  // below still run right after to persist the real read receipts (and
+  // refreshUnreadBadges() at the end of markSeen() reconciles anything
+  // this optimistic guess got wrong), but the person never has to wait on
+  // them to see the badge go away.
+  function clearUnreadBadgeForChannel(channelId) {
+    const key = String(channelId);
+    if (!state.unreadByChannel[key] && state.unreadByChannel[key] !== 0) return;
+    delete state.unreadByChannel[key];
+    const total = Object.values(state.unreadByChannel).reduce((a, b) => a + b, 0);
+    DOM.navChatsBadge.textContent = total > 99 ? '99+' : String(total);
+    DOM.navChatsBadge.classList.toggle('hidden', total === 0);
+    renderChatList(allChannels);
+  }
+
   // FIX: the other half of the "unread badge doesn't clear in realtime"
   // race — see the requestId comment on refreshUnreadBadges() above for
   // the read side of it. This is the write side: markDelivered()/
@@ -2196,11 +2228,14 @@
   // delivered/seen writes always run one at a time, strictly in the order
   // their messages arrived, and each one only starts once the previous
   // one (and its own trailing refreshUnreadBadges()) has fully finished.
+  // markDelivered/markSeen touch different columns and don't depend on
+  // each other, so they now run via Promise.all instead of one after the
+  // other — this queue's total latency (background bookkeeping, not
+  // something the badge waits on anymore) is roughly halved too.
   let markReadQueue = Promise.resolve();
   function queueMarkSeen(channelId) {
     markReadQueue = markReadQueue
-      .then(() => markDelivered(channelId))
-      .then(() => markSeen(channelId))
+      .then(() => Promise.all([markDelivered(channelId), markSeen(channelId)]))
       .catch((e) => console.warn('queueMarkSeen error:', e));
     return markReadQueue;
   }
@@ -2238,46 +2273,60 @@
     
     try {
       console.log(`👁️ Marking messages as seen for channel ${channelId}`);
-      
-      const { data: unreadMsgs, error: unreadError } = await supabase
-        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
-        .select('id')
-        .eq('channel_id', channelId)
-        .neq('username', state.currentUser.username)
-        .is('deleted_at', null);
 
-      if (unreadError) {
-        console.warn('Failed to get unread messages:', unreadError);
-      } else if (unreadMsgs && unreadMsgs.length) {
-        const rows = unreadMsgs.map((m) => ({
-          message_id: m.id,
-          channel_id: channelId,
-          username: state.currentUser.username,
-        }));
-        const { error: readsError } = await supabase
-          .from('message_reads')
-          .upsert(rows, { onConflict: 'message_id,username', ignoreDuplicates: true });
-        if (readsError) {
-          console.warn('Failed to record read receipts:', readsError);
-          setConnectionIssue('badges', true);
-        } else {
-          console.log(`✅ Recorded ${rows.length} read receipts`);
-          setConnectionIssue('badges', false);
-        }
+      // FIX: the SELECT-then-UPSERT (building message_reads rows) and the
+      // blanket seen_at UPDATE below don't depend on each other's result —
+      // the UPDATE targets every unseen row in the channel by channel_id
+      // alone, it doesn't need the SELECT's id list. They were awaited
+      // one after another regardless, tacking a third sequential round
+      // trip onto this background write. Running them together cuts this
+      // function's own latency by roughly a third.
+      const [readsResult, seenResult] = await Promise.all([
+        (async () => {
+          const { data: unreadMsgs, error: unreadError } = await supabase
+            .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+            .select('id')
+            .eq('channel_id', channelId)
+            .neq('username', state.currentUser.username)
+            .is('deleted_at', null);
+
+          if (unreadError) {
+            console.warn('Failed to get unread messages:', unreadError);
+            return { error: unreadError };
+          }
+          if (!unreadMsgs || !unreadMsgs.length) return { count: 0 };
+
+          const rows = unreadMsgs.map((m) => ({
+            message_id: m.id,
+            channel_id: channelId,
+            username: state.currentUser.username,
+          }));
+          const { error: readsError } = await supabase
+            .from('message_reads')
+            .upsert(rows, { onConflict: 'message_id,username', ignoreDuplicates: true });
+          return { error: readsError, count: rows.length };
+        })(),
+        supabase
+          .from(CONFIG.SUPABASE.TABLES.MESSAGES)
+          .update({
+            seen_at: new Date().toISOString(),
+            seen_by: state.currentUser.username
+          })
+          .eq('channel_id', channelId)
+          .neq('username', state.currentUser.username)
+          .is('seen_at', null),
+      ]);
+
+      if (readsResult.error) {
+        console.warn('Failed to record read receipts:', readsResult.error);
+        setConnectionIssue('badges', true);
+      } else {
+        console.log(`✅ Recorded ${readsResult.count || 0} read receipts`);
+        setConnectionIssue('badges', false);
       }
 
-      const { error } = await supabase
-        .from(CONFIG.SUPABASE.TABLES.MESSAGES)
-        .update({ 
-          seen_at: new Date().toISOString(),
-          seen_by: state.currentUser.username
-        })
-        .eq('channel_id', channelId)
-        .neq('username', state.currentUser.username)
-        .is('seen_at', null);
-        
-      if (error) {
-        console.warn('Failed to mark seen:', error);
+      if (seenResult.error) {
+        console.warn('Failed to mark seen:', seenResult.error);
       } else {
         console.log('✅ Messages marked as seen');
       }
@@ -2562,6 +2611,7 @@
             if (newMessage.username !== state.currentUser?.username) {
               console.log('🔔 New message from someone else - marking delivered');
               if (isChatDetailVisible(channelId)) {
+                clearUnreadBadgeForChannel(channelId);
                 await queueMarkSeen(channelId);
               }
             }
@@ -2581,14 +2631,15 @@
         // here, then (below) separately queue up markDelivered/markSeen
         // when the chat is open — two independent async chains touching
         // the same badge state. When the chat IS open, skip straight to
-        // queueMarkSeen(): it already ends with its own refreshUnreadBadges()
-        // once the read receipt is actually recorded, so the badge still
-        // updates, just without the redundant earlier call that was the
-        // other half of the race described above queueMarkSeen()'s
-        // definition. Only channels the user *isn't* currently looking at
-        // need this standalone refresh to show their new unread count.
+        // clearUnreadBadgeForChannel() (instant, local) + queueMarkSeen()
+        // (background persistence, which ends with its own
+        // refreshUnreadBadges() to reconcile) — the person is looking
+        // right at this message, there's nothing to wait on the network
+        // for. Only channels the user *isn't* currently looking at need
+        // the network-backed refresh to show their new unread count.
         if (newMessage.username !== state.currentUser?.username && isChatDetailVisible(channelId)) {
           console.log('🔔 New message from someone else - marking delivered');
+          clearUnreadBadgeForChannel(channelId);
           await queueMarkSeen(channelId);
         } else {
           await refreshUnreadBadges();
@@ -7027,6 +7078,7 @@
             console.log("✅ Catch-up complete!");
 
             if (isChatDetailVisible(state.currentChannel.id)) {
+              clearUnreadBadgeForChannel(state.currentChannel.id);
               await queueMarkSeen(state.currentChannel.id);
             }
           } catch (e) {
@@ -7116,6 +7168,7 @@
     updateProfileScreen();
 
     if (markSeenNow) {
+      clearUnreadBadgeForChannel(channel.id);
       queueMarkSeen(channel.id);
     } else {
       refreshUnreadBadges();
