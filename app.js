@@ -2268,7 +2268,69 @@
   }
 
   // ============================================================
-  // MEMBERSHIP POLLING FALLBACK
+  // INSTANT MEMBERSHIP NOTIFICATIONS (Realtime Broadcast)
+  // ============================================================
+  // FIX: "decrease the time from 15 seconds to real-time" — the 15s
+  // membership poll (below) is a safety net, not a real-time mechanism;
+  // shrinking its interval only trades DB load for a smaller worst-case
+  // delay, it can't reach "instant". True real-time here doesn't need
+  // postgres_changes at all: Supabase Realtime's Broadcast feature is a
+  // plain pub/sub push over the same websocket, sent directly from the
+  // admin's client the moment addMemberToChannel()/removeMember()
+  // succeed — no dependency on the MEMBERS table being in the
+  // `supabase_realtime` publication, no WAL decoding, and no RLS
+  // evaluation on postgres_changes, all of which we've been fighting.
+  // Every non-admin client subscribes to a channel named after their own
+  // username at login (subscribeToMyMembershipBroadcast) and reacts the
+  // instant a message for them arrives. The admin side
+  // (notifyMembershipChange) opens that same-named channel just long
+  // enough to send one message, then tears it down.
+  function memberBroadcastChannelName(username) {
+    return `member-updates:${username}`;
+  }
+
+  function notifyMembershipChange(username, event, channelId) {
+    const name = memberBroadcastChannelName(username);
+    const ch = supabase.channel(name);
+    ch.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        ch.send({ type: 'broadcast', event, payload: { channelId: String(channelId) } });
+        // Small delay before teardown — send() fires immediately over the
+        // already-open socket, this just avoids racing the removal.
+        setTimeout(() => supabase.removeChannel(ch), 500);
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        supabase.removeChannel(ch);
+      }
+    });
+  }
+
+  let myMembershipBroadcastChannel = null;
+
+  function subscribeToMyMembershipBroadcast() {
+    unsubscribeFromMyMembershipBroadcast();
+    if (!state.currentUser || state.isAdmin) return; // admins see every channel regardless of membership rows
+    myMembershipBroadcastChannel = supabase
+      .channel(memberBroadcastChannelName(state.currentUser.username))
+      .on('broadcast', { event: 'membership-added' }, (payload) => {
+        const channelId = payload?.payload?.channelId;
+        if (channelId) handleMembershipAdded({ username: state.currentUser.username, channel_id: channelId });
+      })
+      .on('broadcast', { event: 'membership-removed' }, (payload) => {
+        const channelId = payload?.payload?.channelId;
+        if (channelId) expelFromChannel(String(channelId));
+      })
+      .subscribe();
+  }
+
+  function unsubscribeFromMyMembershipBroadcast() {
+    if (myMembershipBroadcastChannel) {
+      supabase.removeChannel(myMembershipBroadcastChannel);
+      myMembershipBroadcastChannel = null;
+    }
+  }
+
+  // ============================================================
+  // MEMBERSHIP POLLING FALLBACK (safety net only)
   // ============================================================
   // FIX: "still need to refresh to see the channel after being added" —
   // handleMembershipAdded() + the now-FILTERED INSERT listener in
@@ -2289,7 +2351,7 @@
   // skipped — they already see every channel unconditionally (see
   // loadChannels()), so there's nothing for them to miss.
   let membershipPollTimer = null;
-  const MEMBERSHIP_POLL_INTERVAL = 15000;
+  const MEMBERSHIP_POLL_INTERVAL = 45000;
 
   async function pollMyMemberships() {
     if (!state.currentUser || state.isAdmin) return;
@@ -4616,14 +4678,20 @@
 
     if (error) { alert('Could not add member: ' + error.message); return; }
 
+    notifyMembershipChange(username, 'membership-added', state.currentChannel.id);
+
     await loadMembers(state.currentChannel.id);
     loadRegisteredUsersList();
   }
 
   async function removeMember(memberId) {
     if (!confirm('Remove this person from the group?')) return;
+    const removedMember = state.currentMembers.find((m) => String(m.id) === String(memberId));
     const { error } = await supabase.from(CONFIG.SUPABASE.TABLES.MEMBERS).delete().eq('id', memberId);
     if (error) { alert('Remove failed: ' + error.message); return; }
+    if (removedMember && state.currentChannel) {
+      notifyMembershipChange(removedMember.username, 'membership-removed', state.currentChannel.id);
+    }
     await loadMembers(state.currentChannel.id);
     loadRegisteredUsersList();
   }
@@ -7257,6 +7325,7 @@
 
         if (state.currentUser) {
           subscribeToChannelListUpdates();
+          subscribeToMyMembershipBroadcast();
           try {
             state.channelPreviews = await loadChannelPreviews(allChannels.map((c) => c.id));
             renderChatList(allChannels);
@@ -7511,6 +7580,7 @@
     // Session — that's the point permissions should be requested.
     await renderChannels();
     subscribeToChannelListUpdates();
+    subscribeToMyMembershipBroadcast();
     startChannelPreviewPolling();
     startMembershipPolling();
     startMediaExpiryWatcher();
@@ -7642,6 +7712,7 @@
     teardownStatusesSubscription();
     stopStatusExpiryWatcher();
     unsubscribeFromChannelListUpdates();
+    unsubscribeFromMyMembershipBroadcast();
     unsubscribeAllChannelBadges();
     stopChannelPreviewPolling();
     stopMembershipPolling();
