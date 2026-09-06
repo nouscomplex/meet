@@ -115,6 +115,20 @@ header#main-header .middle {
   display: none !important;
 }
 
+/* The .recorder-icon button above only hides the TRIGGER — clicking it
+   (even while hidden, which is exactly what NOUS_COMPLEX_AUTO_START_
+   RECORDING does programmatically) still opens PlugNmeet's own "How
+   would you like to record?" dialog (a Headless UI <Dialog>, form
+   class="RecorderPop"). That dialog needs hiding separately since it's
+   a fully independent, dynamically-mounted element, not a child of the
+   button. Targeting the dialog wrapper via :has() (already used
+   elsewhere in this file, e.g. the whiteboard side-panel rule below) so
+   this doesn't depend on Headless UI's auto-generated, run-specific
+   dialog ids (headlessui-dialog-_r_n_ etc., which change every load). */
+[role="dialog"]:has(form.RecorderPop) {
+  display: none !important;
+}
+
 /* Whiteboard: remove the row of external link buttons (Documentation,
    Read our blog, Found an issue? Submit, YouTube) from the top of the
    Excalidraw "Help" panel. The whiteboard is Excalidraw, embedded as-is
