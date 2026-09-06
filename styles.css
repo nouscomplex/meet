@@ -1,182 +1,3950 @@
-/* Nous Complex Orbit — PlugNmeet text-color fix
-   header_bg_color / side_panel_bg_color (config.js) only paint the
-   background; PlugNmeet's own title/participant text stays dark by
-   default, which is unreadable against navy/sky-blue. This forces that
-   text (and icons, since most use currentColor) to white, while leaving
-   form inputs (search box, chat box) alone since those sit on their own
-   white background and need to stay dark-on-white. */
+/* ============================================================
+   NOUS COMPLEX ORBIT — Design System
+   Mobile-first communication app.
+   Signature device: role-colored identity markers
+   (Admin = violet, Teacher = green, Student = rose)
+   ============================================================ */
 
-body:not(.dark) header#main-header,
-body:not(.dark) header#main-header *:not(input):not(textarea) {
-  color: #ffffff !important;
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  /* Real visible viewport height, kept in sync with window.visualViewport by
+     app.js. Falls back to 100dvh/100vh until JS runs (or if it can't run). */
+  --app-height: 100dvh;
+
+  /* Surfaces */
+  --bg: #fcfcfc;
+  --surface: #FFFFFF;
+  --surface-sunken: #ededed;
+  --border: #ebebed;
+  --border-strong: #e8e9eb;
+
+  /* Text */
+  --ink: #14162B;
+  --ink-soft: #6E7385;
+  --ink-faint: #A2A6B8;
+
+  /* Brand accent (primary interactive color) */
+  --accent: #0E1B75;
+  --accent-dark: #0A1450;
+  --accent-wash: #f0f0f0;
+
+  /* Deep navy (headers, live pill, dark surfaces) — same family as accent */
+  --navy: #0E1B75;
+  --navy-soft: #16267F;
+
+  /* Chat design palette — used exclusively within the chat screen
+     (header, bubbles, composer, live pill, borders, ticks). */
+  --chat-navy: #0E1B75;
+  --chat-white: #FFFFFF;
+  --chat-blue: #99c9f7;
+  --chat-grey: #C9C9C9;
+  --chat-ink: #262626;
+  --chat-ink-soft: #6A6A6A;
+  --chat-accent: var(--chat-navy);
+  --role-admin: #77b3fc;
+  --role-admin-wash: #e4e3e8;
+  --role-teacher: #1FA971;
+  --role-teacher-wash: #E5F8EF;
+  --role-student: #E1508B;
+  --role-student-wash: #FCEAF2;
+
+  /* Live-session button "actually live" accent — a distinct blue from the
+     rest of the navy chat palette so a running class visually pops
+     against the muted grey "not live yet" state (see .btn-live-pill-live
+     / .btn-live-pill-waiting below). */
+  --live-blue: #2F80ED;
+  --live-blue-hover: #2568C4;
+
+  /* Status */
+  --danger: #E24C43;
+  --danger-wash: #FDEBEA;
+  --online: #22C55E;
+  --success: #22C55E;
+  --warning: #F59E0B;
+
+  /* Elevation */
+  --shadow-sm: 0 1px 2px rgba(20, 22, 43, 0.06);
+  --shadow-md: 0 8px 24px -6px rgba(20, 22, 43, 0.14);
+  --shadow-lg: 0 24px 48px -16px rgba(20, 22, 43, 0.28);
+
+  /* Type */
+  --font-display: 'Manrope', 'Inter', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+  --radius-pill: 999px;
 }
 
-body:not(.dark) footer#main-footer,
-body:not(.dark) footer#main-footer *:not(input):not(textarea) {
-  color: #ffffff !important;
+/* Dark theme overrides */
+body.theme-dark {
+  --bg: #0C0E22;
+  --surface: #15172F;
+  --surface-sunken: #1B1E3B;
+  --border: #262A4C;
+  --border-strong: #33375E;
+  --ink: #F1F2FA;
+  --ink-soft: #b9b9bd;
+  --ink-faint: #6E7395;
+
+  /* --accent is used as TEXT/ICON color in many places (icon-btn hover,
+     alpha index, "See all" links, profile meta, settings icons, etc).
+     The default navy (#0E1B75) is nearly invisible on a dark background,
+     which is what was causing icons/headers to "merge" in dark mode.
+     Lighten it here so every element using var(--accent) stays legible. */
+  --accent: #7BB8FF;
+  --accent-dark: #BFDBFF;
+  --accent-wash: #23204A;
+  --chat-white: #15172F;
+  --chat-grey: #33375E;
+  --chat-ink: #FFFFFF;
+  --chat-ink-soft: #C8CBDD;
+  --chat-accent: #7BB8FF;
+  --success: #34D399;
+  --live-blue: #4C9AFF;
+  --live-blue-hover: #3A87E6;
 }
 
-body:not(.dark) .side-panel-bg-color,
-body:not(.dark) .side-panel-bg-color *:not(input):not(textarea) {
-  color: #ffffff !important;
+/* ===== Reset & Base ===== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { 
+  -webkit-text-size-adjust: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
-/* Disable chat completely, for every role including teachers/admins.
-   PlugNmeet's server ignores a "turn chat off" request (a known quirk —
-   it can never override its own built-in "on" default), and even its
-   per-user lock setting always lets admins bypass it. So the only
-   reliable way to remove chat for absolutely everyone is to hide it
-   here: the chat icon in the footer that opens the panel, and the
-   panel's message list + message box themselves as a backup in case
-   chat gets opened another way (e.g. "Private chat" from a
-   participant's menu). */
-
-footer#main-footer .message {
-  display: none !important;
+body {
+  background: #E8E9F2;
+  color: var(--ink);
+  min-height: 100vh;
+  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
+  height: var(--app-height);
+  overflow: hidden;
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
-.all-MessageModule-wrap {
-  display: none !important;
+body.theme-dark { background: #050612; }
+
+::selection { background: var(--accent-wash); color: var(--accent-dark); }
+
+/* ===== Scrollbars ===== */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+button { font-family: inherit; }
+
+/* ============================================================
+   APP SHELL — phone frame
+   ============================================================ */
+.app-shell {
+  height: 100vh;
+  height: 100dvh;
+  height: var(--app-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  overflow: hidden;
 }
 
-.flex-1:has(> .all-MessageModule-wrap) + .message-form {
-  display: none !important;
+.phone-frame {
+  width: 100%;
+  max-width: 430px;
+  height: 100vh;
+  height: 100dvh;
+  height: var(--app-height);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  flex: 1;
 }
 
-/* Remove the "change theme" (light/dark) toggle from the live meeting.
-   Verified against the PlugNmeet client's own source: this button
-   (DarkThemeSwitcher) is rendered unconditionally in the header — there
-   is no per-room lock/feature flag for it, so it can't be turned off
-   from our own PLUGNMEET.ROOM_SETTINGS in config.js. The one setting
-   that does disable it (window.plugNmeetConfig.disableDarkMode) lives in
-   the PlugNmeet server's own static config.js under dist/assets/ on
-   meet.nouscomplex.com — a different codebase/server than this app — so
-   until that's set there too, CSS is the reliable way to remove it here,
-   same reasoning as the chat removal above. It's the only <button> in
-   the header's left-hand group (next to the logo), so target it
-   structurally; the aria-label match is a backup in case that markup
-   ever shifts. */
-header#main-header .left > button,
-header#main-header .left button[aria-label*="theme" i] {
-  display: none !important;
+/* Tablet-ish widths */
+@media (min-width: 560px) and (max-width: 1023.98px) {
+  .app-shell { padding: 28px 12px; }
+  .phone-frame {
+    min-height: 860px;
+    height: 860px;
+    border-radius: 34px;
+    box-shadow: var(--shadow-lg);
+    border: 8px solid var(--navy);
+    max-height: 90vh;
+  }
 }
 
-/* True-center the meeting title (header#main-header .middle) regardless
-   of how many icons sit in .left vs .right. By default PlugNmeet only
-   centers the title within whatever space is LEFT OVER between those two
-   shrink-0 flex groups (confirmed via DevTools: header#main-header >
-   .left / .middle[flex-1 justify-center] / .right) — so a lighter .left
-   and heavier .right visibly pull the title off true-center. That
-   imbalance already exists in PlugNmeet's stock header (.right holds 4
-   icons: notifications, signal, speaker, overflow menu — .left only ever
-   held the logo plus the now-hidden theme toggle above), and hiding that
-   theme toggle made .left even lighter, nudging the title slightly
-   further left than PlugNmeet's own unmodified header would sit.
-   Switching .middle to absolute + translate centers it against the
-   header's true full width instead of the leftover gap. max-width keeps a
-   long class name truncating safely (same ellipsis behavior as before)
-   instead of ever sliding under the logo or the icon cluster on a narrow
-   phone screen — the 340px figure is an estimate from the icon cluster's
-   on-screen width, not a measured exact value, so re-check this with a
-   longer class name and adjust if it ever gets close to overlapping. */
-header#main-header {
+/* ============================================================
+   DESKTOP LAYOUT - WhatsApp Web Style
+   ============================================================ */
+@media (min-width: 1024px) {
+  .app-shell { 
+    padding: 0; 
+    align-items: stretch; 
+    justify-content: stretch;
+    height: 100vh;
+    height: 100dvh;
+    height: var(--app-height);
+  }
+
+  .phone-frame {
+    max-width: none;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    height: var(--app-height);
+    min-height: 100vh;
+    min-height: 100dvh;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: var(--bg);
+  }
+
+  .app-body { 
+    flex-direction: row !important;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  /* Sidebar Navigation */
+  .bottom-nav {
+    position: static !important;
+    flex-direction: column !important;
+    justify-content: flex-start !important;
+    width: 92px !important;
+    height: 100% !important;
+    padding: 28px 8px calc(28px + env(safe-area-inset-bottom)) !important;
+    gap: 26px !important;
+    border-top: none !important;
+    border-right: 1px solid var(--border) !important;
+    order: -1 !important;
+    flex-shrink: 0 !important;
+    background: var(--surface) !important;
+    display: flex !important;
+  }
+  .nav-btn { 
+    padding: 0 !important; 
+    flex-direction: column !important;
+    gap: 4px !important;
+  }
+
+  /* ALL SCREENS - Always use flex on desktop */
+  .screen {
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100% !important;
+    background: var(--bg) !important;
+  }
+
+  /* Chat List - Left Panel */
+  #screenChats:not(.hidden) {
+    flex: 0 0 clamp(320px, 30vw, 420px) !important;
+    max-width: 420px !important;
+    height: 100% !important;
+    border-right: 1px solid var(--border) !important;
+    background: var(--bg) !important;
+    display: flex !important;
+  }
+
+  /* Highlight the currently open conversation in the list, like WhatsApp Web */
+  .chat-row.active {
+    background: var(--surface-sunken);
+  }
+  .chat-row.active:hover { background: var(--surface-sunken); }
+
+  /* Right Panel - Content Area */
+  #screenUpdates:not(.hidden),
+  #screenSettings:not(.hidden),
+  #screenChatDetail:not(.hidden),
+  #screenMembers:not(.hidden),
+  #screenProfile:not(.hidden),
+  #screenCalendar:not(.hidden) {
+    flex: 1 !important;
+    height: 100% !important;
+    min-width: 0 !important;
+    background: var(--surface) !important;
+    display: flex !important;
+  }
+
+  /* Hide screens when they have the hidden class */
+  .screen.hidden {
+    display: none !important;
+  }
+
+  /* Chat list scroll */
+  .chat-list {
+    padding-bottom: 24px !important;
+    background: var(--bg) !important;
+  }
+
+  #screenSettings { 
+    padding-bottom: 0 !important;
+    background: var(--surface) !important;
+  }
+  
+  .members-wrap { 
+    padding-bottom: 24px !important;
+    background: var(--surface) !important;
+  }
+
+  .fab { bottom: 28px !important; }
+  
+  /* Hide back buttons on desktop.
+     FIX: root cause of "group profile / members has no way back on laptop,
+     mobile is fine" — #backFromProfile and #backFromMembers used to be
+     blanket-hidden here along with the others. That's fine for screens
+     with an obvious alternate way back (Chat/Updates have the persistent
+     chat list or their own bottom-nav tab to fall back on), but Profile and
+     Members are reached by drilling further in (Chats → Chat → Profile →
+     Members) and, on desktop, each replaces the panel entirely with
+     nothing left pointing back to the screen you came from — re-clicking
+     the same row in the list on the left only gets you back to the chat
+     itself, not to Profile/Members specifically, and there was no visible
+     control that said so. Both are excluded from this rule so they keep
+     the same working back button mobile already has.
+
+     FIX: root cause of "the back button on Live Sessions Calendar is not
+     visible on laptop" — #backFromCalendar used to be grouped in this same
+     hidden list under the same "has the bottom nav to fall back on"
+     assumption as Chat/Updates. That assumption doesn't hold for Calendar:
+     unlike Chats/Updates it isn't a bottom-nav tab at all (only
+     chats/updates/settings are — see ROOT_TABS in app.js), and like
+     Profile/Members it's only reached by drilling in from elsewhere
+     (Settings → Admin tools → "Live Sessions Calendar"). Technically the
+     Settings icon does stay highlighted underneath and clicking it would
+     also leave Calendar (goToScreen() only updates the active tab for a
+     ROOT_TABS screen, and Calendar isn't one), but nothing on screen makes
+     that obvious — there was no visible way back. #backFromCalendar's
+     click handler (see app.js) already correctly returns to Settings; it
+     just needed to not be display:none. Excluded here the same way
+     Profile/Members already are. */
+  #backFromChat,
+  #backFromUpdates {
+    display: none !important;
+  }
+
+  .status-viewer-inner { 
+    border-radius: 0 !important; 
+    height: 100vh !important; 
+    max-height: 100vh !important; 
+    max-width: 480px !important; 
+  }
+
+  .brand-header {
+    background: var(--bg) !important;
+    border-bottom: 1px solid var(--border) !important;
+  }
+
+  /* screen-header sits inside panels whose background is var(--surface)
+     on desktop (Settings/Members/Profile/Updates). It previously used
+     var(--bg), a different shade, which created a mismatched seam
+     between header and body — most visible in dark mode. Match it to
+     the panel background and add a hairline border for definition. */
+  .screen-header {
+    background: var(--surface) !important;
+    border-bottom: 1px solid var(--border) !important;
+  }
+
+  .chat-detail-header {
+    border-bottom: 1px solid var(--border) !important;
+  }
+
+  /* Subtle dotted "wallpaper" behind messages, like WhatsApp Web's
+     chat background. Uses existing theme variables so it adapts
+     automatically to light/dark without any new colors. */
+  /* FIX: "scrolling on chat is not smooth" (desktop) — this used to be a
+     live radial-gradient() background. A CSS gradient isn't a bitmap: on
+     a tall, fast-scrolling container the browser has to keep re-painting
+     the gradient function itself as new area is revealed, which is a
+     well-known source of scroll jank in Chromium/Electron. An inline SVG
+     data-URI paints once and is then cached/composited as an ordinary
+     tiled raster image instead — same dotted look, no per-frame
+     recompute. currentColor inside a data-URI referenced via
+     background-image does NOT reliably inherit the host element's
+     `color` across browsers (unlike mask-image), so the dot color is
+     baked directly into each URI below, one per theme, matching the
+     existing --border values (#ebebed light / #262A4C dark) instead. */
+  .chat-scroll {
+    background-color: var(--chat-white);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='1' cy='1' r='1' fill='%23ebebed'/%3E%3C/svg%3E");
+    background-size: 24px 24px;
+  }
+  body.theme-dark .chat-scroll {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='1' cy='1' r='1' fill='%23262A4C'/%3E%3C/svg%3E");
+  }
+
+  /* Cap bubble width on wide screens — 84% of a 1600px window is huge */
+  .msg { max-width: 60%; }
+
+  /* ===== "No chat selected" welcome screen (desktop only) =====
+     WhatsApp Web hides the conversation header/composer entirely and
+     shows a centered placeholder until a chat is opened. Replicate
+     that instead of leaving the right panel blank on first load. */
+  #screenChatDetail.no-chat .chat-detail-header,
+  #screenChatDetail.no-chat .schedule-banner,
+  #screenChatDetail.no-chat .reply-preview,
+  #screenChatDetail.no-chat .file-preview-bar,
+  #screenChatDetail.no-chat #fileUploadStatus,
+  #screenChatDetail.no-chat .composer {
+    display: none !important;
+  }
+  #screenChatDetail.no-chat .chat-scroll {
+    background-image: none;
+    align-items: center;
+    justify-content: center;
+  }
+  #screenChatDetail.no-chat #chatMessages {
+    display: flex;
+    width: 100%;
+    height: 100%;
+  }
+
+  .chat-welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 24px;
+    text-align: center;
+  }
+  .chat-welcome-icon {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface-sunken);
+    color: var(--ink-faint);
+    font-size: 34px;
+  }
+  /* FIX: sizes the inline SVG that replaced the fa-comments glyph above —
+     an <svg>, unlike an <i> icon font glyph, doesn't scale off
+     .chat-welcome-icon's font-size, so it needs its own explicit
+     width/height. fill="currentColor" on the SVG itself still picks up
+     .chat-welcome-icon's `color`, so no color rule is needed here. */
+  .chat-welcome-icon-svg {
+    width: 40px;
+    height: 40px;
+    display: block;
+  }
+  .chat-welcome-title {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 1.4rem;
+    color: var(--ink);
+  }
+  .chat-welcome-sub {
+    font-size: 13.5px;
+    color: var(--ink-faint);
+    max-width: 320px;
+    line-height: 1.5;
+  }
+}
+
+.hidden { display: none !important; }
+.center-text { text-align: center; }
+.empty-note { font-size: 13px; color: var(--ink-faint); padding: 10px 2px; }
+
+/* ============================================================
+   SESSION CHECK LOADER / SPLASH SCREEN (FIX — see #appLoading in index.html)
+   ============================================================ */
+/* FIX: root cause of "why is the loading screen navy blue instead of
+   white (#ffffff)" — this used to be `background: var(--accent)`, and
+   --accent resolves to #0E1B75 (navy) in light mode and #7BB8FF (pale
+   blue) in dark mode — never white. The splash shows before app.js has
+   even decided light vs. dark (it's the very first thing painted), so
+   it's pinned to a literal #ffffff here instead of a theme variable —
+   it should look the same regardless of which theme the user ends up in. */
+.app-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: #ffffff;
+}
+/* FIX: was .app-loading-emblem — a small 64px app-icon crop of
+   nouscomplex.png. This is the app's splash screen now, so it renders the
+   dedicated nouscomplex-splash.png graphic large enough to read as a real
+   splash (not a tiny icon), without cropping it into a rounded square. */
+.app-loading-splash {
+  width: min(220px, 60vw);
+  height: auto;
+  object-fit: contain;
+}
+/* FIX: the ring/top colors here were white-on-white, tuned for the old
+   navy background — invisible against the new #ffffff splash above.
+   Switched to the navy accent so the spinner is actually visible. */
+.app-loading-spinner {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 3px solid rgba(14, 27, 117, 0.16);
+  border-top-color: var(--accent);
+  animation: orbit-loading-spin 0.8s linear infinite;
+}
+@keyframes orbit-loading-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ============================================================
+   AUTH CARD
+   ============================================================ */
+.auth-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+  overflow-y: auto;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 360px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: 36px 30px 28px;
+}
+
+.auth-emblem {
+  /* FIX: root cause of "logo size is very small on login screen" — this
+     used to force the logo into a fixed 56x56px square. nouscomplex.png
+     is a wordmark (wider than tall), so object-fit: contain was shrinking
+     the whole image down to fit inside that tiny box instead of letting
+     it read at a normal size. Now sized by width with height:auto, so the
+     logo scales up to a legible size while keeping its own aspect ratio;
+     border-radius removed since that was meant for a square icon crop,
+     not a wordmark. */
+  width: min(180px, 60%);
+  height: auto;
+  object-fit: contain;
+  margin: 0 auto 18px;
+  display: block;
+  background: transparent;
+  mix-blend-mode: multiply;
+  border: none;
+  box-shadow: none;
+  outline: none;
+}
+
+.auth-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.5rem;
+  text-align: center;
+  color: var(--ink);
+  margin-bottom: 4px;
+  letter-spacing: -0.01em;
+}
+
+.auth-sub {
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.auth-note {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  text-align: center;
+  margin-top: 18px;
+}
+
+.error-text {
+  color: var(--danger);
+  font-size: 13px;
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ============================================================
+   FORM ELEMENTS
+   ============================================================ */
+.field {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 14.5px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.field::placeholder { color: var(--ink-faint); }
+.field:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+
+.field-sm {
+  padding: 9px 11px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  flex: 1;
+  min-width: 0;
+}
+.field-sm:focus { outline: none; border-color: var(--accent); }
+
+/* ============================================================
+   TEXT FORMATTING TOOLBAR + RICH TEXT EDITOR
+   Shared by the group-description editor (#descFormatToolbar +
+   #channelDescInput) and the status/update composer
+   (#statusFormatToolbar + #statusComposeText, built dynamically in
+   openStatusComposer() in app.js). #channelDescInput/#statusComposeText
+   are `contenteditable` <div>s (.rich-editor below), not <input>/
+   <textarea> — toolbar buttons act on the live selection via
+   document.execCommand()/wrapSelectionInEditor()/applyEditorAlign() in
+   app.js, so Bold/Italic/Strikethrough/Monospace/alignment show as real
+   formatting immediately, not raw marker characters. What's typed is
+   serialized to plain marker text for storage (editorToMarkerValue()) and
+   rendered back the same way wherever it's displayed (renderRichBlocks()).
+   ============================================================ */
+.format-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+/* Separates the inline markers (bold/italic/strike/mono/line break) from
+   the alignment buttons, which behave differently — alignment applies to
+   whichever line(s) the current selection/cursor is in, not the whole
+   field (see getSelectedEditorLines() in app.js). */
+.format-toolbar-divider {
+  width: 1.5px;
+  height: 18px;
+  background: var(--border-strong);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+.format-toolbar-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.format-toolbar-btn:hover { background: var(--surface-sunken); color: var(--accent); border-color: var(--border-strong); }
+.format-toolbar-btn:active { transform: scale(0.94); }
+
+/* The contenteditable editor itself. Reuses .field-sm/.field for
+   padding/border/background so it looks identical to the <input>/
+   <textarea> it replaced; this just adds what a plain form control gets
+   for free and a contenteditable <div> doesn't. */
+.rich-editor {
+  display: block;
+  width: 100%;
+  min-height: 76px;
+  max-height: 220px;
+  overflow-y: auto;
+  cursor: text;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.rich-editor div { min-height: 1.4em; } /* keeps an empty line's height consistent with a text line */
+/* Placeholder text — contenteditable has no native `placeholder`
+   attribute. :empty only matches when there are truly no child nodes,
+   which is exactly the state populateRichEditor() (app.js) leaves an
+   empty field in, so this shows correctly without extra JS bookkeeping. */
+.rich-editor:empty:before {
+  content: attr(data-placeholder);
+  color: var(--ink-faint);
+  pointer-events: none;
+}
+/* .profile-card and .modal-card (the editors' containers) both set
+   user-select: none for their own non-editable chrome (buttons, labels).
+   Without overriding it back here, that inherits straight into the
+   editor and blocks selecting text to format — an ID selector beats
+   those class rules regardless of which comes later in the file. */
+#channelDescInput,
+#statusComposeText {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Rendered output of the ```mono``` marker — a small inline code chip,
+   matching how the rest of the app treats monospace/code-like content. */
+.msg-mono {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  background: var(--surface-sunken);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.92em;
+}
+.status-viewer-body .msg-mono { background: rgba(255, 255, 255, 0.16); color: #fff; }
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: transform 0.1s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.btn:active { transform: scale(0.98); }
+
+.btn-primary { background: var(--navy); color: #fff; padding: 13px 20px; }
+.btn-primary:hover { background: var(--accent-dark); }
+
+/* Standalone variants (not just .btn modifiers) — used by modal
+   button stacks like the delete-user data choice, which apply these
+   classes directly rather than alongside .btn. */
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 14px;
+  border: 1.5px solid var(--border);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink-soft);
+  padding: 12px 18px;
+  transition: transform 0.1s ease, background 0.15s ease;
+}
+.btn-secondary:hover { background: var(--border); }
+.btn-secondary:active { transform: scale(0.98); }
+
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  background: var(--danger);
+  color: #fff;
+  padding: 12px 18px;
+  transition: transform 0.1s ease, filter 0.15s ease;
+}
+.btn-danger:hover { filter: brightness(0.92); }
+.btn-danger:active { transform: scale(0.98); }
+
+.btn-ghost {
+  background: var(--surface);
+  color: var(--ink-soft);
+  border: 1.5px solid var(--border);
+  padding: 10px 14px;
+}
+.btn-ghost:hover { border-color: var(--border-strong); color: var(--ink); background: var(--surface-sunken); }
+
+.btn-block { width: 100%; }
+
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1.5px solid transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+.icon-btn:hover { background: var(--surface-sunken); color: var(--accent); }
+
+.back-btn { background: var(--surface-sunken); }
+
+.btn-admin-sm {
+  font-size: 12.5px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--role-admin);
+  color: var(--role-admin);
+  background: var(--role-admin-wash);
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.btn-admin-sm:hover { background: var(--role-admin); color: #fff; }
+
+.btn-navy-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  padding: 13px;
+  margin: 14px 18px 4px;
+  width: calc(100% - 36px);
+  background: var(--navy);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-pill);
+  font-weight: 700;
+  font-size: 14.5px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.btn-navy-pill:hover { background: var(--navy-soft); }
+
+/* ============================================================
+   ROLE IDENTITY SYSTEM
+   ============================================================ */
+.role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 4px 10px 4px 8px;
+  border-radius: 999px;
+  color: var(--role-student);
+  background: var(--role-student-wash);
+}
+.role-chip::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.role-admin-chip { color: var(--role-admin); background: var(--role-admin-wash); }
+.role-teacher-chip { color: var(--role-teacher); background: var(--role-teacher-wash); }
+.role-student-chip { color: var(--role-student); background: var(--role-student-wash); }
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  color: #fff;
+  flex-shrink: 0;
   position: relative;
 }
-header#main-header .middle {
+.avatar.sm { width: 32px; height: 32px; font-size: 13px; }
+.avatar.lg { width: 68px; height: 68px; font-size: 24px; }
+
+.avatar-admin { background: linear-gradient(155deg, var(--role-admin), #7A70F0); }
+.avatar-teacher { background: linear-gradient(155deg, var(--role-teacher), #3FC98C); }
+.avatar-student { background: linear-gradient(155deg, var(--role-student), #EE79A8); }
+/* FIX: the group's own avatar circle (channelAvatarHtml() in app.js) —
+   just a plain white backing behind the (already-square) logo image, no
+   role-color gradient needed since every group shows the same photo. */
+.avatar-group { background: #fff; }
+
+/* FIX: "make nous complex logo a group profile logo and teachers and
+   students profile logo" — the logo image now fills the same circular
+   .avatar slot that used to just hold a role-colored initial (see
+   avatarHtml()/channelAvatarHtml()/setAvatarEl() in app.js). object-fit:
+   cover crops it edge-to-edge into the circle without distorting it —
+   the source PNG is already a tightly-cropped square, so this shows the
+   whole logo, not just a sliver of it. Lives on the <img> itself (not
+   .avatar) so .avatar-dot — a sibling, not a child of the image — is
+   never affected by any clipping here. */
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #fff;
+  display: block;
+}
+
+.avatar-dot {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  border: 2.5px solid var(--surface);
+}
+.avatar-dot.online { background: var(--online); }
+
+/* ============================================================
+   APP BODY / SCREENS
+   ============================================================ */
+.app-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  height: 100%;
+}
+
+.screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  height: 100%;
+}
+
+/* ===== Brand header (Chats screen) ===== */
+.brand-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 18px 14px;
+  flex-shrink: 0;
+  background: var(--bg);
+}
+.brand-mark { 
+  display: none;
+}
+
+.text-logo {
+  /* FIX: "read the font of orbit and fix that font for NOUS COMPLEX and
+     make it aligned" — this used to be a different font entirely
+     ('Helvetica Neue') at a different size/weight (1.25rem/700) than
+     .brand-word ("Orbit", var(--font-display) i.e. Manrope, 1.5rem/800),
+     so the two halves of the header lockup were visibly mismatched and,
+     since mismatched fonts carry different metrics/baselines, never quite
+     lined up even though both sit in the same flex row. Now matches
+     .brand-word's font-family/size/weight/letter-spacing exactly, and
+     line-height:1 + vertical-align:middle keeps both spans' baselines
+     level within the flex row instead of drifting per-font. */
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  vertical-align: middle;
+  color: #0E1B75;
+  text-transform: uppercase;
+  display: inline-block;
+  white-space: nowrap;
+  border: none;
+  box-shadow: none;
+  outline: none;
+  background: transparent;
+}
+
+body.theme-dark .text-logo {
+  color: #7BB8FF;
+}
+
+.brand-word { font-family: var(--font-display); font-weight: 800; font-size: 1.5rem; color: #C9CBDA; letter-spacing: -0.01em; line-height: 1; vertical-align: middle; }
+body.theme-dark .brand-word { color: #3A3E63; }
+
+/* ===== Generic screen header ===== */
+.screen-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px 14px;
+  flex-shrink: 0;
+  background: var(--bg);
+  z-index: 2;
+  position: relative;
+}
+.screen-title { font-family: var(--font-display); font-weight: 800; font-size: 1.25rem; color: var(--ink); flex: 1; }
+
+/* ===== Search bar ===== */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 18px 12px;
+  padding: 11px 14px;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-pill);
+  color: var(--ink-faint);
+  flex-shrink: 0;
+}
+.search-bar input {
+  border: none;
+  background: transparent;
+  outline: none;
+  flex: 1;
+  font-size: 14px;
+  color: var(--ink);
+  font-family: var(--font-body);
+}
+.search-bar input::placeholder { color: var(--ink-faint); }
+
+/* ============================================================
+   CHAT LIST
+   ============================================================ */
+.chat-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 10px 90px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* FIX: root cause of "app on opening shows the empty grey page before
+   loading the chats" — #channelList used to ship with nothing in it but
+   an HTML comment (see index.html). completeLogin() in app.js reveals
+   #dashboard as soon as it knows the user is signed in (that itself is a
+   deliberate, separate fix — see the comment on #appLoading in
+   index.html), but the channel list itself still has to make its own
+   network round trip (loadChannels()) before it has anything to render.
+   Between those two moments there was no spinner, no skeleton, nothing —
+   just blank space under the search bar, which on a slow connection can
+   sit there for a second or more and reads as a broken/empty screen.
+   These placeholder rows ship directly in #channelList's markup so
+   they're visible instantly, and renderChatList() (app.js) already does
+   `channelList.innerHTML = ''` before drawing real rows, so they're
+   replaced automatically the moment the real data (or the "no channels"
+   empty-state) is ready — no app.js changes needed for this part. */
+.chat-row-skeleton {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 8px;
+}
+.chat-row-skeleton::before {
+  content: '';
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--surface-sunken);
+  flex-shrink: 0;
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+.chat-row-skeleton::after {
+  content: '';
+  flex: 1;
+  height: 14px;
+  border-radius: 6px;
+  background: var(--surface-sunken);
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.chat-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 8px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.chat-row:hover, .chat-row:active { background: var(--surface-sunken); }
+.chat-row .avatar { position: relative; }
+
+.chat-row-body { flex: 1; min-width: 0; }
+.chat-row-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.chat-row-name { font-weight: 700; font-size: 14.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: none; -webkit-user-select: none; }
+.chat-row-time { font-size: 11px; color: var(--ink-faint); flex-shrink: 0; user-select: none; -webkit-user-select: none; }
+.chat-row-bottom { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; }
+.chat-row-preview { font-size: 13px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: none; -webkit-user-select: none; }
+
+.unread-badge {
+  background: var(--accent);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  min-width: 19px;
+  height: 19px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  flex-shrink: 0;
+}
+
+/* FIX: rename/delete for a channel used to be icon buttons revealed
+   on row hover (chat-admin-actions). Replaced by the admin-only
+   #channelSelectHeader select bar (long-press / right-click a row) —
+   see renderChatList()/selectChannelForActions() in app.js. */
+
+/* Floating action button */
+.fab {
+  position: absolute;
+  right: 20px;
+  bottom: 92px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  font-size: 18px;
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, transform 0.1s ease;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.fab:hover { background: var(--accent-dark); }
+.fab:active { transform: scale(0.95); }
+
+/* ============================================================
+   UPDATES LIST
+   ============================================================ */
+.updates-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 18px 90px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.update-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 4px;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.update-row:hover { background: var(--surface-sunken); }
+.update-row .avatar { box-shadow: 0 0 0 2.5px var(--surface), 0 0 0 4px var(--accent); }
+.update-row-body { flex: 1; min-width: 0; }
+.update-row-name { font-weight: 700; font-size: 14px; color: var(--ink); }
+.update-row-time { font-size: 12px; color: var(--ink-faint); display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.update-row-preview { font-size: 12.5px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+/* FIX: admin-only "seen by N" indicator on each update row — see
+   renderStatuses()/openStatusInfoModal() in app.js. */
+.update-row-seen { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--ink-soft); }
+.update-row-seen i { font-size: 10px; }
+
+.status-add-wrap { padding: 10px 18px 18px; flex-shrink: 0; }
+
+/* ============================================================
+   SETTINGS
+   ============================================================ */
+#screenSettings { 
+  overflow: hidden;
+  height: 100%;
+}
+
+.settings-scroll-container {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 0 20px 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.settings-profile-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 4px 18px 18px;
+  padding: 16px;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
+}
+.settings-profile-name { font-weight: 800; font-size: 15.5px; color: var(--ink); font-family: var(--font-display); user-select: text; -webkit-user-select: text; }
+.settings-profile-email { font-size: 12.5px; color: var(--ink-faint); margin-top: 2px; user-select: text; -webkit-user-select: text; }
+.settings-profile-displayname { font-size: 12px; color: var(--ink-soft); margin-top: 2px; user-select: text; -webkit-user-select: text; }
+
+.settings-list {
+  margin: 0 18px 10px;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.settings-list-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--role-admin);
+  padding: 12px 16px 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-row:last-child { border-bottom: none; }
+.settings-row-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--accent-wash);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.settings-row-text { flex: 1; min-width: 0; }
+.settings-row-title { font-weight: 700; font-size: 14px; color: var(--ink); }
+.settings-row-sub { font-size: 11.5px; color: var(--ink-faint); margin-top: 1px; }
+
+.settings-action-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 13px 16px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 13.5px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.settings-action-row:last-child { border-bottom: none; }
+.settings-action-row:hover { background: var(--surface-sunken); }
+.settings-action-row i { color: var(--role-admin); width: 16px; }
+
+/* FIX: "Add Teacher or Student" / "Manage Users" — now rows inside the
+   Admin tools card (see #adminSettingsCard in index.html) that expand a
+   panel in place, matching how Create New Session / Live Sessions
+   Calendar already look, instead of always-open standalone cards. */
+.admin-toggle-chevron {
+  margin-left: auto;
+  width: auto !important;
+  font-size: 12px;
+  color: var(--ink-faint) !important;
+  transition: transform 0.15s ease;
+}
+.admin-toggle-row[aria-expanded="true"] .admin-toggle-chevron {
+  transform: rotate(180deg);
+}
+.admin-panel {
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-sunken);
+}
+.admin-panel:last-child { border-bottom: none; }
+
+.logout-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: calc(100% - 36px);
+  margin: 10px 18px 0;
+  padding: 13px;
+  background: var(--danger-wash);
+  color: var(--danger);
+  border: none;
+  border-radius: var(--radius-pill);
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.logout-btn:hover { background: var(--danger); color: #fff; }
+
+/* ===== Toggle switch ===== */
+.toggle { position: relative; display: inline-block; width: 44px; height: 26px; flex-shrink: 0; }
+.toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+.toggle-track {
+  position: absolute; inset: 0;
+  background: var(--border-strong);
+  border-radius: 999px;
+  transition: background 0.18s ease;
+  cursor: pointer;
+}
+.toggle-thumb {
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 20px; height: 20px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.18s ease;
+}
+.toggle input:checked + .toggle-track { background: var(--accent); }
+.toggle input:checked + .toggle-track .toggle-thumb { transform: translateX(18px); }
+
+/* ============================================================
+   CHAT DETAIL
+   ============================================================ */
+.chat-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 14px;
+  border-bottom: 1px solid var(--chat-grey);
+  background: var(--chat-white);
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  flex-shrink: 0;
+}
+.chat-detail-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 0;
+  text-align: left;
+}
+.title-name { font-family: var(--font-display); font-weight: 800; font-size: 15.5px; color: var(--chat-accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.title-sub { font-size: 11.5px; color: var(--chat-ink-soft); }
+/* FIX: root cause of "why can't I see the user is typing in real-time" —
+   there was no typing-indicator feature anywhere in the app; nothing ever
+   broadcast a "typing" event and nothing listened for one. app.js now
+   broadcasts/listens via Supabase Realtime broadcast (see broadcastTyping()/
+   handleIncomingTyping()/renderTypingIndicator() in app.js) and swaps this
+   same #chatDetailSub subtitle to "<name> is typing…" while it's active.
+   This just makes that state visually distinct from the normal "N members
+   online" text. */
+.title-sub.typing-active { color: var(--chat-accent); font-weight: 600; }
+
+.btn-live-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 13px;
+  border-radius: var(--radius-pill);
+  background: var(--chat-navy);
+  color: var(--chat-white);
+  border: none;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 11.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.btn-live-pill:hover { background: #16267F; }
+.btn-live-pill i { color: var(--chat-blue); }
+
+body.theme-dark .btn-live-pill { color: #FFFFFF; }
+
+/* FIX: "dead" state for the live-session button — active only while a
+   session is actually scheduled for the open group (state.currentSchedule
+   in app.js). Muted grey instead of the vivid navy so it visibly reads as
+   inactive rather than just failing to respond to taps. Both the
+   `:disabled` pseudo-class and the `.btn-live-pill-dead` class are covered
+   since app.js toggles both together; the class alone is also what the
+   markup ships with by default before app.js has checked for a schedule. */
+.btn-live-pill:disabled,
+.btn-live-pill.btn-live-pill-dead {
+  background: var(--border-strong);
+  color: var(--ink-faint);
+  cursor: not-allowed;
+  pointer-events: none;
+  box-shadow: none;
+}
+.btn-live-pill:disabled i,
+.btn-live-pill.btn-live-pill-dead i {
+  color: var(--ink-faint);
+}
+.btn-live-pill:disabled:hover,
+.btn-live-pill.btn-live-pill-dead:hover {
+  background: var(--border-strong);
+}
+body.theme-dark .btn-live-pill:disabled,
+body.theme-dark .btn-live-pill.btn-live-pill-dead {
+  color: var(--ink-faint);
+}
+
+/* "Waiting" state: inside the scheduled window and clickable — the
+   concerned teacher (or an admin) can tap this to start the class — but
+   nobody has pressed Start yet (class_schedule.is_live is still false).
+   Same muted grey look as the disabled .btn-live-pill-dead state above
+   so it visually reads as "not live yet", but WITHOUT :disabled/
+   pointer-events:none, since this one has to actually respond to taps.
+   See getLiveButtonLabel()/updateLiveButtonState() in app.js. */
+.btn-live-pill.btn-live-pill-waiting {
+  background: var(--border-strong);
+  color: var(--ink-faint);
+}
+.btn-live-pill.btn-live-pill-waiting i { color: var(--ink-faint); }
+.btn-live-pill.btn-live-pill-waiting:hover { background: var(--border-strong); }
+body.theme-dark .btn-live-pill.btn-live-pill-waiting { color: var(--ink-faint); }
+
+/* "Live" state: class_schedule.is_live is true — the class is actually
+   running. Distinct blue (var(--live-blue), not the default navy) so a
+   live session is unmistakable at a glance, whether you're the teacher
+   rejoining or a student joining for the first time. */
+.btn-live-pill.btn-live-pill-live {
+  background: var(--live-blue);
+  color: #FFFFFF;
+}
+.btn-live-pill.btn-live-pill-live i { color: #FFFFFF; }
+.btn-live-pill.btn-live-pill-live:hover { background: var(--live-blue-hover); }
+body.theme-dark .btn-live-pill.btn-live-pill-live { color: #FFFFFF; }
+
+.schedule-banner {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 18px;
+  background: rgba(107, 180, 250, 0.16);
+  color: var(--chat-accent);
+  font-size: 12.5px;
+  border-bottom: 1px solid var(--chat-grey);
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.chat-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  background: var(--chat-white);
+  -webkit-overflow-scrolling: touch;
+  /* FIX: "scrolling on chat is not smooth" — with hundreds of message
+     bubbles (each carrying its own border-radius/box-shadow), a plain
+     overflow:auto container isn't always promoted to its own compositor
+     layer, so Chromium/Electron can fall back to repainting on the main
+     thread every scroll frame instead of just re-positioning a cached
+     layer. will-change:scroll-position is the standard hint that tells
+     the browser to give this element its own scrolling layer up front. */
+  will-change: scroll-position;
+}
+
+#chatMessages {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.msg { display: flex; gap: 8px; max-width: 84%; animation: msgIn 0.2s ease-out; }
+.msg-theirs { align-self: flex-start; }
+.msg-mine { align-self: flex-end; flex-direction: row-reverse; }
+/* FIX: root cause of "opening the chat appears as animation from bottom
+   to up instead of being consistent" — every .msg plays msgIn below so a
+   genuinely new message eases into view. But opening (or reopening) a
+   chat builds every message in its history as a fresh .msg node in one
+   pass, so without this override they'd all play msgIn at once and the
+   whole conversation would visibly slide up from the bottom on open.
+   app.js's buildMessageEl()/renderMessages() (see chatNeedsInitialPaint)
+   add this class only to that first bulk paint's nodes, so opening a
+   chat is instant like every other screen while a real new message
+   arriving afterward still gets its entrance animation. Higher
+   specificity than the .msg rule above so it wins over it. */
+.msg.msg-no-enter-anim { animation: none; }
+
+/* Centered "Today / Yesterday / Wed, Aug 12" pill between groups of
+   messages from different calendar days, WhatsApp-style. */
+/* ============================================================
+   LOAD OLDER MESSAGES INDICATOR
+   FIX: was a clickable pill button reading "Load older messages" that
+   swapped to plain text "Loading…" while fetching. History now loads
+   automatically as the user scrolls near the top of the chat, so this
+   is just a small non-interactive loading circle shown at the top of
+   #chatMessages for the duration of the fetch (reuses the
+   orbit-loading-spin keyframes defined above for the splash spinner).
+   ============================================================ */
+.load-older-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin: 10px 0 4px;
+  padding: 6px 0;
+  box-sizing: border-box;
+}
+.load-older-spinner {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2.5px solid var(--border);
+  border-top-color: var(--accent);
+  animation: orbit-loading-spin 0.8s linear infinite;
+}
+
+.day-divider {
+  align-self: center;
+  margin: 4px 0;
+}
+.day-divider-label {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--border);
+  color: var(--text-muted, #667085);
+  font-size: 12px;
+  font-weight: 600;
+}
+body.theme-dark .day-divider-label {
+  background: rgba(255,255,255,0.08);
+}
+
+@keyframes msgIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+.msg-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.msg-mine .msg-body { align-items: flex-end; }
+
+.msg-meta { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+.msg-mine .msg-meta { flex-direction: row-reverse; }
+
+.msg-author { font-size: 12px; font-weight: 700; color: var(--chat-accent); user-select: text; -webkit-user-select: text; }
+.msg-time { font-size: 10.5px; color: var(--chat-ink-soft); user-select: text; -webkit-user-select: text; }
+
+/* ============================================================
+   MESSAGE DELIVERY STATUS (NEW)
+   ============================================================ */
+.msg-delivery-status {
+  font-size: 10.5px;
+  color: var(--chat-ink-soft);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 4px;
+  font-weight: 500;
+}
+
+.msg-delivery-status.sent {
+  color: var(--chat-ink-soft);
+}
+
+.msg-delivery-status.delivered {
+  color: var(--chat-ink-soft);
+}
+
+.msg-delivery-status.delivered i {
+  color: var(--chat-blue);
+}
+
+.msg-delivery-status.seen {
+  color: var(--chat-blue);
+}
+
+.msg-delivery-status.seen i {
+  color: var(--chat-blue);
+}
+
+/* Ticks for sent messages — shown only on the sender's own outgoing
+   bubbles. Single grey check = sent, double grey check = delivered,
+   double blue check = seen. Uses --chat-ink-soft (not --chat-grey) so it
+   stays visible in dark mode too — --chat-grey is a near-black navy tone
+   there, meant for borders, and is nearly invisible as text/icon color. */
+.msg-ticks {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  font-size: 11px;
+  color: var(--chat-ink-soft);
+  line-height: 1;
+}
+
+.msg-ticks.delivered {
+  color: var(--chat-ink-soft);
+}
+
+.msg-ticks.seen {
+  color: var(--chat-blue);
+}
+
+.msg-seen-time {
+  font-size: 10px;
+  color: var(--chat-ink-soft);
+  margin-left: 4px;
+}
+
+/* Dark mode delivery status */
+body.theme-dark .msg-delivery-status {
+  color: var(--chat-ink-soft);
+}
+
+body.theme-dark .msg-delivery-status.seen {
+  color: #7BB8FF;
+}
+
+body.theme-dark .msg-ticks.seen {
+  color: #7BB8FF;
+}
+
+/* "delivered" stays grey (not blue) in dark mode too — only "seen" is
+   blue. --chat-ink-soft already resolves to a legible light grey
+   (#C8CBDD) here via the base .msg-ticks rule, so no override needed for
+   the delivered state. */
+
+/* Ticks now live inside the bubble/attachment corner instead of on
+   their own line below the message — see buildMessageEl(). Three
+   contexts:
+   - .msg-bubble-ticks: text bubbles. Floated so the last line of text
+     wraps around it, WhatsApp-style.
+   - .msg-corner-ticks: image/video attachments. A small pill overlaid
+     on the media itself. Anchored top-right (not bottom-right) so it
+     never collides with the image's expand button or a video's native
+     control bar, both of which sit at the bottom.
+   - .msg-inline-ticks: document cards, appended after the download icon.
+   All three override the tick color to translucent white (plus the
+   existing blue for "seen") since they now sit on the dark navy "mine"
+   bubble or a dark overlay pill, not the plain chat background the
+   base .msg-ticks color was tuned for. */
+.msg-bubble-ticks {
+  float: right;
+  margin-left: 6px;
+  margin-top: 4px;
+}
+
+.msg-corner-ticks {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.msg-inline-ticks {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+.msg-bubble-ticks .msg-ticks,
+.msg-bubble-ticks .msg-ticks.delivered,
+.msg-corner-ticks .msg-ticks,
+.msg-corner-ticks .msg-ticks.delivered,
+.msg-inline-ticks .msg-ticks,
+.msg-inline-ticks .msg-ticks.delivered {
+  color: rgba(255, 255, 255, 0.72);
+}
+.msg-bubble-ticks .msg-ticks.seen,
+.msg-corner-ticks .msg-ticks.seen,
+.msg-inline-ticks .msg-ticks.seen {
+  color: var(--chat-blue);
+}
+/* .msg-inline-ticks sits on the doc card, which for "theirs" messages
+   never renders ticks at all (isMine-gated in JS) — but the doc card
+   background for "mine" is a light overlay on navy (see .msg-mine
+   .msg-doc-card below), so the translucent-white rule above still
+   reads fine there too. */
+
+/* ============================================================ */
+.msg-bubble {
+  padding: 10px 13px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.45;
+  background: var(--chat-white);
+  border: 1px solid var(--chat-grey);
+  color: var(--chat-ink);
+  word-break: break-word;
+  /* FIX: multi-line messages were collapsing into one line on send.
+     msg.content's real "\n" characters were making it into the DOM fine
+     (via escapeHtml/linkifyText), but HTML's default white-space:normal
+     collapses newlines into a single space just like any other text —
+     nothing renders them as actual line breaks unless told to. pre-wrap
+     keeps real line breaks while still wrapping long lines normally. */
+  white-space: pre-wrap;
+  /* FIX: "clicking any text selects it" / "link is still plain text" —
+     these two complaints share one root cause. user-select:text here let
+     the browser's native text-selection gesture compete with every click
+     inside a bubble, including clicks on a .msg-link/.msg-link-preview
+     anchor: if the browser reads the mousedown→mouseup as a selection drag
+     (extremely easy to trigger by accident — a click rarely has zero
+     pixels of movement), it can swallow the click event entirely, so the
+     link never opens and just "selects" instead — which reads exactly like
+     an inert, unclickable link that happens to highlight when clicked.
+     Copying a message's text already has a dedicated, reliable path that
+     doesn't need native selection at all — long-press/right-click a
+     message → Copy (see DOM.msgSelectCopyBtn's navigator.clipboard.writeText()
+     call) — so native selection here was redundant on top of being
+     harmful. Matches the rest of the chat chrome (avatars, rows, nav),
+     which is already user-select:none. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+.msg-theirs .msg-bubble { border-bottom-left-radius: 4px; }
+.msg-mine .msg-bubble { background: var(--chat-navy); border-color: var(--chat-navy); color: var(--chat-white); border-bottom-right-radius: 4px; }
+
+/* Dark mode bubble overrides */
+body.theme-dark .msg-theirs .msg-bubble {
+  background: #1A1D3A;
+  border-color: #2A2D5A;
+  color: #FFFFFF;
+}
+
+body.theme-dark .msg-mine .msg-bubble {
+  background: var(--chat-navy);
+  border-color: var(--chat-navy);
+  color: #FFFFFF;
+}
+
+/* FIX: root cause of "the link (and other text) inside my own sent
+   messages is unreadable in dark mode" — .msg-mine .msg-link, along with
+   the sibling rules below it (.msg-file, .msg-link-preview-title,
+   .msg-doc-name, .msg-reply-quote's author/bar), color themselves with
+   var(--chat-white) so they read as white text sitting on the navy
+   .msg-mine bubble. That's correct in light mode, where --chat-white
+   really is white (#FFFFFF) — but body.theme-dark above repoints
+   --chat-white to #15172F, a near-black navy meant for --chat-white's
+   OTHER job: the received-message bubble background, chat header and
+   composer background, all of which correctly want to go dark in dark
+   mode. .msg-mine's own bubble background/border/base text color already
+   got an explicit dark-mode override right above this comment (and
+   .btn-live-pill/.btn-send got the same treatment elsewhere in this
+   file) — these descendant text rules never did, so they silently kept
+   resolving to --chat-white's dark-mode value (#15172F) and went
+   near-invisible against the still-navy .msg-mine bubble underneath
+   them. Pin them to real white here, same as those already-fixed
+   elements, instead of following --chat-white's theme swap. */
+body.theme-dark .msg-mine .msg-link,
+body.theme-dark .msg-mine .msg-file,
+body.theme-dark .msg-mine .msg-link-preview-title,
+body.theme-dark .msg-mine .msg-doc-name,
+body.theme-dark .msg-mine .msg-reply-quote .reply-author {
+  color: #FFFFFF;
+}
+body.theme-dark .msg-mine .msg-reply-quote {
+  border-left-color: #FFFFFF;
+}
+
+/* FIX: placeholder shown once a message's attached image/video/PDF/file has
+   aged out 168h after being sent — see isMessageMediaExpired() in app.js.
+   Mirrors .msg-deleted's plain-bubble-plus-icon look (no dedicated CSS of
+   its own, it just inherits .msg-bubble) but muted/italic instead of the
+   bubble's normal ink color, so it visually reads as "gone" rather than as
+   an ordinary text message. */
+.msg-media-expired {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-style: italic;
+  color: var(--ink-faint);
+}
+.msg-mine .msg-media-expired { color: rgba(255, 255, 255, 0.72); }
+.msg-media-expired i { flex-shrink: 0; }
+
+body.theme-dark .msg-author {
+  color: #7BB8FF;
+}
+
+body.theme-dark .msg-time {
+  color: #8A8FB5;
+}
+
+.msg-file { font-size: 12px; color: var(--chat-accent); text-decoration: none; display: inline-flex; align-items: center; gap: 5px; margin-top: 2px; }
+.msg-mine .msg-file { color: var(--chat-white); }
+.msg-file:hover { text-decoration: underline; }
+
+/* ============================================================
+   LINK PREVIEWS (FIX — see linkifyText()/hydrateLinkPreview() in app.js)
+   ============================================================
+   "shared link in chat or in updates not clickable with thumbnail" —
+   .msg-link is just the inline clickable <a> a URL becomes inside message/
+   status text. .msg-link-preview is the WhatsApp/Slack-style card
+   (thumbnail + title + domain) that gets fetched and dropped into a
+   `.msg-link-preview-slot` (chat bubbles) or #statusLinkPreview (the
+   updates viewer) once hydrateLinkPreview() resolves. */
+.msg-link { color: var(--chat-accent); text-decoration: underline; word-break: break-all; }
+.msg-mine .msg-link { color: var(--chat-white); }
+
+.msg-link-preview-slot:empty { display: none; }
+
+.msg-link-preview {
+  display: flex;
+  flex-direction: column;
+  margin-top: 6px;
+  border-radius: 10px;
+  overflow: hidden;
+  text-decoration: none;
+  background: rgba(0,0,0,0.045);
+  max-width: 260px;
+  transition: background 0.15s ease;
+}
+.msg-link-preview:hover { background: rgba(0,0,0,0.08); }
+.msg-mine .msg-link-preview { background: rgba(255,255,255,0.16); }
+.msg-mine .msg-link-preview:hover { background: rgba(255,255,255,0.24); }
+
+.msg-link-preview-img {
+  display: block;
+  width: 100%;
+  height: 130px;
+  object-fit: cover;
+  background: var(--chat-grey);
+}
+
+.msg-link-preview-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  min-width: 0;
+}
+/* FIX: "it should be a hyperlink" — the whole card is already wrapped in a
+   real, clickable <a> (see .msg-link-preview above), but the title text
+   inside it used to look like a plain bold heading (var(--chat-ink), no
+   underline) with nothing to visually mark it as a link. Give it the same
+   link treatment as the inline .msg-link text — accent color + underline —
+   so it actually reads as a hyperlink, not just behaves like one. */
+.msg-link-preview-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--chat-accent);
+  text-decoration: underline;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.msg-mine .msg-link-preview-title { color: var(--chat-white); }
+.msg-link-preview-site {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--chat-ink-soft);
+}
+.msg-mine .msg-link-preview-site { color: rgba(255,255,255,0.75); }
+
+/* Updates viewer's link preview sits on the dark full-screen status
+   background rather than a bubble, so it gets its own (lighter-weight)
+   treatment instead of reusing the chat-bubble background tint above. */
+#statusLinkPreview:empty,
+#statusLinkPreview.hidden {
+  display: none;
+}
+#statusLinkPreview {
+  margin-top: 14px;
+  width: 100%;
+  max-width: 320px;
+}
+#statusLinkPreview .msg-link-preview {
+  background: rgba(255,255,255,0.1);
+  max-width: none;
+}
+#statusLinkPreview .msg-link-preview:hover { background: rgba(255,255,255,0.16); }
+#statusLinkPreview .msg-link-preview-title,
+#statusLinkPreview .msg-link-preview-site { color: #fff; }
+#statusLinkPreview .msg-link-preview-site { color: rgba(255,255,255,0.7); }
+
+/* WhatsApp-style document card for non-image/video attachments —
+   file-type icon, recovered original filename, and extension badge,
+   instead of a bare "Attached file" text link. */
+.msg-doc-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.045);
+  text-decoration: none;
+  max-width: 260px;
+  transition: background 0.15s ease;
+}
+.msg-doc-card:hover { background: rgba(0,0,0,0.08); }
+.msg-mine .msg-doc-card { background: rgba(255,255,255,0.16); }
+.msg-mine .msg-doc-card:hover { background: rgba(255,255,255,0.24); }
+
+.msg-doc-icon {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: var(--chat-accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.msg-doc-info { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.msg-doc-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--chat-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+}
+.msg-mine .msg-doc-name { color: var(--chat-white); }
+.msg-doc-ext { font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em; color: var(--chat-ink-soft); }
+.msg-mine .msg-doc-ext { color: rgba(255,255,255,0.75); }
+
+.msg-doc-download { margin-left: auto; flex-shrink: 0; color: var(--chat-ink-soft); font-size: 13px; }
+.msg-mine .msg-doc-download { color: rgba(255,255,255,0.75); }
+
+/* WhatsApp-style PDF preview card: a cropped page-1 thumbnail (filled in
+   by hydratePdfThumb() in app.js once pdf.js has rendered it — see
+   getPdfThumbnail()) sitting above the filename/download bar. .msg-doc-card
+   is a horizontal row by default; override it to stack the thumbnail on
+   top since a PDF card needs both a preview image and an info row. */
+.msg-pdf-card {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  max-width: 260px;
+  overflow: hidden;
+}
+.msg-pdf-thumb {
+  position: relative;
+  width: 100%;
+  height: 190px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--chat-grey);
+  color: var(--chat-ink-soft);
+  font-size: 34px;
+  overflow: hidden;
+}
+.msg-mine .msg-pdf-thumb { background: rgba(255,255,255,0.14); color: rgba(255,255,255,0.85); }
+/* Once loaded, the thumbnail is a real <img class="msg-media-img"> node —
+   object-fit:cover + object-position:top crops it to show just the top
+   portion of page 1, the same "shown half until tapped" look
+   .msg-media-preview already gives images/videos. */
+.msg-pdf-thumb img.msg-media-img {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: cover;
+  object-position: top center;
+}
+.msg-pdf-info-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+}
+
+/* WhatsApp-style attachment preview: capped height + object-fit:cover
+   crops tall images so only part shows in the bubble ("shown half")
+   until the user taps to open the full-resolution lightbox view. */
+.msg-media-preview {
+  position: relative;
+  margin-top: 2px;
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  max-width: 260px;
+  display: block;
+}
+/* FIX: "scrolling on chat is not smooth" — this had `max-height` but no
+   `height`, so before an attached image finished loading its intrinsic
+   size was 0, collapsing the bubble to nothing; the instant it loaded,
+   the bubble snapped open to its full height. Scrolling past a run of
+   unloaded images meant the content under your cursor kept jumping.
+   A fixed `height` reserves the space up front (object-fit:cover still
+   crops the loaded image to fill it), so there's nothing left to jump. */
+.msg-media-img {
+  display: block;
+  width: 100%;
+  height: 220px;
+  max-height: 220px;
+  object-fit: cover;
+  background: var(--chat-grey);
+}
+.msg-media-video-wrap { cursor: default; }
+.msg-media-video-wrap .msg-media-img { height: 260px; max-height: 260px; object-fit: contain; background: #000; }
+.msg-media-expand {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  /* FIX: "media viewer background is black instead of the theme's navy" —
+     this was a flat rgba(0,0,0,0.9) backdrop, unrelated to the app's navy
+     brand color used everywhere else a full-screen surface shows up (the
+     status/update viewer's .status-viewer-inner, the brand header, primary
+     buttons — all var(--navy)/var(--chat-navy), #0E1B75). Shared by both
+     the image/video lightbox and the file/PDF viewer (see
+     `overlay.className = 'lightbox-overlay doc-viewer-overlay'` /
+     `= 'lightbox-overlay'` in app.js), so fixing it here covers both.
+     Tinting rgba() with the same navy instead of black keeps the
+     slightly-see-through backdrop feel (rather than going fully opaque
+     like .status-viewer-inner) while actually matching the theme. */
+  background: rgba(14, 27, 117, 0.92);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: msgIn 0.15s ease-out;
+}
+.lightbox-img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 8px;
+  object-fit: contain;
+}
+/* Video counterpart of .lightbox-img, for openVideoLightbox() (app.js) —
+   the Shared Media grid's video tiles (see .shared-media-video-tile
+   above). */
+.lightbox-video {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 8px;
+}
+/* FIX: root cause of "opening media takes time instead of being smooth and
+   fast" — see the matching FIX comment in openImageLightbox() (app.js).
+   The overlay used to render the <img> immediately with nothing else on
+   screen, so the full-screen backdrop sat there empty (no spinner, no
+   placeholder) for however long the actual photo/video took to download —
+   that empty wait is what reads as "slow", not the overlay opening itself.
+   .loading hides the (possibly half-rendered) image while a spinner takes
+   its place; app.js removes .loading the moment the image's `load` event
+   fires. */
+.lightbox-img.loading { visibility: hidden; }
+/* Explicit top/left/transform centering rather than relying on the
+   .lightbox-overlay flex container's align-items/justify-content to
+   center this — those don't reliably apply to absolutely-positioned flex
+   children across browsers, which would silently reproduce the exact
+   "not centered" bug this spinner exists to avoid. */
+.lightbox-spinner {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  max-width: calc(100% - 340px);
-  z-index: 10;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+  animation: orbit-loading-spin 0.8s linear infinite;
+}
+.lightbox-spinner.hidden { display: none; }
+/* FIX: root cause of "media not showing in center" for any attachment that
+   fails to load (wrong/expired URL, unrecognized file type misread as an
+   image, network error) — a plain broken <img> renders the browser's tiny
+   native broken-image glyph pinned to the top-left of its box rather than
+   centered like a loaded image would be via object-fit, which reads
+   exactly like "the media isn't centered". Shown instead of the native
+   glyph once the image's `error` event fires (see openImageLightbox() in
+   app.js); already centered for free since it's a sibling flex child of
+   .lightbox-overlay (display:flex; align-items:center; justify-content:center). */
+.lightbox-broken {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 14px;
+}
+.lightbox-broken.hidden { display: none; }
+.lightbox-broken i { font-size: 30px; }
+.lightbox-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lightbox-close:hover { background: rgba(255,255,255,0.22); }
+
+/* Gallery prev/next arrows — only rendered when openImageLightbox() is
+   given more than one image (e.g. from the Shared Media grid), so a single
+   attached-image lightbox looks exactly as before. */
+.lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+.lightbox-nav:hover { background: rgba(255,255,255,0.22); }
+.lightbox-prev { left: 12px; }
+.lightbox-next { right: 12px; }
+@media (min-width: 640px) {
+  .lightbox-prev { left: 24px; }
+  .lightbox-next { right: 24px; }
 }
 
-/* Remove the manual "Start/Stop Recording" control for every role.
-   The actual recording behavior is controlled server-side, per
-   scheduled session, by plugnmeet-token's recordingFeaturesFor():
-     - non-recorded sessions send room_features.recording_features
-       .is_allow: false, so PlugNmeet doesn't even render a recording
-       control at all — nothing for this CSS rule to do there.
-     - recorded sessions (an admin checked "Record this session
-       automatically" when scheduling — see setClassSchedule() in
-       app.js) send is_allow: true + enable_auto_cloud_recording: true,
-       so PlugNmeet starts cloud recording itself the instant a
-       moderator joins, with no button click needed. is_allow: true is
-       also what makes PlugNmeet render its own recording control
-       though, so THIS rule hides it for that case — otherwise a
-       moderator could still manually stop the auto-started recording
-       or start a redundant second one.
-   This selector could not be confirmed against a live meeting's DOM (no
-   active room was available to inspect while writing this), so
-   aria-label/title are a best guess at the accessible name PlugNmeet
-   uses for it — re-check with DevTools open during an actual recorded
-   session and correct the selector here if it doesn't match. */
-footer#main-footer button[aria-label*="record" i],
-footer#main-footer button[title*="record" i],
-header#main-header button[aria-label*="record" i],
-header#main-header button[title*="record" i] {
-  display: none !important;
+/* Document viewer overlay (see openDocViewer() in app.js) — reuses
+   .lightbox-overlay for the dimmed backdrop/centering, adds a bordered
+   panel with its own header (filename + download/close) so it reads as
+   an in-app screen rather than a raw file being loaded. */
+.doc-viewer-overlay { padding: 0; }
+@media (min-width: 640px) { .doc-viewer-overlay { padding: 24px; } }
+
+.doc-viewer-panel {
+  width: 100%;
+  height: 100%;
+  max-width: 720px;
+  max-height: 860px;
+  background: var(--surface);
+  border-radius: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg);
+}
+@media (min-width: 640px) { .doc-viewer-panel { border-radius: var(--radius-lg); } }
+
+.doc-viewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.doc-viewer-name {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.doc-viewer-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+.doc-viewer-body {
+  flex: 1;
+  min-height: 0;
+  background: var(--surface-sunken);
+}
+.doc-viewer-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: #fff;
+}
+.doc-viewer-no-preview {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--ink-faint);
+  padding: 24px;
+  text-align: center;
+}
+.doc-viewer-no-preview i { font-size: 40px; }
+.doc-viewer-no-preview p { font-size: 13.5px; max-width: 260px; }
+
+.msg-ticks { display: inline-flex; align-items: center; gap: 1px; font-size: 12px; color: var(--chat-grey); line-height: 1; }
+.msg-ticks.seen { color: var(--chat-blue); }
+.msg-seen-time { font-size: 10px; color: var(--chat-ink-soft); margin-top: 2px; }
+
+.msg-reply-quote {
+  border-left: 3px solid var(--chat-blue);
+  background: rgba(107, 180, 250, 0.12);
+  border-radius: 6px;
+  padding: 5px 9px;
+  margin-bottom: 5px;
+  font-size: 12.5px;
+  max-width: 100%;
+  /* FIX: was inert — now jumps to the original message (see
+     jumpToMessage() in app.js), so it needs to read as tappable. */
+  cursor: pointer;
+  /* FIX: root cause of the reply quote box rendering as a tall, distorted
+     square with big empty gaps around "Nuaim Ahmad" / the quoted text —
+     .msg-bubble (the parent) sets white-space:pre-wrap so real line breaks
+     in a user's own message render correctly. This quote box isn't
+     user-typed content though, it's markup buildMessageEl() injects
+     (app.js) — pre-wrap was inheriting into it and rendering any
+     incidental whitespace/newlines in that markup as visible blank lines.
+     Reset to normal here so this box's layout is only ever driven by its
+     actual text, never by how the HTML happens to be formatted upstream.
+     .reply-text's own white-space:nowrap override below still applies (it's
+     more specific), so the truncated one-line-plus-ellipsis look is
+     unaffected. */
+  white-space: normal;
+}
+.msg-reply-quote:hover, .msg-reply-quote:focus-visible { background: rgba(107, 180, 250, 0.22); }
+.msg-reply-quote:focus-visible { outline: 2px solid var(--chat-blue); outline-offset: 1px; }
+.msg-mine .msg-reply-quote { background: rgba(255,255,255,0.2); border-left-color: var(--chat-white); }
+.msg-mine .msg-reply-quote:hover, .msg-mine .msg-reply-quote:focus-visible { background: rgba(255,255,255,0.3); }
+.msg-reply-quote .reply-author { font-weight: 700; display: block; color: var(--chat-accent); }
+.msg-mine .msg-reply-quote .reply-author { color: var(--chat-white); }
+.msg-reply-quote .reply-text { color: var(--chat-ink-soft); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-mine .msg-reply-quote .reply-text { color: rgba(255,255,255,0.85); }
+
+/* FIX: brief flash on the target bubble after jumpToMessage() scrolls to
+   it, so it's obvious which message the reply was pointing at. */
+.msg-highlight .msg-bubble {
+  animation: msgHighlightFlash 1.5s ease-out;
+}
+@keyframes msgHighlightFlash {
+  0% { box-shadow: 0 0 0 2px var(--chat-blue); background-color: rgba(107, 180, 250, 0.35); }
+  100% { box-shadow: 0 0 0 0 transparent; }
 }
 
-/* Whiteboard: remove the row of external link buttons (Documentation,
-   Read our blog, Found an issue? Submit, YouTube) from the top of the
-   Excalidraw "Help" panel. The whiteboard is Excalidraw, embedded as-is
-   inside the PlugNmeet client (only its text labels are localized by
-   PlugNmeet, not its DOM/class names) — those four links live together
-   in one wrapper, `.HelpDialog__header`, above the "Keyboard shortcuts"
-   heading, so hiding that wrapper removes exactly the link row and
-   leaves the shortcuts reference intact. */
-.HelpDialog__header {
-  display: none !important;
+/* Lightweight non-blocking notice, e.g. "original message isn't loaded"
+   from jumpToMessage() — see showToast() in app.js. */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 90px;
+  transform: translateX(-50%);
+  background: rgba(20,20,20,0.92);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  z-index: 10000;
+  box-shadow: var(--shadow-lg);
+  animation: msgIn 0.15s ease-out;
+  pointer-events: none;
+  max-width: 80%;
+  text-align: center;
 }
 
-/* Reserve room next to the whiteboard/screen-share area for whichever
-   side panel is open (Participants/Chat/Polls), so its content isn't
-   covered by the panel.
-   Checked against the PlugNmeet client's own main-area source: the side
-   panel is `position: absolute`, pinned to the right edge, ~300–340px
-   wide — it was always designed to overlay, not push, the content next
-   to it. The main content area is supposed to make room for it itself
-   (a conditional `padding-inline-end` class applied only while a panel
-   is open), and PlugNmeet also force-refreshes the whiteboard's own
-   canvas size at that same moment so it redraws into the freed-up
-   space. Both of those live in PlugNmeet's own JS, which this
-   stylesheet can't reach (it can only add CSS, it can't run code inside
-   that cross-origin app) — so if the deployed PlugNmeet build is older
-   than that fix, or something is overriding its padding class, the
-   canvas keeps its old, wider size and the panel simply sits on top of
-   the part that's now hidden underneath it, exactly like the
-   screenshot. This rule reinstates the missing space reservation
-   (belt-and-suspenders with PlugNmeet's own class, using :has() so it
-   doesn't depend on that class being present or intact); it does NOT
-   force the canvas itself to redraw into that space — for the drawing
-   to actually reflow (not just stop being covered), the whiteboard
-   still needs its own resize/refresh, which only happens if the
-   deployed PlugNmeet client includes that logic. If content is still
-   cut off after this — just no longer hidden behind the panel, still
-   sitting past the visible edge — that's the signal the PlugNmeet
-   client build on meet.nouscomplex.com needs updating; ask whoever
-   maintains that deployment (a different codebase/server than this
-   app) to update to a current release. */
-#main-area .inner:has(> .participants-panel) > .middle-area,
-#main-area .inner:has(> .chat-panel) > .middle-area,
-#main-area .inner:has(> .polls-panel) > .middle-area {
-  padding-bottom: 300px !important;
+/* FIX: reply/delete no longer render as per-bubble buttons — they used
+   to float oddly near the top of the message (stretched to the full
+   message height) instead of sitting cleanly beside it, for both
+   admins and regular users. Both actions now live only in the
+   top select-header bar (see .msg-select-header below), opened by
+   long-press (mobile) or click (desktop) on any message. */
+
+
+.reply-preview {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 16px; border-top: 1px solid var(--chat-grey); background: rgba(107, 180, 250, 0.14);
+  position: sticky; bottom: 0; z-index: 2;
+  flex-shrink: 0;
+}
+.reply-preview .bar { width: 3px; align-self: stretch; background: var(--chat-navy); border-radius: 2px; }
+.reply-preview .info { flex: 1; min-width: 0; }
+.reply-preview .info .author { font-size: 12px; font-weight: 700; color: var(--chat-accent); }
+.reply-preview .info .text { font-size: 12.5px; color: var(--chat-ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.file-preview-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px; border-top: 1px solid var(--chat-grey);
+  background: var(--chat-white); font-size: 13px; color: var(--chat-ink-soft);
+  position: sticky; bottom: 0; z-index: 2;
+  flex-shrink: 0;
+}
+.file-preview-bar span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+#fileUploadStatus {
+  font-size: 12px; color: var(--chat-accent); padding: 8px 16px;
+  border-top: 1px solid var(--chat-grey); background: rgba(107, 180, 250, 0.14);
+  flex-shrink: 0;
 }
 
-@media (min-width: 768px) {
-  #main-area .inner:has(> .participants-panel) > .middle-area,
-  #main-area .inner:has(> .chat-panel) > .middle-area,
-  #main-area .inner:has(> .polls-panel) > .middle-area {
-    padding-bottom: 0 !important;
-    padding-inline-end: 300px !important;
-  }
+.composer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--chat-grey);
+  background: var(--chat-white);
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  flex-shrink: 0;
+}
+/* FIX: the scrollbar that appears past ~5 lines was visually poking
+   outside the rounded corners of #messageInput. Browsers don't reliably
+   clip a native scrollbar to an element's own border-radius — it renders
+   as a straight-edged widget that can extend past a curved top-right/
+   bottom-right corner. Rather than fight that per-browser, the rounded
+   border/background now live on this wrapper, which clips its content
+   (including whatever the textarea draws, scrollbar included) with a
+   plain overflow: hidden — a mask that isn't subject to the same
+   scrollbar-vs-radius rendering inconsistency. */
+.composer .field-shell {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  border-radius: 20px;
+  background: var(--chat-white);
+  border: 1.5px solid var(--chat-grey);
+  overflow: hidden;
+}
+.composer .field-shell:focus-within { border-color: var(--chat-accent); }
+.composer .field {
+  flex: 1;
+  min-width: 0;
+  /* FIX: was a single-line <input> with a full 999px pill radius, which
+     only ever looked right at one line of height. Now that #messageInput
+     is an auto-growing <textarea> (see the 'input' listener in
+     EVENT BINDINGS), .field-shell above owns the visible rounded
+     border/background; this element is a bare scroll surface inside it
+     — no border/radius/background of its own — so resize is disabled
+     since height is managed by JS, and max-height caps growth at ~5
+     lines; overflow-y is toggled between hidden/auto by
+     autoGrowMessageInput() in app.js rather than left permanently on
+     'auto', which used to show a stray scrollbar track even on an empty
+     single-line box.
+  */
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--chat-ink);
+  resize: none;
+  overflow-y: hidden;
+  min-height: 43px;
+  max-height: 120px;
+  line-height: 1.35;
+  font-family: inherit;
+  /* FIX: "stray line" next to the composer box — #messageInput used to
+     be a plain <input>, which browsers style with minimal native chrome.
+     A <textarea> is a different form control and some browsers (Safari
+     in particular) render their own default inset border/shadow for it
+     regardless of the border/box-shadow rules above, which showed up as
+     a faint extra vertical line near the field's edge. appearance: none
+     strips that native control styling so only the CSS above applies.
+  */
+  -webkit-appearance: none;
+  appearance: none;
+}
+.composer .field:focus { box-shadow: none; outline: none; }
+.composer .icon-btn { color: var(--chat-accent); -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+.composer .icon-btn:hover { background: rgba(107, 180, 250, 0.16); color: var(--chat-accent); }
+
+.btn-send {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--chat-navy); color: var(--chat-white); border: none; cursor: pointer;
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s ease, transform 0.1s ease;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.btn-send i { transform: rotate(45deg); }
+.btn-send:hover { background: var(--chat-blue); }
+.btn-send:active { transform: scale(0.94); }
+
+body.theme-dark .btn-send { color: #FFFFFF; }
+
+/* FIX: root cause of "why can't I see the meeting in full screen on
+   laptop" — this was `position: absolute; inset: 0`, which covers the
+   full box of its nearest positioned ancestor, and that ancestor is
+   #screenChatDetail (a `.screen`, `position: relative`). On mobile that
+   IS the whole visible app, so it read as full screen there. On a
+   laptop (desktop layout, ≥1024px) #screenChatDetail is only the RIGHT
+   content pane — see #screenChats/.bottom-nav in the desktop media
+   query below — so the call was only ever filling that pane while the
+   92px icon rail and the chat list stayed visible beside it the whole
+   time, never covering the actual browser window. `position: fixed`
+   makes it escape #screenChatDetail's box entirely and cover the real
+   viewport instead — the same pattern already used for every other
+   true full-screen surface in this app (.app-loading, .status-viewer,
+   .modal-overlay all do the same). It isn't clipped by
+   #screenChatDetail's `overflow: hidden` either: none of its ancestors
+   (.screen/.app-body/.phone-frame) set a transform/filter, so nothing
+   forces it back into that box as a containing block.
+   The minimized pip (.video-panel-minimized below) inherits this same
+   `position: fixed` — its default top/right position is unaffected
+   (the chat pane already starts flush with the browser's top-right on
+   both layouts), and setVideoMinimized()/clampPipRect() in app.js work
+   in viewport-absolute coordinates to match. */
+.video-panel {
+  position: fixed; inset: 0; z-index: 20;
+  background: #05061a;
+  /* FIX: was a plain positioning context for two position:absolute
+     buttons floated on top of the iframe (see .video-toolbar below for
+     why that overlapped PlugNmeet's own header). Now a column flex
+     layout: the toolbar takes its natural height first, the iframe
+     fills the rest — so the controls have their own space, separate
+     from the meeting room instead of layered over it. */
+  display: flex;
+  flex-direction: column;
+  transition: width 0.2s ease, height 0.2s ease, top 0.2s ease, left 0.2s ease,
+    right 0.2s ease, bottom 0.2s ease, border-radius 0.2s ease;
+}
+.video-panel iframe { width: 100%; flex: 1; min-height: 0; border: 0; display: block; }
+
+/* FIX: root cause of "why is the meeting not movable and resizable" while
+   minimized — the transition above (added for a smooth minimize/maximize
+   toggle) also fires on every left/top/width/height change, which
+   includes every single pixel a drag or resize gesture produces. That
+   makes the pip visibly lag half a step behind the pointer instead of
+   tracking it. app.js's beginPipDrag()/beginPipResize() add this class
+   for the duration of the gesture (removed again on pointerup) so those
+   same properties update instantly while actually being dragged/resized,
+   while the minimize/maximize button click still gets its animation. */
+.video-panel.video-panel-no-anim {
+  transition: none !important;
 }
 
-@media (min-width: 1920px) {
-  #main-area .inner:has(> .participants-panel) > .middle-area,
-  #main-area .inner:has(> .chat-panel) > .middle-area,
-  #main-area .inner:has(> .polls-panel) > .middle-area {
-    padding-inline-end: 340px !important;
-  }
+/* FIX: root cause of "user can't see the buttons for minimizing/
+   maximizing in live meeting so they can text in the group when
+   needed" — #videoContainer used to be a fixed full-screen overlay
+   (position:absolute; inset:0) with no smaller state at all, and the
+   only exit was #closeVideoBtn, which fully disconnects the call (see
+   closeLiveSession() in app.js) rather than just getting it out of the
+   way. This shrinks the SAME panel — call kept alive, videoIframe.src
+   untouched — into a small corner pip anchored within this screen (not
+   the whole viewport, so it stays correctly placed in the desktop
+   two-pane layout too) once app.js's setVideoMinimized() toggles this
+   class. With the panel out of full-screen, #chatContainer and the
+   composer underneath become visible and usable again, so a message
+   can be typed and sent without leaving the call. Toggled back to the
+   base .video-panel layout (full screen) by the same button/class. */
+.video-panel.video-panel-minimized {
+  /* Anchored top-right, clear of .chat-detail-header (sticky, ~64px) —
+     NOT bottom-right. #chatContainer/.composer sit at the literal bottom
+     of this same .screen (composer is position:sticky; bottom:0), so a
+     bottom-anchored pip would land right on top of #messageInput — the
+     one control this whole fix exists to make reachable again. */
+  top: 78px;
+  left: auto;
+  right: 14px;
+  bottom: auto;
+  width: 176px;
+  height: 136px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid rgba(255, 255, 255, 0.14);
 }
+
+/* FIX: root cause of the close ("X") and "End for Everyone" buttons
+   overlapping the speaker name / connection-signal indicators inside
+   the live room — those buttons used to be position:absolute at
+   top:14px, floating directly on top of the iframe. PlugNmeet renders
+   its own header bar (active speaker, mic/network signal icons — see
+   header#main-header in nouscomplex.css) in that exact same top strip
+   of the iframe, so our controls sat right on top of theirs. This bar
+   sits ABOVE the iframe in normal flow instead (see .video-panel's
+   flex layout above), so the two sets of controls are fully separate
+   and never overlap. */
+.video-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #05061a;
+}
+/* FIX: root cause of "duplicate minimize / return-to-chat / end-for-
+   everyone controls in a live call" — this same toolbar row used to
+   always render above the iframe. PlugNmeet's own header now has its
+   own native minimize/maximize and (admin-only) End for Everyone
+   buttons wired to the exact same app.js functions via postMessage
+   (see NOUS_COMPLEX_PLUGNMEET_HEADER_BRIDGE), so this row became a
+   redundant duplicate of controls that already exist right next to the
+   bell icon. Hidden only in the full-screen (non-minimized) state —
+   left alone while minimized, where this same bar (shrunk down) is
+   still the pip's drag handle (see beginPipDrag() in app.js) and still
+   shows a tiny minimize/end-session control for the pip itself, which
+   has no equivalent reachable from the miniaturized iframe. */
+.video-panel:not(.video-panel-minimized) .video-toolbar {
+  display: none;
+}
+
+/* FIX: root cause of "black row showing on top of PlugNmeet's header
+   in the minimized pip" — the previous version of this rule kept
+   #videoToolbar as a normal, in-flow flex item (so the drag handle
+   still worked) but never overrode its base `.video-toolbar` rule's
+   `background: #05061a`, so a solid near-black bar still rendered as
+   its own reserved strip above the iframe, on top of the tiny
+   PlugNmeet header now visible inside the pip. Switched to an
+   absolutely-positioned, transparent overlay instead: taken out of
+   flex flow (so the iframe expands to fill the ENTIRE pip, no reserved
+   gap) and layered on top with no background of its own, so nothing
+   paints there — only a thin invisible strip remains for
+   beginPipDrag()'s pointer listeners (see app.js) to grab, same as
+   before. .video-panel is `position: fixed` (base rule, unchanged by
+   the minimized-state overrides), so it's the positioning context this
+   overlay sizes against. */
+.video-panel.video-panel-minimized .video-toolbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 26px;
+  padding: 0;
+  margin: 0;
+  gap: 0;
+  background: transparent;
+  z-index: 5;
+  /* cursor:move signals this is the pip's drag handle; touch-action:none
+     stops a touch-drag here from also panning/scrolling the chat screen
+     underneath while the pointer is down. */
+  cursor: move;
+  touch-action: none;
+}
+
+/* Buttons/timer that used to render inside this bar are hidden — those
+   controls now live on PlugNmeet's own header, visible inside the tiny
+   iframe itself. visibility:hidden (not display:none) makes each one
+   fully non-interactive too, so it can never be the event target and
+   block a drag — see beginPipDrag()'s `e.target.closest('button')`
+   bail-out in app.js, which now simply never triggers here. */
+.video-panel.video-panel-minimized .video-toolbar > * {
+  visibility: hidden;
+}
+
+.video-minimize-btn {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+  background: rgba(255,255,255,0.15); color: #fff; border: none; cursor: pointer;
+  backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.video-minimize-btn:hover { background: rgba(255,255,255,0.28); }
+
+.video-end-session-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: var(--radius-pill);
+  background: var(--danger);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.video-end-session-btn:hover { background: #c73a32; }
+
+/* FIX: root cause of "screen is still at [PlugNmeet's own 'meeting has
+   ended'] page when the meeting is ended by any teacher or admin" — see
+   the long comment above #returnToChatBtn in index.html for why
+   PlugNmeet's own auto-redirect can't be guaranteed to fire. Styled as a
+   neutral/secondary pill (not var(--danger) like "End for Everyone") so
+   it doesn't read as a destructive/ending action — it's just "go back". */
+.video-return-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: var(--radius-pill);
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.video-return-btn:hover { background: rgba(255,255,255,0.28); }
+
+/* Minimized pip: shrink the controls too and drop the "End for
+   Everyone" text label down to just its icon so three controls still
+   fit in a ~176px-wide bar without wrapping or overflowing.
+   #returnToChatBtn is hidden entirely while minimized rather than
+   shrunk — it's a recovery action for a full-screen call getting stuck
+   on PlugNmeet's own screen, which doesn't apply while minimized (the
+   pip itself already proves the call/iframe is responsive), and there
+   isn't room for a third control in the pip's ~176px-wide bar without
+   crowding the drag handle. */
+.video-panel.video-panel-minimized .video-minimize-btn {
+  width: 24px; height: 24px; font-size: 11px;
+}
+.video-panel.video-panel-minimized .video-end-session-btn {
+  padding: 0 8px;
+  height: 24px;
+  font-size: 10px;
+}
+.video-panel.video-panel-minimized .video-end-session-label {
+  display: none;
+}
+.video-panel.video-panel-minimized .video-return-btn {
+  display: none;
+}
+
+/* FIX: root cause of "why is the minimized meeting not movable and
+   resizable" (resize half) — #videoResizeHandle didn't exist before;
+   nothing offered a way to change the pip's fixed 176x136 size. Hidden
+   entirely outside the minimized state (it would make no sense as a
+   full-screen control) and only shown as a small corner grip once
+   .video-panel-minimized is present — see beginPipResize()/
+   onPipResizeMove() in app.js, which drag this handle to resize
+   #videoContainer via inline width/height, clamped to a sane minimum
+   and to the bounds of the chat screen. */
+.video-resize-handle {
+  display: none;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 20px;
+  height: 20px;
+  z-index: 6;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+.video-resize-handle::before {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 10px;
+  height: 10px;
+  background-image:
+    linear-gradient(135deg, transparent 0 45%, rgba(255,255,255,0.65) 45% 55%, transparent 55% 100%),
+    linear-gradient(135deg, transparent 0 70%, rgba(255,255,255,0.65) 70% 80%, transparent 80% 100%);
+}
+.video-panel.video-panel-minimized .video-resize-handle {
+  display: block;
+}
+
+/* ============================================================
+   MEMBERS
+   ============================================================ */
+.admin-add-row { display: flex; gap: 6px; margin: 0 18px 12px; flex-shrink: 0; }
+.members-wrap { flex: 1; display: flex; min-height: 0; padding-bottom: 90px; }
+/* FIX: "scrolling on group profile is not smooth" — will-change:scroll-position
+   promotes the member list to its own compositor scrolling layer too;
+   see .chat-scroll / .profile-scroll-container above for the full reason. */
+.member-list { flex: 1; overflow-y: auto; padding: 0 8px 18px 18px; display: flex; flex-direction: column; -webkit-overflow-scrolling: touch; will-change: scroll-position; }
+.member-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 6px; border-radius: var(--radius-md);
+  scroll-margin-top: 8px;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.member-row:hover { background: var(--surface-sunken); }
+.member-name { font-weight: 700; font-size: 14px; color: var(--ink); }
+.member-display-name { font-size: 12px; color: var(--ink-soft); margin-left: 6px; }
+.member-status { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-faint); margin-top: 1px; }
+.member-status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-faint); }
+.member-status.online { color: var(--online); }
+.member-status.online .dot { background: var(--online); }
+.member-remove-btn { margin-left: auto; }
+.member-role-chip { font-size: 9px; padding: 2px 7px; }
+.member-group-letter {
+  font-size: 11px; font-weight: 800; color: var(--ink-faint);
+  padding: 10px 6px 4px; letter-spacing: 0.04em;
+}
+.member-role-header {
+  font-size: 11.5px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--accent); padding: 14px 6px 6px; border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.member-role-header:first-child { border-top: none; margin-top: 0; padding-top: 4px; }
+
+/* ============================================================
+   ADMIN — REGISTERED USERS LIST (Settings → Manage Users)
+   Two separate lists — Unassigned (no group memberships at all)
+   and Assigned (shows which group/session each is in) — plus a
+   per-row button that opens the multi-group checklist modal.
+   ============================================================ */
+.registered-users-wrap {
+  max-height: 340px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  -webkit-overflow-scrolling: touch;
+}
+.registered-users-list { display: flex; flex-direction: column; }
+.registered-user-section + .registered-user-section { border-top: 1px solid var(--border); }
+.registered-user-section-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  background: var(--surface-sunken);
+  padding: 7px 10px;
+  position: sticky;
+  top: 0;
+}
+.registered-user-section-label.unassigned-label { color: var(--warning); }
+.registered-user-count { font-weight: 600; opacity: 0.75; text-transform: none; letter-spacing: 0; }
+.registered-user-rows { display: flex; flex-direction: column; }
+.registered-user-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  -webkit-tap-highlight-color: transparent;
+}
+.registered-user-row:last-child { border-bottom: none; }
+.registered-user-row:hover { background: var(--surface-sunken); }
+.registered-user-info { flex: 1; min-width: 0; }
+.registered-user-name {
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.registered-user-groups {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.registered-user-groups.unassigned { color: var(--warning); font-weight: 600; }
+.registered-user-manage-btn { width: 28px; height: 28px; flex-shrink: 0; font-size: 12px; }
+
+/* Collapsed state: while the edit form below is open, the roster list is
+   hidden (not removed, toggled via the app-wide .hidden utility class) so
+   the panel doesn't eat the whole screen — see showUserEditForm()/
+   closeUserEditForm() in app.js. */
+
+/* Edit-user form header — title + explicit close/back control so the
+   panel can be dismissed without submitting Update/Delete, restoring the
+   roster list above it. */
+.user-edit-form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.user-edit-form-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+#closeUserEditBtn { width: 26px; height: 26px; font-size: 12px; flex-shrink: 0; }
+
+/* Multi-group checklist modal (openGroupAssignmentModal in app.js) */
+.group-assign-modal { max-width: 380px; }
+.group-assign-list {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  -webkit-overflow-scrolling: touch;
+}
+.group-assign-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.group-assign-row:last-child { border-bottom: none; }
+.group-assign-row:hover { background: var(--surface-sunken); }
+.group-assign-row input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--role-admin);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.group-assign-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.group-assign-role { flex: 0 0 100px; }
+
+.alpha-index {
+  width: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 8px 4px;
+  flex-shrink: 0;
+}
+.alpha-index span {
+  font-size: 9px;
+  color: var(--ink-faint);
+  cursor: pointer;
+  line-height: 1.35;
+  font-weight: 600;
+}
+.alpha-index span:hover, .alpha-index span.active { color: var(--accent); font-weight: 800; }
+
+/* ============================================================
+   PROFILE
+   ============================================================ */
+#screenProfile { 
+  overflow: hidden;
+  height: 100%;
+}
+
+.profile-scroll-container {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 0 20px 0;
+  -webkit-overflow-scrolling: touch;
+  /* FIX: "scrolling on group profile is not smooth" — same cause as
+     .chat-scroll: a stack of .profile-card elements each with their own
+     box-shadow/border-radius sits inside a plain overflow:auto panel,
+     which isn't guaranteed its own compositor layer, so the browser can
+     end up repainting those shadows on the main thread every scroll
+     frame. will-change:scroll-position hints the browser to give this
+     container a dedicated scrolling layer up front. */
+  will-change: scroll-position;
+}
+
+.profile-card {
+  margin: 4px 18px 14px;
+  padding: 20px;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  text-align: center;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+/* FIX: "make nous complex logo a group profile logo" — the group info
+   screen never had a picture at all before this, just name/meta/
+   description text (see #profileChannelLogo in index.html — a plain
+   hardcoded <img>, not something app.js populates, since every group
+   shows this same logo). */
+.profile-card-logo {
+  width: 116px;
+  height: 116px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #fff;
+  display: block;
+  margin: 0 auto 14px;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
+}
+.profile-card-name { font-family: var(--font-display); font-weight: 800; font-size: 1.3rem; color: var(--ink); }
+.profile-card-meta { font-size: 12.5px; font-weight: 700; color: var(--accent); margin-top: 4px; }
+.profile-card-desc { font-size: 13px; color: var(--ink-soft); margin-top: 10px; line-height: 1.55; user-select: text; -webkit-user-select: text; }
+
+.profile-section-row {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin: 18px 18px 10px;
+}
+.section-label { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-faint); }
+.see-all-link { font-size: 12.5px; font-weight: 700; color: var(--accent); text-decoration: none; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+/* FIX: "remove the underline from show all and show less" — the base rule
+   above already sets text-decoration: none, but this :hover rule put it
+   back. On a touch device tapping the link (Show All/Show Less — see
+   #profileSeeAllPhotos/#profileSeeAllVideos in index.html) triggers
+   :hover too and it tends to stick after the tap instead of clearing like
+   a real mouse hover would, which reads as a permanent underline. Removed
+   outright rather than left as a desktop-only affordance, since the user
+   asked for no underline on this link at all. */
+
+/* FIX: "make the shared media grid small" — was a fixed 3-column grid, so
+   each thumbnail scaled up to roughly a third of the profile card's width
+   (100px+ on most phones). auto-fill with a small minmax tile keeps tiles
+   consistently small regardless of screen width, fitting more per row
+   (5-6 on a typical phone) instead of stretching 3 large tiles edge to
+   edge. */
+/* FIX: "make the picture grid to 5 picture per row" — was
+   repeat(auto-fill, minmax(56px, 1fr)), so the actual column count varied
+   with screen width (however many 56px tiles happened to fit) instead of
+   being a fixed count. Now both the photo grid and .shared-video-grid
+   below use the same fixed 5-column layout, so this rule alone covers
+   both — the old separate video-only override is gone since it would just
+   be duplicating this. */
+.shared-media-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  margin: 0 18px;
+}
+
+
+.shared-media-grid img,
+.shared-media-grid .shared-media-tile {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
+}
+/* FIX: "why the share videos are not being considered media" — a video
+   tile is a <div> wrapping a <video> (not an <img>), since an <img> can't
+   render a video source. object-fit above is a no-op on the wrapping div
+   itself (only meaningful on replaced elements like img/video), so the
+   inner <video> gets its own cover/fill rule here; the div still needs
+   position:relative + overflow:hidden so the play-icon badge sits over the
+   video frame and any corner overflow from the cover crop stays clipped to
+   the rounded tile. */
+.shared-media-video-tile {
+  position: relative;
+  overflow: hidden;
+  padding: 0;
+}
+.shared-media-video-tile video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+.shared-media-play-badge {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.shared-media-play-badge i {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(14, 27, 117, 0.55);
+  color: #fff;
+  font-size: 9px;
+  padding-left: 1.5px;
+}
+.shared-media-grid .empty-note { grid-column: 1 / -1; }
+
+.schedule-card {
+  margin: 18px 18px 4px;
+  padding: 16px;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+}
+.schedule-field-label {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 3px 2px;
+}
+.schedule-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--accent-wash);
+  color: var(--accent);
+  font-size: 8.5px;
+  font-weight: 800;
+  margin-right: 2px;
+  vertical-align: 1px;
+}
+
+/* ============================================================
+   ADMIN SCHEDULE FORM — MULTI-DATE CALENDAR PICKER
+   ============================================================ */
+.schedule-calendar-wrap {
+  /* FIX: "make calendar size bit smaller" — this used to stretch the full
+     width of the card, which on anything wider than a phone made each day
+     cell (grid-template-columns: repeat(7, 1fr) at 100% width) balloon far
+     past a comfortable tap target. Capping the wrapper's width and
+     centering it shrinks every cell with it, without changing the grid
+     logic at all. */
+  max-width: 240px;
+  margin: 0 auto 10px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px;
+}
+.schedule-calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.schedule-calendar-header .icon-btn { width: 22px; height: 22px; font-size: 11px; }
+.schedule-calendar-month { font-weight: 700; font-size: 11.5px; color: var(--ink); }
+.schedule-calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 8.5px;
+  font-weight: 700;
+  color: var(--ink-faint);
+  margin-bottom: 3px;
+}
+.schedule-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.schedule-cal-cell {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.schedule-cal-cell.is-empty { background: none; cursor: default; }
+.schedule-cal-cell.is-today { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.schedule-cal-cell.is-selected { background: var(--accent); color: #fff; }
+.schedule-cal-cell:disabled { color: var(--ink-faint); background: none; cursor: not-allowed; opacity: 0.5; }
+.schedule-cal-cell:not(:disabled):not(.is-selected):hover { background: var(--border-strong); }
+
+.schedule-selected-dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.schedule-selected-dates .empty-note { padding: 2px; }
+.schedule-date-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 6px 5px 10px;
+  background: var(--accent-wash);
+  color: var(--accent);
+  border-radius: var(--radius-pill);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.schedule-date-chip-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.5);
+  color: var(--accent);
+  font-size: 9px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
+.schedule-date-chip-remove:hover { background: var(--accent); color: #fff; }
+
+.schedule-end-preview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin: 0 2px 10px;
+}
+.schedule-end-preview i { color: var(--accent); font-size: 11px; }
+.schedule-end-preview span { font-weight: 700; color: var(--ink); }
+
+.schedule-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ink);
+  padding: 8px 2px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.schedule-checkbox-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+
+.schedule-per-date-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 2px 0 10px;
+}
+.schedule-per-date-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-md);
+}
+.schedule-per-date-label {
+  flex: 0 0 62px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.schedule-per-date-row .field-sm { flex: 1; min-width: 0; }
+.schedule-per-date-end {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+/* ============================================================
+   GROUP PROFILE — SCHEDULED CLASSES LIST (visible to everyone)
+   ============================================================ */
+.group-schedule-list { margin: 0 18px 18px; display: flex; flex-direction: column; gap: 8px; }
+.group-schedule-list .empty-note { padding: 4px 2px; }
+
+.group-schedule-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 13px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+.group-schedule-item.is-live { border-color: var(--success); background: var(--accent-wash); }
+
+.group-schedule-item-date { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.group-schedule-item-date-label { font-weight: 700; font-size: 13px; color: var(--ink); }
+.group-schedule-item-time-label { font-size: 11.5px; color: var(--ink-faint); }
+
+.group-schedule-item-teacher {
+  font-size: 12px;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.group-schedule-item-teacher i { color: var(--accent); font-size: 11px; }
+
+/* FIX: admin-only edit/delete/"end now" controls on each row — see
+   "add option for admin to edit, delete and end live session anytime,
+   even during the session" and groupScheduleItemHtml()/
+   groupScheduleEditRowHtml() in app.js. */
+.group-schedule-item-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.group-schedule-item-actions .icon-btn { width: 30px; height: 30px; font-size: 12px; }
+.group-schedule-item-end-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--danger);
+  background: var(--danger-wash);
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.group-schedule-item-end-btn:hover { background: var(--danger); color: #fff; }
+
+.group-schedule-item.is-editing {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.group-schedule-edit-fields {
+  display: flex;
+  gap: 6px;
+}
+.group-schedule-edit-fields .field-sm { flex: 1; min-width: 0; }
+.group-schedule-edit-actions {
+  display: flex;
+  gap: 6px;
+}
+.group-schedule-edit-actions .btn-admin-sm { flex: 1; }
+
+/* ============================================================
+   ADMIN — ALL-GROUPS LIVE SESSIONS CALENDAR
+   ============================================================ */
+#screenCalendar { overflow: hidden; height: 100%; }
+
+.calendar-scroll-container {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 18px 24px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.calendar-day-group + .calendar-day-group { margin-top: 18px; }
+
+.calendar-day-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding: 0 2px 8px;
+}
+
+/* FIX: root cause of "add option for admin to edit, delete and end live
+   session anytime" on the all-groups calendar — each row used to be a
+   single <button> wrapping everything, which left no room for separate
+   delete/"end now" controls (nested interactive elements aren't valid
+   HTML and break click handling). .calendar-item is now the outer row
+   (no longer itself clickable); .calendar-item-link is the button that
+   still navigates into the group's Profile screen, and
+   .calendar-item-admin-actions sits beside it holding the admin-only
+   quick actions. See calendarItemHtml() in app.js. */
+.calendar-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+.calendar-item:hover { border-color: var(--accent); }
+.calendar-item.is-live { border-color: var(--success); background: var(--accent-wash); }
+
+.calendar-item-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.calendar-item-admin-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.calendar-item-time {
+  flex: 0 0 62px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.3;
+}
+.calendar-item-time-start { font-weight: 800; font-size: 13.5px; color: var(--ink); }
+.calendar-item-time-end { font-size: 11px; color: var(--ink-faint); }
+
+.calendar-item-text { flex: 1; min-width: 0; }
+.calendar-item-group {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.calendar-item-teacher {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.calendar-item-teacher i { color: var(--accent); font-size: 11px; }
+
+.calendar-item-duration {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink-faint);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.calendar-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.22);
+}
+
+/* ============================================================
+   BOTTOM NAVIGATION
+   ============================================================ */
+.bottom-nav {
+  position: relative;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 10px 8px calc(10px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  z-index: 5;
+  flex-shrink: 0;
+}
+.nav-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-faint);
+  font-size: 10.5px;
+  /* FIX: "make the font of sessions, updates and settings bold" — label
+     weight bumped 600 -> 900 (max weight) so Sessions/Updates/Settings
+     read unambiguously bold under the tab icons. */
+  font-weight: 900;
+  padding: 2px 14px;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.nav-icon-wrap {
+  position: relative;
+  /* FIX: "use this shape for icons highlighter instead of circular shape"
+     — the active-tab highlight was a circle (40x40, border-radius:50%).
+     Per the reference image (a wide navy stadium/pill shape), this is now
+     a pill: wider than tall, with border-radius large enough (999px) to
+     fully round the shorter (height) dimension into semicircular ends,
+     instead of a perfect circle. */
+  width: 56px;
+  height: 34px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+/* Bottom-nav icons are inline SVGs (traced from the provided artwork)
+   rather than Font Awesome glyphs. fill="currentColor" on the <svg>
+   means they pick up color exactly like the old <i> icons did — no
+   change needed to the active-state rules below. */
+.nav-icon-svg {
+  /* FIX: "increase the icons size" — Sessions/Updates/Settings glyphs
+     bumped 18px -> 24px so they read clearly against the enlarged
+     .nav-icon-wrap circle above. */
+  width: 24px;
+  height: 24px;
+  display: block;
+  color: inherit;
+}
+.nav-btn.active { color: var(--ink); }
+.nav-btn.active .nav-icon-wrap { background: var(--navy); color: #fff; }
+.nav-badge {
+  position: absolute; top: -3px; right: -3px;
+  background: var(--accent); color: #fff; font-size: 9px; font-weight: 700;
+  min-width: 15px; height: 15px; border-radius: 999px;
+  display: flex; align-items: center; justify-content: center; padding: 0 3px;
+}
+/* FIX: "notification dot for unseen status in nav bar" — the Updates tab
+   reuses .nav-badge's pill/positioning but as a plain dot, no digit inside
+   (unlike #navChatsBadge's unread count): WhatsApp's status tab indicator
+   is presence-only ("something's unseen"), not a count, so this drops the
+   padding/min-width sizing that exists to fit 1-3 digits and sizes it as a
+   small fixed circle instead. Toggled by updateStatusNavBadge() in app.js. */
+.nav-badge.nav-dot {
+  min-width: 10px; width: 10px; height: 10px;
+  padding: 0; top: -1px; right: -1px;
+}
+
+/* ============================================================
+   STATUS / UPDATE VIEWER
+   ============================================================ */
+.status-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 6, 24, 0.6);
+  padding: 0;
+}
+.status-viewer-inner {
+  width: 100%;
+  max-width: 430px;
+  /* FIX: root cause of "video/image on a status doesn't appear centered
+     from up and down side" on real phones — this used to be a plain
+     `height: 100%` of `.status-viewer` (position:fixed; inset:0), which
+     mobile browsers size to the *layout* viewport, not the visible one.
+     With the address bar on screen, that's taller than what's actually
+     visible, so this card (and the media centered inside it via
+     .status-viewer-body.has-media below) rendered partly below the fold —
+     reading as "not centered", since the hidden slice came off one side
+     only. Every other full-height container in this app (body,
+     .app-shell, .phone-frame) already avoids this with the same
+     100vh → 100dvh → var(--app-height) fallback chain, where
+     --app-height is kept in sync with window.visualViewport by
+     setAppHeight() in app.js; this was the one container that still used
+     the plain, unsafe unit. This also replaces the old per-open
+     `inner.style.height = '100vh'` hack in showStatusModal() (app.js),
+     which forced the exact same broken value in JS — removed there now
+     that CSS handles it correctly on its own. */
+  height: 100vh;
+  height: 100dvh;
+  height: var(--app-height);
+  /* FIX: root cause of "status screen is not fit to the screen in mobile —
+     it shows up and down empty space, should fill the screen" — this used
+     to be a flat `max-height: 860px` right here in the base (mobile,
+     <560px width) rule, so it applied on every phone, not just the
+     tablet/desktop "phone mockup" card further down. Any real phone taller
+     than 860 CSS px (common on today's tall-aspect-ratio phones — e.g.
+     iPhone 14/15 Pro Max is 932px, many 20:9/21:9 Android phones run
+     880-930px) got capped short of the actual screen height, and since
+     .status-viewer (the fixed, dark backdrop behind this card) centers it
+     with align-items/justify-content: center, the leftover space split
+     evenly above and below — the backdrop showing through top and bottom
+     instead of the card filling edge to edge. .phone-frame (the main app
+     shell) never had this problem because its own default/mobile rule
+     carries no max-height at all — only ITS `@media (min-width: 560px)`
+     tablet block adds a fixed/bounded height for the "card on a bigger
+     screen" look. Moving the 860px cap down into this same media query
+     (next rule) makes the status viewer follow that exact pattern: no cap
+     on real phones (fills whatever var(--app-height) actually is), capped
+     only once the viewport is wide enough to be tablet/desktop. */
+  background: var(--navy);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+@media (min-width: 560px) {
+  .status-viewer-inner { border-radius: 26px; height: 860px; max-height: 860px; }
+}
+
+.status-segments { display: flex; gap: 4px; padding: 14px 14px 0; flex-shrink: 0; }
+.segment { flex: 1; height: 3px; border-radius: 999px; background: rgba(255,255,255,0.22); overflow: hidden; }
+.segment-fill { height: 100%; width: 0%; background: #fff; transition: width 0.05s linear; }
+
+.status-viewer-header { display: flex; align-items: center; gap: 10px; padding: 14px 14px 10px; flex-shrink: 0; }
+.status-viewer-header .back-btn { background: rgba(255,255,255,0.1); color: #fff; }
+.status-viewer-header .back-btn:hover { background: rgba(255,255,255,0.2); }
+.status-viewer-avatar { box-shadow: 0 0 0 2px #fff; }
+.status-viewer-meta { flex: 1; min-width: 0; }
+.status-viewer-name { font-weight: 700; font-size: 14px; color: #fff; }
+.status-viewer-time { font-size: 11.5px; color: rgba(255,255,255,0.55); }
+.status-viewer-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 22px; gap: 14px; overflow-y: auto; }
+/* FIX: same native-selection-vs-click conflict as .msg-bubble above,
+   applied to the Updates full-screen viewer's text (#statusModalContent
+   renders inside here) — this is exactly the "clicking any text selects it
+   instead of opening the link" complaint for shared links inside updates. */
+/* FIX: was `.status-viewer-body p` — #statusModalContent is a plain <div>
+   now (renderRichBlocks() in app.js fills it with one <div> per line, each
+   carrying its own alignment; block-level markup a <p> can't validly
+   contain), so this targets the id directly. text-align dropped from here
+   entirely: alignment is per-line now, set as an inline style on each of
+   those inner <div>s, not once for the whole block. */
+#statusModalContent { color: #fff; font-size: 16px; line-height: 1.6; font-weight: 500; user-select: none; -webkit-user-select: none; }
+#statusModalContent:empty { display: none; }
+/* FIX: .msg-link's default color (var(--chat-accent), navy) is meant for
+   text on light chat-bubble backgrounds — against this viewer's dark navy
+   background (.status-viewer-inner) it would be nearly invisible. Use the
+   same pale chat-blue already used elsewhere for text/icons on navy. */
+.status-viewer-body .msg-link { color: var(--chat-blue); }
+.status-viewer-media:empty { display: none; }
+.status-viewer-media img, .status-viewer-media video {
+  max-width: 100%; max-height: 60vh; border-radius: 14px; object-fit: contain; display: block;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+/* FIX: root cause of "media in status takes time to open" — see the big
+   comment in showStatusModal() (app.js). This spinner is appended next to
+   the img/video while it's still downloading (the auto-advance story timer
+   is now paused for that same window, so the update can't skip itself
+   before its media is visible). Absolutely positioned over
+   .status-viewer-media, which is the centering flex container in both the
+   has-media and text+media layouts, so the spinner is centered no matter
+   which layout is active. */
+.status-media-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+  animation: orbit-loading-spin 0.8s linear infinite;
+  z-index: 1;
+}
+/* FIX: root cause of "media in status is not showing in center" for any
+   update whose photo/video actually fails to load (expired/broken URL,
+   network error) — a bare broken <img> renders the browser's native
+   broken-image glyph pinned to the top-left of its box instead of a
+   centered photo, which is indistinguishable from "the media isn't
+   centered". Shown instead once app.js's `error` handler fires; centered
+   via the same flex rules as a real loaded image/video (see
+   .status-viewer-media and .status-viewer-body.has-media .status-viewer-media
+   above/below). */
+.status-media-broken {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 14px;
+  width: 100%;
+  height: 100%;
+  justify-content: center;
+}
+.status-media-broken i { font-size: 30px; }
+
+/* FIX: "display media in full screen not in small screen" — when an update
+   has a photo/video, .has-media (toggled in showStatusModal() in app.js)
+   switches the body from the padded/centered text layout to an edge-to-edge
+   layout that fills the entire viewer, WhatsApp/Instagram-story style.
+   Text-only updates are untouched and keep using the rules above. */
+.status-viewer-body.has-media {
+  padding: 0;
+  gap: 0;
+  align-items: stretch;
+  justify-content: flex-start;
+  position: relative;
+  overflow: hidden;
+}
+/* FIX: root cause of "screen shows empty black color around the opened
+   media instead of navy blue" — this used to be `background: #000`. Media
+   is shown with object-fit: contain (see the img/video rule just below),
+   so anything that isn't the same aspect ratio as the viewer leaves
+   letterboxing/pillarboxing bars — those bars render in *this* container's
+   background, not .status-viewer-inner's. #000 is a different, flatly
+   black color from the app's navy (var(--navy), #0E1B75) that
+   .status-viewer-inner already uses everywhere else in the viewer (header,
+   segments, non-media background), so those bars read as a jarring pure-
+   black band instead of matching the surrounding navy chrome. Use the same
+   navy variable so the bars blend seamlessly with the rest of the viewer. */
+.status-viewer-body.has-media .status-viewer-media {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--navy);
+}
+.status-viewer-body.has-media .status-viewer-media img,
+.status-viewer-body.has-media .status-viewer-media video {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 0;
+  object-fit: contain;
+}
+.status-viewer-body.has-media p:not(:empty) {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  z-index: 2;
+  padding: 46px 20px 22px;
+  background: linear-gradient(to top, rgba(0,0,0,0.78), rgba(0,0,0,0.4) 60%, transparent);
+  text-align: left;
+  font-size: 14.5px;
+  pointer-events: none;
+}
+
+/* ============================================================
+   MODALS
+   ============================================================ */
+.modal-overlay {
+  background: rgba(20, 22, 43, 0.5);
+  backdrop-filter: blur(3px);
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 70; padding: 16px;
+}
+.modal-card {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 26px;
+  width: 100%;
+  max-width: 360px;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.modal-title { font-family: var(--font-display); font-weight: 800; font-size: 16px; color: var(--ink); display: flex; align-items: center; gap: 8px; }
+.modal-body { color: var(--ink-soft); font-size: 14px; margin: 12px 0 16px; line-height: 1.55; }
+
+/* WhatsApp-style message selection: click a message (desktop) or
+   long-press it (mobile) and, instead of a floating pill over the
+   bubble, the chat header itself swaps out for this bar — same
+   spot the group name normally sits in — with a close (X), a
+   "1 selected" label, and an Info button that opens the
+   read-receipt modal. See selectMessageForInfo()/exitMessageSelection()
+   in app.js. */
+.msg-select-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 14px;
+  border-bottom: 1px solid var(--chat-grey);
+  background: var(--chat-white);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  flex-shrink: 0;
+  animation: msgIn 0.12s ease-out;
+}
+.msg-select-header.hidden { display: none; }
+.msg-select-count {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 15.5px;
+  color: var(--ink);
+}
+.msg-select-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.msg-select-actions .icon-btn.hidden { display: none; }
+
+/* Forward-to-channel picker, reusing the modal-overlay/modal-card look. */
+.forward-channel-list { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; margin: 4px 0 16px; }
+.forward-channel-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 8px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md, 10px);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+  color: var(--ink);
+}
+.forward-channel-row:hover { background: var(--surface-sunken); }
+.forward-channel-name { font-size: 14px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Highlight on the bubble currently backing the selection header,
+   so it's clear which message "1 selected" refers to. */
+.msg.msg-selected .msg-bubble {
+  outline: 2px solid var(--chat-accent);
+  outline-offset: 1px;
+}
+
+.msg-info-section-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink-soft);
+  margin: 16px 0 8px;
+}
+.msg-info-list { display: flex; flex-direction: column; gap: 10px; max-height: 160px; overflow-y: auto; }
+.msg-info-row { display: flex; align-items: center; gap: 10px; }
+.msg-info-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.msg-info-time { font-size: 12px; color: var(--ink-soft); flex-shrink: 0; }
+.msg-info-time.msg-info-pending { color: var(--danger); opacity: 0.8; }
+.msg-info-time.msg-info-notdelivered { color: var(--ink-soft); opacity: 0.6; }
+
+/* ============================================================
+   RESPONSIVE TIGHTENING
+   ============================================================ */
+@media (max-width: 380px) {
+  .avatar { width: 36px; height: 36px; font-size: 13px; }
+  .brand-word { font-size: 1.25rem; }
+  .auth-card { padding: 26px 20px 22px; }
+}
+
+/* ============================================================
+   MOBILE TAP OPTIMIZATION
+   ============================================================ */
+.chat-row,
+.update-row,
+.member-row,
+.calendar-item,
+.calendar-item-link,
+.group-schedule-item,
+.nav-btn,
+.btn,
+.icon-btn,
+.fab,
+.settings-action-row,
+.logout-btn,
+.btn-live-pill,
+.btn-navy-pill,
+.btn-admin-sm,
+.see-all-link,
+.status-viewer-media img,
+.status-viewer-media video,
+.modal-card,
+.status-viewer-inner,
+.schedule-banner,
+.profile-card,
+.settings-profile-card,
+.auth-card {
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+/* Allow text selection in specific areas
+   FIX: .msg-bubble and #statusModalContent (formerly .status-viewer-body p)
+   used to be listed here too. This rule comes AFTER their own dedicated
+   rules above in the file, so — same selector specificity — it was the one
+   actually winning the cascade and re-enabling native selection there,
+   overriding the user-select:none just set on them above. Dropped both
+   from this list; see the FIX comments on .msg-bubble and
+   #statusModalContent for why. */
+.msg-author,
+.msg-time,
+.profile-card-desc,
+.settings-profile-name,
+.settings-profile-email,
+.settings-profile-displayname,
+.auth-title,
+.auth-sub,
+.msg-delivery-status {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Prevent accidental text selection in chat list */
+.chat-row-name,
+.chat-row-preview,
+.chat-row-time {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ============================================================
+   RECORDINGS MODAL (auto-record toggle, retention, R2 list)
+   ============================================================ */
+.recordings-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 22, 43, 0.45);
+  padding: 20px;
+}
+.recordings-modal.hidden { display: none; }
+
+.recordings-modal-inner {
+  width: 100%;
+  max-width: 420px;
+  max-height: 80vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 20px;
+}
+
+.recordings-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 16px;
+}
+
+.recordings-hint {
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  line-height: 1.4;
+  margin: 0 0 16px;
+}
+
+.recordings-list-title {
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.recordings-list { display: flex; flex-direction: column; gap: 8px; }
+
+.recording-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+}
+.recording-row-title { color: var(--ink); font-size: 14px; font-weight: 600; }
+.recording-row-meta { color: var(--ink-faint); font-size: 12px; margin-top: 2px; }
+.recording-row-actions { display: flex; gap: 4px; flex-shrink: 0; }
