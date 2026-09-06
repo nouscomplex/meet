@@ -1608,6 +1608,31 @@
     }
   }
 
+  // FIX: root cause of "chat doesn't move to top in real-time when it
+  // receives a message" — loadChannels() always orders channels
+  // alphabetically by name (`.order('name')` in the DB query), and every
+  // realtime message handler (handleGlobalMessageInsert, and the two
+  // INSERT handlers inside subscribeToMessages) only ever updated
+  // state.channelPreviews[channelId] and then re-rendered `allChannels` in
+  // that same untouched alphabetical order. The preview text/time updated
+  // in place, but nothing ever reordered the rows by recency, so a channel
+  // could never visually "jump" to the top. sortChannelsByActivity() below
+  // sorts by each channel's most recent preview timestamp (falling back to
+  // alphabetical for channels with no messages yet), and renderChatList()
+  // now always renders through it — on initial load and on every realtime
+  // update alike — so the most recently active chat is always at the top,
+  // like a normal chat app.
+  function sortChannelsByActivity(channels) {
+    return [...channels].sort((a, b) => {
+      const aTime = state.channelPreviews[a.id]?.created_at;
+      const bTime = state.channelPreviews[b.id]?.created_at;
+      if (aTime && bTime) return new Date(bTime) - new Date(aTime);
+      if (aTime) return -1;
+      if (bTime) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }
+
   function renderChatList(channels) {
     exitChannelSelection();
     DOM.channelList.innerHTML = '';
@@ -1619,7 +1644,9 @@
       return;
     }
 
-    channels.forEach((ch) => {
+    const sortedChannels = sortChannelsByActivity(channels);
+
+    sortedChannels.forEach((ch) => {
       const preview = state.channelPreviews[ch.id];
       const unread = state.unreadByChannel[ch.id] || 0;
       const previewLinkUrl = preview && preview.content ? firstUrlIn(preview.content) : null;
