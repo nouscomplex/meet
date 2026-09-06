@@ -1998,6 +1998,30 @@
     await expelFromChannel(removedChannelId);
   }
 
+  // FIX: root cause of "group doesn't show to the added person in
+  // real-time — only shows after refreshing the app" — the
+  // channel-list-updates realtime channel below only ever listened for
+  // DELETE events on the MEMBERS table (feeding handleMembershipRemoved
+  // above) and DELETE on user_roles; there was no INSERT listener at all.
+  // So when addMemberToChannel() inserts a new MEMBERS row for someone,
+  // that student/teacher's already-open tab never hears about it — the
+  // new group only ever appeared after a full reload, because that's the
+  // only path that re-runs loadChannels() and re-reads membership rows
+  // from the DB from scratch. handleMembershipAdded() is the INSERT
+  // counterpart to handleMembershipRemoved(): every member's client gets
+  // the INSERT event, checks whether the new row is *for them*, and if so
+  // re-runs renderChannels() (loads channels + previews + re-subscribes
+  // badges + re-renders the list) so the new group shows up immediately.
+  // Admins already see every channel regardless of membership rows (see
+  // loadChannels()), so this is a no-op for them.
+  async function handleMembershipAdded(newRow) {
+    if (!newRow || !state.currentUser || state.isAdmin) return;
+    if (normalizeUsername(newRow.username || '') !== state.currentUser.username) return;
+    if (state.myMemberships.has(String(newRow.channel_id))) return; // already known, nothing to do
+    console.log('➕ Realtime: added to a new channel, refreshing channel list.');
+    await renderChannels();
+  }
+
   async function verifyChannelMembership(channelId) {
     try {
       const { data, error } = await supabase
@@ -2079,6 +2103,11 @@
         schema: 'public',
         table: CONFIG.SUPABASE.TABLES.MEMBERS,
       }, (payload) => handleMembershipRemoved(payload.old))
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: CONFIG.SUPABASE.TABLES.MEMBERS,
+      }, (payload) => handleMembershipAdded(payload.new))
       .on('postgres_changes', {
         event: 'DELETE',
         schema: 'public',
