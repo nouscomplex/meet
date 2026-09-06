@@ -1282,10 +1282,9 @@
   // being used to gate read-receipts (markDelivered/markSeen — see the
   // message INSERT handler and selectChannel()), and it used the exact
   // same "screen is one of CHAT_GROUP_SCREENS" check for that. That meant
-  // ANY channel sitting in state.currentChannel — including the one
-  // renderChannels() silently auto-selects on first load, before the user
-  // has clicked anything — counted as "visible" and got its messages
-  // marked seen and its badge cleared automatically. Requiring
+  // ANY channel sitting in state.currentChannel counted as "visible" and
+  // got its messages marked seen and its badge cleared automatically,
+  // even if it got there some way other than a genuine click. Requiring
   // channelExplicitlyOpened here keeps the pane-visibility behavior for
   // rendering, but only allows read-receipts once the user has actually
   // clicked/tapped into that specific channel at least once.
@@ -1594,18 +1593,19 @@
     state.channelPreviews = await loadChannelPreviews(channels.map((c) => c.id));
     renderChatList(channels);
 
-    if (!state.currentChannel && channels.length) {
-      // FIX: root cause of "the first message read status shows blue tick
-      // and unread badge disappears for a channel the user never opened"
-      // — this used to pass markSeenNow: isDesktopLayout(), which silently
-      // called markDelivered()/markSeen() for whichever channel happens to
-      // be first in the list the moment the app loads, before the user has
-      // clicked anything. userInitiated: false (paired with the
-      // isChatDetailVisible() fix above) keeps the desktop split-pane
-      // showing that channel's messages for convenience, without treating
-      // it as "read" until the user actually opens it themselves.
-      selectChannel(channels[0], { markSeenNow: false, userInitiated: false });
-    }
+    // FIX: "on refresh the app auto-opens 'Brand New Class' instead of
+    // staying neutral" — this block used to call
+    // selectChannel(channels[0], ...) whenever no channel was selected yet.
+    // loadChannels() sorts channels alphabetically by name, so "first in
+    // the list" was never "most recent" or "intentional" — it was just
+    // whichever channel happened to sort first (e.g. "Brand New Class"
+    // beats "E-Commerce...", "English Communication", "Graphic Design").
+    // Every reload silently opened that channel, marked it as the active
+    // chat, and highlighted its row — even though the user never clicked
+    // it. Removed entirely: state.currentChannel now stays null after
+    // renderChannels() runs, so the UI stays on the neutral "Select a
+    // session" welcome screen until the user actually taps a channel
+    // (openChannel() -> selectChannel(..., { userInitiated: true })).
   }
 
   // FIX: root cause of "chat doesn't move to top in real-time when it
