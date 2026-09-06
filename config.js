@@ -34,7 +34,18 @@ const CONFIG = {
       STATUSES: 'statuses',
       ATTENDANCE: 'attendance',
       MEMBERS: 'members',
-    }
+    },
+    // Auto-recording (Cloudflare R2) — just Edge Function names and the
+    // Supabase table name. The R2 account id, access key, secret key
+    // and bucket name are NOT here: they live only in the Edge
+    // Functions' own server-side environment (Supabase dashboard ->
+    // Edge Functions -> Secrets) and in the recorder hook script's env
+    // file on the Oracle box, so the browser never sees them.
+    RECORDINGS: {
+      DOWNLOAD_URL_FUNCTION: 'recording-download-url',
+      DELETE_FUNCTION: 'delete-recording',
+      TABLE: 'recordings',
+    },
   },
 
   // ============================================================
