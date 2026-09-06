@@ -193,6 +193,7 @@
           <span class="msg-select-count" id="channelSelectCount">1 selected</span>
           <div class="msg-select-actions">
             <button id="channelSelectRenameBtn" class="icon-btn" title="Rename" aria-label="Rename"><i class="fas fa-pen"></i></button>
+            <button id="channelSelectRecordingsBtn" class="icon-btn" title="Recordings" aria-label="Recordings"><i class="fas fa-video"></i></button>
             <button id="channelSelectDeleteBtn" class="icon-btn" title="Delete" aria-label="Delete"><i class="fas fa-trash" style="color:var(--danger);"></i></button>
           </div>
         </div>
@@ -871,6 +872,16 @@
             <p class="schedule-end-preview"><i class="fas fa-hourglass-half"></i> Ends automatically at <span id="scheduleEndPreview">—</span></p>
 
             <label class="schedule-checkbox-row">
+              <input type="checkbox" id="scheduleRecordCheckbox">
+              <span><i class="fas fa-video"></i> Record this session automatically</span>
+            </label>
+            <div id="scheduleRetentionRow" class="admin-row hidden" style="display:flex; align-items:center; gap:8px; margin: 4px 0 10px;">
+              <span class="schedule-field-label" style="white-space:nowrap;">Auto-delete recording from R2 after</span>
+              <input id="scheduleRetentionInput" type="number" min="1" max="365" step="1" value="30" class="field-sm" style="width:70px;">
+              <span class="schedule-field-label">days</span>
+            </div>
+
+            <label class="schedule-checkbox-row">
               <input type="checkbox" id="scheduleSameTimeCheckbox" checked>
               <span>Same start time &amp; duration for every date selected above</span>
             </label>
@@ -936,6 +947,20 @@
         </button>
       </nav>
 
+    </div>
+  </div>
+
+  <!-- ===== RECORDINGS LIBRARY (admin, per-channel — lists recordings from
+       sessions that were scheduled with "Record this session" checked) ===== -->
+  <div id="recordingsModal" class="hidden recordings-modal">
+    <div class="recordings-modal-inner">
+      <div class="recordings-modal-header">
+        <span>Recordings — <span id="recordingsModalChannelName"></span></span>
+        <button id="closeRecordingsModal" class="icon-btn back-btn" aria-label="Close"><i class="fas fa-times"></i></button>
+      </div>
+      <p class="recordings-hint">Whether a session gets recorded, and for how long it's kept, is set when the session is scheduled (Profile → Set class time → "Record this session automatically").</p>
+      <div class="recordings-list-title">Stored recordings</div>
+      <div id="recordingsListContainer" class="recordings-list"></div>
     </div>
   </div>
 
