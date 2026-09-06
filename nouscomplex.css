@@ -91,6 +91,33 @@ header#main-header .middle {
   z-index: 10;
 }
 
+/* Remove the manual "Start/Stop Recording" control for every role.
+   The actual recording behavior is controlled server-side, per
+   scheduled session, by plugnmeet-token's recordingFeaturesFor():
+     - non-recorded sessions send room_features.recording_features
+       .is_allow: false, so PlugNmeet doesn't even render a recording
+       control at all — nothing for this CSS rule to do there.
+     - recorded sessions (an admin checked "Record this session
+       automatically" when scheduling — see setClassSchedule() in
+       app.js) send is_allow: true + enable_auto_cloud_recording: true,
+       so PlugNmeet starts cloud recording itself the instant a
+       moderator joins, with no button click needed. is_allow: true is
+       also what makes PlugNmeet render its own recording control
+       though, so THIS rule hides it for that case — otherwise a
+       moderator could still manually stop the auto-started recording
+       or start a redundant second one.
+   This selector could not be confirmed against a live meeting's DOM (no
+   active room was available to inspect while writing this), so
+   aria-label/title are a best guess at the accessible name PlugNmeet
+   uses for it — re-check with DevTools open during an actual recorded
+   session and correct the selector here if it doesn't match. */
+footer#main-footer button[aria-label*="record" i],
+footer#main-footer button[title*="record" i],
+header#main-header button[aria-label*="record" i],
+header#main-header button[title*="record" i] {
+  display: none !important;
+}
+
 /* Whiteboard: remove the row of external link buttons (Documentation,
    Read our blog, Found an issue? Submit, YouTube) from the top of the
    Excalidraw "Help" panel. The whiteboard is Excalidraw, embedded as-is
