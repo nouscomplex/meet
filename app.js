@@ -2096,22 +2096,42 @@
     }
     if (!state.currentUser) return;
 
+    // FIX: root cause of "admin adds a member to a group and it still
+    // doesn't show up for that person in real-time" — these two
+    // postgres_changes listeners on the MEMBERS table were UNFILTERED
+    // (no `filter`), same shape as the messages-table subscription that
+    // the FIX comment on subscribeToChannelListUpdates() above already
+    // identified as unreliable: this project's Realtime/RLS config only
+    // consistently delivers postgres_changes events on FILTERED
+    // subscriptions, not unfiltered ones. handleMembershipAdded() already
+    // existed to refresh the channel list on INSERT, but the event itself
+    // was frequently never delivered to the client, so the new group only
+    // ever appeared after a manual reload (which re-reads membership rows
+    // straight from the DB via loadChannels(), bypassing Realtime
+    // entirely). Adding `filter: username=eq.<me>` — the same trick
+    // subscribeToChannelBadge()/subscribeToMessages() already rely on —
+    // makes both listeners FILTERED, which is the form proven to work.
+    const myUsernameFilter = `username=eq.${state.currentUser.username}`;
+
     channelListSubscription = supabase
       .channel('channel-list-updates')
       .on('postgres_changes', {
         event: 'DELETE',
         schema: 'public',
         table: CONFIG.SUPABASE.TABLES.MEMBERS,
+        filter: myUsernameFilter,
       }, (payload) => handleMembershipRemoved(payload.old))
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: CONFIG.SUPABASE.TABLES.MEMBERS,
+        filter: myUsernameFilter,
       }, (payload) => handleMembershipAdded(payload.new))
       .on('postgres_changes', {
         event: 'DELETE',
         schema: 'public',
         table: 'user_roles',
+        ...(state.myUserRoleId != null ? { filter: `id=eq.${state.myUserRoleId}` } : {}),
       }, (payload) => handleAccountDeleted(payload.old))
       .subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {
