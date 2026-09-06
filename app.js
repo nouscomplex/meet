@@ -196,7 +196,13 @@
     channelSelectCloseBtn: $('channelSelectCloseBtn'),
     channelSelectCount: $('channelSelectCount'),
     channelSelectRenameBtn: $('channelSelectRenameBtn'),
+    channelSelectRecordingsBtn: $('channelSelectRecordingsBtn'),
     channelSelectDeleteBtn: $('channelSelectDeleteBtn'),
+
+    recordingsModal: $('recordingsModal'),
+    closeRecordingsModal: $('closeRecordingsModal'),
+    recordingsModalChannelName: $('recordingsModalChannelName'),
+    recordingsListContainer: $('recordingsListContainer'),
 
     userBadge: $('userBadge'),
     updatesScreenHeader: $('updatesScreenHeader'),
@@ -312,6 +318,9 @@
     sharedVideosGrid: $('sharedVideosGrid'),
     adminProfileSchedule: $('adminProfileSchedule'),
     scheduleTeacherInput: $('scheduleTeacherInput'),
+    scheduleRecordCheckbox: $('scheduleRecordCheckbox'),
+    scheduleRetentionRow: $('scheduleRetentionRow'),
+    scheduleRetentionInput: $('scheduleRetentionInput'),
     scheduleCalPrevBtn: $('scheduleCalPrevBtn'),
     scheduleCalNextBtn: $('scheduleCalNextBtn'),
     scheduleCalMonthLabel: $('scheduleCalMonthLabel'),
@@ -1800,6 +1809,112 @@
       exitChannelSelection();
       if (ch) deleteChannel(ch.id);
     });
+  }
+
+  if (DOM.channelSelectRecordingsBtn) {
+    DOM.channelSelectRecordingsBtn.addEventListener('click', () => {
+      const ch = selectedChannel;
+      exitChannelSelection();
+      if (ch) openChannelRecordings(ch);
+    });
+  }
+
+  // ============================================================
+  // RECORDINGS LIBRARY (Cloudflare R2) — per channel
+  // ============================================================
+  // Whether a given session gets recorded, and its retention, is decided
+  // once, at scheduling time (see the "Record this session automatically"
+  // checkbox in the Set-class-time form / setClassSchedule() above) —
+  // not here. This panel is just a read/download/delete library:
+  // recordings themselves are produced entirely outside this app by the
+  // plugnmeet-recorder's post_transcoding hook (Oracle box), which
+  // uploads the finished MP4 straight to Cloudflare R2 and calls the
+  // "register-recording" Edge Function to insert a row per recording.
+  let recordingsModalChannel = null;
+
+  async function openChannelRecordings(channel) {
+    recordingsModalChannel = channel;
+    if (DOM.recordingsModalChannelName) DOM.recordingsModalChannelName.textContent = channel.name;
+    if (DOM.recordingsModal) DOM.recordingsModal.classList.remove('hidden');
+    await renderRecordingsList(channel.id);
+  }
+
+  function closeChannelRecordingsModal() {
+    recordingsModalChannel = null;
+    if (DOM.recordingsModal) DOM.recordingsModal.classList.add('hidden');
+  }
+
+  if (DOM.closeRecordingsModal) {
+    DOM.closeRecordingsModal.addEventListener('click', closeChannelRecordingsModal);
+  }
+
+  async function renderRecordingsList(channelId) {
+    if (!DOM.recordingsListContainer) return;
+    DOM.recordingsListContainer.innerHTML = '<div class="empty-note">Loading recordings…</div>';
+
+    const { data, error } = await supabase
+      .from(CONFIG.SUPABASE.RECORDINGS.TABLE)
+      .select('*')
+      .eq('channel_id', channelId)
+      .is('deleted_at', null)
+      .order('recorded_at', { ascending: false });
+
+    if (error) {
+      DOM.recordingsListContainer.innerHTML = `<div class="empty-note">Could not load recordings: ${escapeHtml(error.message)}</div>`;
+      return;
+    }
+
+    if (!data || !data.length) {
+      DOM.recordingsListContainer.innerHTML = '<div class="empty-note">No recordings yet for this group.</div>';
+      return;
+    }
+
+    DOM.recordingsListContainer.innerHTML = '';
+    data.forEach((rec) => {
+      const sizeMb = rec.file_size_bytes ? (rec.file_size_bytes / (1024 * 1024)).toFixed(1) + ' MB' : '—';
+      const when = rec.recorded_at ? new Date(rec.recorded_at).toLocaleString() : '—';
+      const row = document.createElement('div');
+      row.className = 'recording-row';
+      row.dataset.id = rec.id;
+      row.innerHTML = `
+        <div class="recording-row-info">
+          <div class="recording-row-title">${escapeHtml(rec.title || rec.file_name || 'Recording')}</div>
+          <div class="recording-row-meta">${escapeHtml(when)} · ${escapeHtml(sizeMb)}</div>
+        </div>
+        <div class="recording-row-actions">
+          <button class="icon-btn recording-download-btn" title="Download"><i class="fas fa-download"></i></button>
+          <button class="icon-btn recording-delete-btn" title="Delete from R2" style="color:var(--danger);"><i class="fas fa-trash"></i></button>
+        </div>
+      `;
+      row.querySelector('.recording-download-btn').addEventListener('click', () => downloadRecording(rec.id));
+      row.querySelector('.recording-delete-btn').addEventListener('click', () => deleteRecordingAdmin(rec.id, channelId));
+      DOM.recordingsListContainer.appendChild(row);
+    });
+  }
+
+  async function downloadRecording(recordingId) {
+    const { data, error } = await supabase.functions.invoke(CONFIG.SUPABASE.RECORDINGS.DOWNLOAD_URL_FUNCTION, {
+      body: { recording_id: recordingId },
+    });
+    if (error || !data?.url) {
+      alert('Could not get a download link: ' + (data?.error || error?.message || 'Unknown error'));
+      return;
+    }
+    // Opens the presigned R2 URL (valid a few minutes) in a new tab so
+    // the browser/OS handles the actual download.
+    window.open(data.url, '_blank', 'noopener');
+  }
+
+  async function deleteRecordingAdmin(recordingId, channelId) {
+    if (!confirm('Delete this recording from Cloudflare R2? This cannot be undone — make sure it has been downloaded first if you need to keep it.')) return;
+    const { data, error } = await supabase.functions.invoke(CONFIG.SUPABASE.RECORDINGS.DELETE_FUNCTION, {
+      body: { recording_id: recordingId },
+    });
+    if (error || data?.error) {
+      alert('Delete failed: ' + (data?.error || error?.message || 'Unknown error'));
+      return;
+    }
+    await renderRecordingsList(channelId);
   }
 
   // ============================================================
@@ -5226,7 +5341,7 @@
     });
   }
 
-  async function setClassSchedule(teacherUsername, occurrences) {
+  async function setClassSchedule(teacherUsername, occurrences, recordingOptions) {
     if (!state.currentChannel) { alert('Select a channel first.'); return false; }
     teacherUsername = normalizeUsername(teacherUsername);
     if (!teacherUsername) { alert('Enter a teacher username.'); return false; }
@@ -5237,6 +5352,14 @@
       alert(`"${teacherUsername}" isn't a registered teacher account. Create it first from Settings → Add teacher or student.`);
       return false;
     }
+
+    // Whether to auto-record this session and, if so, for how many days
+    // the recording stays in Cloudflare R2 before being auto-deleted —
+    // set once here, at scheduling time, by whichever admin/teacher is
+    // creating the session. See the "Record this session automatically"
+    // checkbox in the Set-class-time form below.
+    const autoRecordEnabled = !!(recordingOptions && recordingOptions.autoRecordEnabled);
+    const recordingRetentionDays = Math.max(1, parseInt(recordingOptions && recordingOptions.retentionDays, 10) || 30);
 
     const rows = [];
     for (const occ of occurrences) {
@@ -5261,6 +5384,8 @@
         scheduled_time: start.toISOString(),
         duration_minutes: duration,
         set_by: state.currentUser.username,
+        auto_record_enabled: autoRecordEnabled,
+        recording_retention_days: recordingRetentionDays,
       });
     }
 
@@ -8485,6 +8610,12 @@
     openGroupAssignmentModal(DOM.editUsername.value);
   });
 
+  if (DOM.scheduleRecordCheckbox && DOM.scheduleRetentionRow) {
+    DOM.scheduleRecordCheckbox.addEventListener('change', () => {
+      DOM.scheduleRetentionRow.classList.toggle('hidden', !DOM.scheduleRecordCheckbox.checked);
+    });
+  }
+
   DOM.setScheduleBtn.addEventListener('click', async () => {
     const sameTime = !DOM.scheduleSameTimeCheckbox || DOM.scheduleSameTimeCheckbox.checked;
     const defaultStart = DOM.scheduleStartTimeInput.value;
@@ -8500,12 +8631,22 @@
       };
     });
 
-    const ok = await setClassSchedule(DOM.scheduleTeacherInput.value.trim(), occurrences);
+    const ok = await setClassSchedule(
+      DOM.scheduleTeacherInput.value.trim(),
+      occurrences,
+      {
+        autoRecordEnabled: !!(DOM.scheduleRecordCheckbox && DOM.scheduleRecordCheckbox.checked),
+        retentionDays: DOM.scheduleRetentionInput ? DOM.scheduleRetentionInput.value : 30,
+      },
+    );
     if (!ok) return;
     DOM.scheduleTeacherInput.value = '';
     DOM.scheduleStartTimeInput.value = '';
     DOM.scheduleDurationInput.value = '45';
     if (DOM.scheduleSameTimeCheckbox) DOM.scheduleSameTimeCheckbox.checked = true;
+    if (DOM.scheduleRecordCheckbox) DOM.scheduleRecordCheckbox.checked = false;
+    if (DOM.scheduleRetentionInput) DOM.scheduleRetentionInput.value = '30';
+    if (DOM.scheduleRetentionRow) DOM.scheduleRetentionRow.classList.add('hidden');
     resetScheduleSelection();
     renderScheduleCalendar();
     renderScheduleSelectedDates();
