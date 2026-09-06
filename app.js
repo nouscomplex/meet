@@ -2268,6 +2268,74 @@
   }
 
   // ============================================================
+  // MEMBERSHIP POLLING FALLBACK
+  // ============================================================
+  // FIX: "still need to refresh to see the channel after being added" —
+  // handleMembershipAdded() + the now-FILTERED INSERT listener in
+  // subscribeToChannelListUpdates() fix the *common* case, but they still
+  // depend on Supabase Realtime actually delivering a postgres_changes
+  // event for that INSERT — which requires (a) the MEMBERS table to be
+  // added to the `supabase_realtime` publication in the DB, and (b) the
+  // RLS SELECT policy on that table to be one Realtime can evaluate for
+  // this row. Either of those being misconfigured silently drops the
+  // event with no client-side error, no matter how the subscription is
+  // filtered. Exactly this project already hit that wall once before —
+  // see CHAT-LIST PREVIEW POLLING FALLBACK above, which exists because
+  // message-preview updates had the same problem — so membership changes
+  // get the same treatment: a lightweight poll that re-reads this user's
+  // own membership rows and calls renderChannels() the moment it sees a
+  // channel_id that isn't already known, so the new group shows up within
+  // one poll interval even if Realtime never fires at all. Admins are
+  // skipped — they already see every channel unconditionally (see
+  // loadChannels()), so there's nothing for them to miss.
+  let membershipPollTimer = null;
+  const MEMBERSHIP_POLL_INTERVAL = 15000;
+
+  async function pollMyMemberships() {
+    if (!state.currentUser || state.isAdmin) return;
+    try {
+      const { data, error } = await supabase
+        .from(CONFIG.SUPABASE.TABLES.MEMBERS)
+        .select('channel_id')
+        .eq('username', state.currentUser.username);
+
+      if (error) {
+        console.warn('Membership poll failed:', error);
+        return;
+      }
+
+      const freshIds = new Set((data || []).map((m) => String(m.channel_id)));
+      const knownIds = new Set(state.myMemberships.keys());
+
+      let changed = freshIds.size !== knownIds.size;
+      if (!changed) {
+        for (const id of freshIds) {
+          if (!knownIds.has(id)) { changed = true; break; }
+        }
+      }
+
+      if (changed) {
+        console.log('🔄 Membership poll found a change — refreshing channel list.');
+        await renderChannels();
+      }
+    } catch (e) {
+      console.warn('Membership poll error:', e);
+    }
+  }
+
+  function startMembershipPolling() {
+    stopMembershipPolling();
+    membershipPollTimer = setInterval(pollMyMemberships, MEMBERSHIP_POLL_INTERVAL);
+  }
+
+  function stopMembershipPolling() {
+    if (membershipPollTimer) {
+      clearInterval(membershipPollTimer);
+      membershipPollTimer = null;
+    }
+  }
+
+  // ============================================================
   // DELIVERED / SEEN TRACKING
   // ============================================================
   // FIX: "badge disappears, but it takes a while" — correctness (previous
@@ -7444,6 +7512,7 @@
     await renderChannels();
     subscribeToChannelListUpdates();
     startChannelPreviewPolling();
+    startMembershipPolling();
     startMediaExpiryWatcher();
     await refreshUnreadBadges();
     await loadStatuses();
@@ -7575,6 +7644,7 @@
     unsubscribeFromChannelListUpdates();
     unsubscribeAllChannelBadges();
     stopChannelPreviewPolling();
+    stopMembershipPolling();
     stopMediaExpiryWatcher();
     if (scheduleSubscription) {
       supabase.removeChannel(scheduleSubscription);
