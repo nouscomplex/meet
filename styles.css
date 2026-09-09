@@ -3207,8 +3207,15 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
   gap: 6px;
   margin: 2px 0 10px;
 }
+/* FIX: added `flex-wrap: wrap` — see .schedule-per-date-meta below, the
+   new second line this row wraps onto for the per-date "Record" toggle
+   (part of "add record this session option for individual session
+   instead of whole group"). Without wrapping, cramming a 5th control
+   (label + start + duration + end label + record toggle) onto one row
+   would overflow narrow phone screens. */
 .schedule-per-date-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 8px;
@@ -3228,6 +3235,42 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
   color: var(--ink-faint);
   white-space: nowrap;
 }
+/* FIX: "add record this session option for individual session instead of
+   whole group" — the per-date row used to only carry a Starts/Duration
+   override (see app.js renderSchedulePerDateList()); "Record this session
+   automatically" was one checkbox that stamped the SAME value onto every
+   scheduled date. This second line — a full-width flex row via `flex: 1 0
+   100%` on .schedule-per-date-row above (wraps below the label/start/
+   duration line instead of squeezing onto it) — pairs the existing "Ends
+   ..." label with a per-date Record checkbox, so an admin can flip
+   recording on/off for one specific date in a multi-date schedule instead
+   of it being all-or-nothing for the whole batch. */
+.schedule-per-date-meta {
+  flex: 1 0 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.schedule-per-date-record {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-faint);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
+}
+.schedule-per-date-record.is-active { color: var(--danger); }
+.schedule-per-date-record input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--danger);
+  flex-shrink: 0;
+}
+.schedule-per-date-record i { font-size: 10.5px; }
 
 /* ============================================================
    GROUP PROFILE — SCHEDULED CLASSES LIST (visible to everyone)
