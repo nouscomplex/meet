@@ -25,7 +25,7 @@
   <!-- Cache-busting query param — bump alongside the one on app.js
      whenever styles.css changes, for the same reason (see the comment
      on the app.js <script> tag below). -->
-<link rel="stylesheet" href="styles.css?v=20260909a">
+<link rel="stylesheet" href="styles.css?v=20260909b">
 
   <!-- FIX: root cause of "opening the app shows a blank screen for a few
        seconds instead of the loading/home screen" — these three <script>
@@ -967,17 +967,32 @@
   <!-- ===== STATUS / UPDATE VIEWER (dark full-screen) ===== -->
   <div id="statusModal" class="hidden status-viewer">
     <div class="status-viewer-inner">
-      <div class="status-segments" id="statusSegments">
-        <div class="segment"><div id="statusProgress" class="segment-fill"></div></div>
-      </div>
-      <div class="status-viewer-header">
-        <button id="closeStatusModal" class="icon-btn back-btn"><i class="fas fa-arrow-left"></i></button>
-        <div class="avatar sm status-viewer-avatar" id="statusViewerAvatar">?</div>
-        <div class="status-viewer-meta">
-          <div id="statusModalTitle" class="status-viewer-name"></div>
-          <div id="statusModalTime" class="status-viewer-time"></div>
+      <!-- FIX: root cause of "video/image padding isn't equal top and
+           bottom, like WhatsApp" — #statusSegments and the header used to
+           sit in normal document flow, ABOVE .status-viewer-body, so they
+           reserved real space only at the top of the card. The media below
+           then only had what was left underneath, flush with the very
+           bottom edge — a visibly bigger dark gap above the media (header)
+           than below it (none). Wrapping both in this
+           .status-viewer-topbar and floating it over the media instead
+           (see the matching CSS) makes .status-viewer-body the only flow
+           child, so it fills the full card height and any letterboxing
+           around the media ends up symmetric top-to-bottom, same as a
+           real story viewer where the header is an overlay, not a bar
+           that pushes the photo down. -->
+      <div class="status-viewer-topbar">
+        <div class="status-segments" id="statusSegments">
+          <div class="segment"><div id="statusProgress" class="segment-fill"></div></div>
         </div>
-        <button id="statusPauseBtn" class="icon-btn back-btn" title="Pause"><i class="fas fa-pause"></i></button>
+        <div class="status-viewer-header">
+          <button id="closeStatusModal" class="icon-btn back-btn"><i class="fas fa-arrow-left"></i></button>
+          <div class="avatar sm status-viewer-avatar" id="statusViewerAvatar">?</div>
+          <div class="status-viewer-meta">
+            <div id="statusModalTitle" class="status-viewer-name"></div>
+            <div id="statusModalTime" class="status-viewer-time"></div>
+          </div>
+          <button id="statusPauseBtn" class="icon-btn back-btn" title="Pause"><i class="fas fa-pause"></i></button>
+        </div>
       </div>
       <div class="status-viewer-body" id="statusViewerBody">
         <div id="statusModalMedia" class="status-viewer-media"></div>
