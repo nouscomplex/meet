@@ -5796,7 +5796,7 @@
     const showAll = DOM.sharedPhotosGrid.dataset.showAll === 'true';
     const shown = showAll ? photos : photos.slice(-SHARED_MEDIA_ROW_PREVIEW_COUNT);
     state.sharedMediaUrls = shown.map((m) => m.file_url);
-    DOM.sharedPhotosGrid.innerHTML = shown.map((m, i) => `<img class="shared-media-tile" src="${escapeHtml(m.file_url)}" data-media-url="${escapeHtml(m.file_url)}" data-media-index="${i}" alt="Shared photo" loading="lazy" style="cursor:pointer;">`).join('');
+    DOM.sharedPhotosGrid.innerHTML = shown.map((m, i) => `<img class="shared-media-tile" src="${escapeHtml(m.file_url)}" data-media-url="${escapeHtml(m.file_url)}" data-media-id="${escapeHtml(String(m.id))}" data-media-index="${i}" alt="Shared photo" loading="lazy" style="cursor:pointer;">`).join('');
     DOM.profileSeeAllPhotos.classList.toggle('hidden', photos.length <= SHARED_MEDIA_ROW_PREVIEW_COUNT);
     // FIX: root cause of "the See All link works only for expansion not
     // for contraction" — the link's label never changed off "See All", so
@@ -5807,6 +5807,31 @@
     // renders the expanded state gives the click handler something
     // meaningful to toggle.
     DOM.profileSeeAllPhotos.textContent = showAll ? 'Show Less' : 'See All';
+
+    // FIX: root cause of "media deleted from Cloudflare R2 isn't removed
+    // from the Shared Media panel" — this grid renders straight off
+    // state.sharedPhotoMessages, which loadSharedMedia() only filters by
+    // the MESSAGE row (deleted_at IS NULL) and by age
+    // (isMessageMediaExpired(), the 168h retention window). Neither of
+    // those actually checks whether the R2 OBJECT itself still exists.
+    // The R2 Lifecycle rule (or someone manually deleting the object from
+    // the R2/Storage dashboard) removes the file without touching the
+    // message row or its created_at at all, so this tile kept pointing at
+    // a 404 forever — a permanently broken image icon that nothing ever
+    // cleared. The chat bubble already solves this exact problem via
+    // attachMediaFailureHandler() (a real 'error' load-failure listener,
+    // independent of age/deleted_at) — wiring the same signal in here: on
+    // an actual failed load, drop that message from
+    // state.sharedPhotoMessages and re-render, so a photo that's really
+    // gone from R2 disappears from Shared Photos instead of sitting there
+    // broken.
+    DOM.sharedPhotosGrid.querySelectorAll('img.shared-media-tile').forEach((img) => {
+      img.addEventListener('error', () => {
+        const id = img.dataset.mediaId;
+        state.sharedPhotoMessages = state.sharedPhotoMessages.filter((m) => String(m.id) !== id);
+        renderSharedPhotos();
+      }, { once: true });
+    });
   }
 
   function renderSharedVideos() {
@@ -5819,7 +5844,7 @@
     const showAll = DOM.sharedVideosGrid.dataset.showAll === 'true';
     const shown = showAll ? videos : videos.slice(-SHARED_MEDIA_ROW_PREVIEW_COUNT);
     DOM.sharedVideosGrid.innerHTML = shown.map((m) => `
-      <div class="shared-media-tile shared-media-video-tile" data-media-url="${escapeHtml(m.file_url)}" style="cursor:pointer;">
+      <div class="shared-media-tile shared-media-video-tile" data-media-url="${escapeHtml(m.file_url)}" data-media-id="${escapeHtml(String(m.id))}" style="cursor:pointer;">
         <video src="${escapeHtml(m.file_url)}" preload="metadata" muted playsinline></video>
         <span class="shared-media-play-badge" aria-hidden="true"><i class="fas fa-play"></i></span>
       </div>
@@ -5828,6 +5853,22 @@
     // FIX: see the matching FIX comment in renderSharedPhotos() above —
     // same root cause, same fix, just for the videos grid/link pair.
     DOM.profileSeeAllVideos.textContent = showAll ? 'Show Less' : 'See All';
+
+    // FIX: see the matching FIX comment in renderSharedPhotos() above —
+    // same root cause (a file removed from R2 early, out-of-band, never
+    // clears the message row/created_at that this grid renders from), same
+    // fix, just for videos. The <video> element fires its own 'error'
+    // event when its src 404s, exactly like <img> does, so the same
+    // load-failure-driven prune works here.
+    DOM.sharedVideosGrid.querySelectorAll('.shared-media-video-tile').forEach((tile) => {
+      const videoEl = tile.querySelector('video');
+      if (!videoEl) return;
+      videoEl.addEventListener('error', () => {
+        const id = tile.dataset.mediaId;
+        state.sharedVideoMessages = state.sharedVideoMessages.filter((m) => String(m.id) !== id);
+        renderSharedVideos();
+      }, { once: true });
+    });
   }
 
   // ============================================================
