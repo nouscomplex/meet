@@ -875,11 +875,6 @@
               <input type="checkbox" id="scheduleRecordCheckbox">
               <span><i class="fas fa-video"></i> Record this session automatically</span>
             </label>
-            <div id="scheduleRetentionRow" class="admin-row hidden" style="display:flex; align-items:center; gap:8px; margin: 4px 0 10px;">
-              <span class="schedule-field-label" style="white-space:nowrap;">Auto-delete recording from R2 after</span>
-              <input id="scheduleRetentionInput" type="number" min="1" max="365" step="1" value="30" class="field-sm" style="width:70px;">
-              <span class="schedule-field-label">days</span>
-            </div>
 
             <label class="schedule-checkbox-row">
               <input type="checkbox" id="scheduleSameTimeCheckbox" checked>
@@ -887,6 +882,29 @@
             </label>
 
             <div id="schedulePerDateList" class="hidden schedule-per-date-list"></div>
+
+            <!-- FIX: root cause of "separate [per-date] recording option is
+                 showing now but deletion days are not shown" — this row
+                 used to sit right after the #scheduleRecordCheckbox
+                 checkbox above, BEFORE #scheduleSameTimeCheckbox and
+                 #schedulePerDateList. That's fine when recording is turned
+                 on from that one shared checkbox (the row un-hides right
+                 next to it), but each date's own Record checkbox — inside
+                 #schedulePerDateList, rendered further down by
+                 renderSchedulePerDateList() in app.js — could toggle this
+                 same row (see updateScheduleRetentionRowVisibility()) while
+                 it was positioned well ABOVE wherever in that per-date list
+                 the admin was actually looking/scrolled to, so it read as
+                 "not shown" even though the hidden class really was being
+                 removed. Moved below #schedulePerDateList — right before
+                 Set time — so it's always the next thing an admin sees
+                 after ticking a Record checkbox, whichever one (shared or
+                 per-date) they used. -->
+            <div id="scheduleRetentionRow" class="admin-row hidden" style="display:flex; align-items:center; gap:8px; margin: 4px 0 10px;">
+              <span class="schedule-field-label" style="white-space:nowrap;">Auto-delete recording from R2 after</span>
+              <input id="scheduleRetentionInput" type="number" min="1" max="365" step="1" value="30" class="field-sm" style="width:70px;">
+              <span class="schedule-field-label">days</span>
+            </div>
 
             <button id="setScheduleBtn" class="btn-admin-sm" style="width:100%; margin-top:6px;">
               <i class="fas fa-clock"></i> Set time
