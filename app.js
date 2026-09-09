@@ -3576,6 +3576,38 @@
   // itself that's gone after the 168h retention window, so say that.
   const MESSAGE_MEDIA_EXPIRED_TEXT = "This file is no longer available for download";
 
+  // Shared markup for the expired-attachment bubble — used both when
+  // isMessageMediaExpired() says a message has aged past the 168h window,
+  // AND (see attachMediaFailureHandler() below) when an image/video
+  // actually fails to load before that — e.g. someone manually deleted the
+  // object straight from the R2/Storage dashboard. Age alone can't catch
+  // that second case, since created_at hasn't changed; only a real load
+  // failure can, which is why this needs to be reachable from both places.
+  function mediaExpiredBubbleHtml(ticksMarkup) {
+    const inlineTicks = ticksMarkup ? `<span class="msg-inline-ticks">${ticksMarkup}</span>` : '';
+    return `
+      <div class="msg-bubble msg-media-expired">
+        <i class="fas fa-file-circle-xmark"></i> ${escapeHtml(MESSAGE_MEDIA_EXPIRED_TEXT)}${inlineTicks}
+      </div>
+    `;
+  }
+
+  // FIX: root cause of "manually deleting a file from R2/Storage shows a
+  // broken image icon instead of the custom expired message" —
+  // isMessageMediaExpired() only ever checked the message's age, which
+  // can't detect a file that was deleted early (out-of-band, not via the
+  // normal 168h flow). This listens for the browser's own 'error' event
+  // (fires on a 404/failed load) and swaps the whole media bubble for the
+  // same placeholder used for a normally-expired attachment, so a manual
+  // delete looks the same as an aged-out one instead of a raw broken icon.
+  function attachMediaFailureHandler(el, ticksMarkup) {
+    if (!el) return;
+    el.addEventListener('error', () => {
+      const container = el.closest('.msg-media-preview');
+      if (container) container.outerHTML = mediaExpiredBubbleHtml(ticksMarkup);
+    }, { once: true });
+  }
+
   // FIX: root cause of "the expired-media message never shows up, media
   // just silently stays broken" — isMessageMediaExpired() is a pure
   // function of the current time vs. created_at, but nothing was ever
@@ -3659,12 +3691,7 @@
     if (hasAttachment) {
       const cornerTicks = ticksMarkup ? `<span class="msg-corner-ticks">${ticksMarkup}</span>` : '';
       if (mediaExpired) {
-        const inlineTicks = ticksMarkup ? `<span class="msg-inline-ticks">${ticksMarkup}</span>` : '';
-        bubbleHtml += `
-          <div class="msg-bubble msg-media-expired">
-            <i class="fas fa-file-circle-xmark"></i> ${escapeHtml(MESSAGE_MEDIA_EXPIRED_TEXT)}${inlineTicks}
-          </div>
-        `;
+        bubbleHtml += mediaExpiredBubbleHtml(ticksMarkup);
       } else if (isImageFile(msg.file_url)) {
         bubbleHtml += `
           <div class="msg-media-preview" data-media-url="${escapeHtml(msg.file_url)}">
@@ -3727,12 +3754,7 @@
     // of these already-purged rows rather than a legitimate empty
     // message. Show the same placeholder instead of leaving it blank.
     if (!bubbleHtml) {
-      const inlineTicks = ticksMarkup ? `<span class="msg-inline-ticks">${ticksMarkup}</span>` : '';
-      bubbleHtml = `
-        <div class="msg-bubble msg-media-expired">
-          <i class="fas fa-file-circle-xmark"></i> ${escapeHtml(MESSAGE_MEDIA_EXPIRED_TEXT)}${inlineTicks}
-        </div>
-      `;
+      bubbleHtml = mediaExpiredBubbleHtml(ticksMarkup);
     }
 
     const displayName = getDisplayName(msg.username);
@@ -3750,9 +3772,13 @@
     if (hasAttachment && !mediaExpired && isPdfFile(msg.file_url)) {
       hydratePdfThumb(wrap, msg.file_url, pinToBottom);
     } else if (hasAttachment && !mediaExpired && isImageFile(msg.file_url)) {
-      stickToBottomOnMediaLoad(wrap.querySelector('img.msg-media-img'), 'load', pinToBottom);
+      const imgEl = wrap.querySelector('img.msg-media-img');
+      stickToBottomOnMediaLoad(imgEl, 'load', pinToBottom);
+      attachMediaFailureHandler(imgEl, ticksMarkup);
     } else if (hasAttachment && !mediaExpired && isVideoFile(msg.file_url)) {
-      stickToBottomOnMediaLoad(wrap.querySelector('video.msg-media-img'), 'loadedmetadata', pinToBottom);
+      const videoEl = wrap.querySelector('video.msg-media-img');
+      stickToBottomOnMediaLoad(videoEl, 'loadedmetadata', pinToBottom);
+      attachMediaFailureHandler(videoEl, ticksMarkup);
     }
 
     if (linkUrl) {
