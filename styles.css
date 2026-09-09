@@ -3702,7 +3702,25 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
   border-radius: 0;
   object-fit: contain;
 }
-.status-viewer-body.has-media p:not(:empty) {
+/* FIX: root cause of "the video isn't centered on the screen, it's stuck
+   down at the bottom" for any update that has both media AND caption text
+   — this rule used to target `.status-viewer-body.has-media p:not(:empty)`,
+   but #statusModalContent stopped being a <p> a while back (see the FIX
+   comment above the base #statusModalContent rule — renderRichBlocks() now
+   fills it with per-line <div>s instead). That left this selector matching
+   nothing: the caption no longer got pulled out of flow as an absolutely-
+   positioned overlay, so it rendered as a normal block sitting *after* the
+   media in this flex column. .status-viewer-media's `flex: 1` (above) then
+   had to share the column's height with that extra block instead of taking
+   it all, so the video's box came out shorter than the actual screen and
+   sat pinned to the top of that shrunk box — reading as "off-center,
+   pushed toward the bottom" rather than filling and centering edge-to-edge
+   like the media-only (no caption) case already does correctly. Targeting
+   the real id restores the original WhatsApp/Instagram-story intent: the
+   media fills the full-screen flex:1 box, and the caption floats on top of
+   it as a bottom-anchored gradient overlay instead of taking layout space
+   of its own. */
+.status-viewer-body.has-media #statusModalContent:not(:empty) {
   position: absolute;
   left: 0;
   right: 0;
