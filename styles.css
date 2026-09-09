@@ -3580,6 +3580,39 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
   .status-viewer-inner { border-radius: 26px; height: 860px; max-height: 860px; }
 }
 
+/* FIX: root cause of "the video/image on a status doesn't have equal
+   padding top and bottom, like WhatsApp" — #statusSegments and
+   .status-viewer-header used to be plain in-flow children of
+   .status-viewer-inner (a flex column), stacked ABOVE
+   .status-viewer-body. That reserved real vertical space only at the top
+   of the card (~80-90px of progress bar + avatar/name/time row);
+   .status-viewer-body — and the full-bleed .status-viewer-media inside it
+   (see .status-viewer-body.has-media rules below), both flex:1 — then had
+   to fit into whatever was left, starting ~80-90px down from the top but
+   still running flush to the very bottom edge (nothing reserved space
+   down there). So the media's own box wasn't centered on the card at
+   all — there was a much bigger dark gap above it (the header) than below
+   it, and any letterboxing inside that box (object-fit: contain, default-
+   centered) just inherited that same offset. Real story viewers
+   (WhatsApp/Instagram-style, see the reference screenshot) avoid this by
+   floating the progress bar + header as a translucent overlay ON TOP of
+   the full-height media instead of a bar that pushes it down. This wraps
+   both in .status-viewer-topbar (index.html) and takes it out of
+   .status-viewer-inner's flex flow via position:absolute, so
+   .status-viewer-body becomes the only flow child and fills the full card
+   height on its own — the media (and any of its own letterboxing) now
+   sits symmetrically top-to-bottom, with the header floating over it
+   instead of stealing space from just one side. A soft gradient backdrop
+   keeps the header/progress bar legible over bright photos/video, same
+   idea as the caption's own bottom gradient further down. */
+.status-viewer-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  background: linear-gradient(to bottom, rgba(5,6,24,0.65), rgba(5,6,24,0.25) 65%, transparent);
+}
 .status-segments { display: flex; gap: 4px; padding: 14px 14px 0; flex-shrink: 0; }
 .segment { flex: 1; height: 3px; border-radius: 999px; background: rgba(255,255,255,0.22); overflow: hidden; }
 .segment-fill { height: 100%; width: 0%; background: #fff; transition: width 0.05s linear; }
