@@ -1215,12 +1215,65 @@
     }
   }
 
+  // NOTE: no longer called — Supabase Storage upload paths (message
+  // attachments and status media both used this) were replaced by
+  // uploadFileToR2() below, which gets its object key from the
+  // "chat-media-upload-url" Edge Function instead. Left in place
+  // (harmless, unused) rather than deleted, to keep this diff minimal.
   function generateStoragePath(channelId, filename) {
     const timestamp = Date.now();
     return CONFIG.UPLOAD.STORAGE_PATH
       .replace('{channelId}', channelId)
       .replace('{timestamp}', timestamp)
       .replace('{filename}', filename);
+  }
+
+  // ============================================================
+  // CLOUDFLARE R2 CHAT MEDIA UPLOAD
+  // Photos/videos/PDFs/files attached to messages or status updates now
+  // go to a Cloudflare R2 bucket instead of Supabase Storage, to stay
+  // within Supabase's free-tier egress/storage limits (R2 has no egress
+  // fees). This is a SEPARATE R2 account/bucket from the one used for
+  // live-session recordings (see openChannelRecordings() above) — keep
+  // their credentials distinct in Supabase's Edge Function secrets.
+  //
+  // Flow: ask the "chat-media-upload-url" Edge Function for a short-lived
+  // presigned PUT url (the browser uploads straight to R2, the Edge
+  // Function's R2 credentials never reach the browser), then PUT the file
+  // there directly. The Edge Function also hands back a presigned GET url
+  // (valid 7 days, matching MESSAGE_MEDIA_EXPIRY_MS below) which is stored
+  // as file_url/media_url exactly like the old public Supabase Storage URL
+  // was — every existing render/display function (isImageFile, isPdfFile,
+  // getFileNameFromUrl, etc.) works unchanged since they just operate on
+  // the URL string.
+  //
+  // Cleanup: unlike the Supabase Storage path, there's no client-side
+  // orphan-file cleanup here on a failed DB insert — instead, an R2
+  // Lifecycle rule (configured directly in the Cloudflare dashboard, not
+  // in code) auto-deletes every object after 7 days regardless of whether
+  // its message/status row ever got created. Simpler and it can't be
+  // skipped by a network error the way a client-side delete call could be.
+  async function uploadFileToR2(file, context) {
+    const { data: signed, error: signError } = await supabase.functions.invoke('chat-media-upload-url', {
+      body: {
+        fileName: file.name,
+        fileType: file.type || 'application/octet-stream',
+        fileSize: file.size,
+        context, // 'message' | 'status'
+      },
+    });
+    if (signError || !signed?.uploadUrl) {
+      throw new Error(signed?.error || signError?.message || 'Could not get an upload URL');
+    }
+
+    const putRes = await fetch(signed.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      body: file,
+    });
+    if (!putRes.ok) throw new Error(`R2 upload failed (${putRes.status})`);
+
+    return signed.fileUrl;
   }
 
   // ============================================================
@@ -4450,14 +4503,8 @@
           return false;
         }
 
-        const path = generateStoragePath(state.currentChannel.id, uploadFile.name);
-
         try {
-          const { error } = await supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).upload(path, uploadFile);
-          if (error) throw error;
-
-          const { data: urlData } = supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).getPublicUrl(path);
-          fileUrl = urlData.publicUrl;
+          fileUrl = await uploadFileToR2(uploadFile, 'message');
 
           DOM.fileUploadStatus.textContent = `📎 ${uploadFile.name} uploaded`;
           DOM.fileUploadStatus.classList.remove('hidden');
@@ -4512,6 +4559,10 @@
         alert('Failed to send message.');
         state.messages = state.messages.filter((m) => m.id !== tempId);
         renderMessages();
+        // NOTE: if fileUrl was set above and this insert still failed, the
+        // R2 object is now unreferenced — no client-side cleanup needed
+        // here, the R2 Lifecycle rule (Cloudflare dashboard) auto-deletes
+        // it after 7 days regardless of whether a message row exists.
         console.log('❌ Message rolled back');
         return false;
       } else if (data && data[0]) {
@@ -6143,6 +6194,8 @@
     });
   }
 
+  // NOTE: no longer called — see the NOTE on generateStoragePath() above;
+  // postStatus() now uses uploadFileToR2() instead. Left in place, unused.
   function generateStatusStoragePath(username, filename) {
     const ext = (filename.split('.').pop() || 'dat').toLowerCase();
     const rand = Math.random().toString(36).slice(2, 8);
@@ -6169,12 +6222,8 @@
         alert(`File exceeds ${CONFIG.UPLOAD.MAX_FILE_SIZE / (1024 * 1024)}MB limit.`);
         return;
       }
-      const path = generateStatusStoragePath(state.currentUser.username, uploadFile.name);
       try {
-        const { error: uploadError } = await supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).upload(path, uploadFile);
-        if (uploadError) throw uploadError;
-        const { data: urlData } = supabase.storage.from(CONFIG.SUPABASE.STORAGE_BUCKET).getPublicUrl(path);
-        mediaUrl = urlData.publicUrl;
+        mediaUrl = await uploadFileToR2(uploadFile, 'status');
       } catch (e) {
         console.error('Status media upload error:', e);
         alert(`Media upload failed: ${e.message || 'unknown error — check console for details.'}`);
@@ -6192,7 +6241,13 @@
       expires_at: expiresAt,
       created_at: new Date().toISOString(),
     });
-    if (error) { console.error('Status error:', error); alert('Failed to post status: ' + error.message); return; }
+    if (error) {
+      console.error('Status error:', error);
+      alert('Failed to post status: ' + error.message);
+      // NOTE: same as sendMessage() — no client-side cleanup needed here,
+      // the R2 Lifecycle rule handles unreferenced objects automatically.
+      return;
+    }
     await loadStatuses();
   }
 
