@@ -7916,7 +7916,7 @@
     const password = DOM.passwordInput.value;
 
     if (!username || !password) {
-      showError('Enter both your School ID and password.');
+      showError('Enter both your Orbit ID and Password.');
       return;
     }
     hideError();
