@@ -319,9 +319,6 @@
     adminProfileSchedule: $('adminProfileSchedule'),
     scheduleTeacherInput: $('scheduleTeacherInput'),
     scheduleRecordCheckbox: $('scheduleRecordCheckbox'),
-    scheduleRetentionRow: $('scheduleRetentionRow'),
-    scheduleRetentionHoursInput: $('scheduleRetentionHoursInput'),
-    scheduleRetentionMinutesInput: $('scheduleRetentionMinutesInput'),
     scheduleCalPrevBtn: $('scheduleCalPrevBtn'),
     scheduleCalNextBtn: $('scheduleCalNextBtn'),
     scheduleCalMonthLabel: $('scheduleCalMonthLabel'),
@@ -5380,32 +5377,6 @@
     DOM.scheduleEndPreview.textContent = computeScheduleEndLabel(DOM.scheduleStartTimeInput.value, duration);
   }
 
-  // FIX: "add record this session option for individual session instead
-  // of whole group" — recording used to be one #scheduleRecordCheckbox
-  // read ONCE and stamped onto every date in the batch (see
-  // setClassSchedule() below), so there was no way to record just one
-  // date out of a multi-date schedule. Returns whether ANY session in the
-  // current selection would actually end up recorded — the shared
-  // checkbox in "same time for every date" mode, or at least one date's
-  // own checkbox in #schedulePerDateList otherwise — so the retention-days
-  // field (only meaningful when something is actually being recorded) can
-  // decide whether to show itself from either source, not just the shared
-  // checkbox.
-  function scheduleAnyRecordingEnabled() {
-    if (DOM.scheduleRecordCheckbox && DOM.scheduleRecordCheckbox.checked) return true;
-    const sameTime = !DOM.scheduleSameTimeCheckbox || DOM.scheduleSameTimeCheckbox.checked;
-    if (sameTime) return false;
-    for (const key of scheduleSelectedDates) {
-      const override = schedulePerDateOverrides.get(key);
-      if (override && override.record) return true;
-    }
-    return false;
-  }
-
-  function updateScheduleRetentionRowVisibility() {
-    if (DOM.scheduleRetentionRow) DOM.scheduleRetentionRow.classList.toggle('hidden', !scheduleAnyRecordingEnabled());
-  }
-
   function renderSchedulePerDateList() {
     if (!DOM.schedulePerDateList) return;
     const sameTime = !DOM.scheduleSameTimeCheckbox || DOM.scheduleSameTimeCheckbox.checked;
@@ -5464,12 +5435,11 @@
         const row = input.closest('.schedule-per-date-row');
         syncRowOverride(row, input.dataset.date);
         row.querySelector('.schedule-per-date-record').classList.toggle('is-active', input.checked);
-        updateScheduleRetentionRowVisibility();
       });
     });
   }
 
-  async function setClassSchedule(teacherUsername, occurrences, recordingOptions) {
+  async function setClassSchedule(teacherUsername, occurrences) {
     if (!state.currentChannel) { alert('Select a channel first.'); return false; }
     teacherUsername = normalizeUsername(teacherUsername);
     if (!teacherUsername) { alert('Enter a teacher username.'); return false; }
@@ -5482,36 +5452,23 @@
     }
 
     // FIX: "add record this session option for individual session
-    // instead of whole group" — auto_record_enabled/
-    // recording_retention_days (the actual columns below) were always
-    // stored PER ROW already; what wasn't per-row was where this value
-    // came FROM. It used to be read once from the shared "Record this
-    // session automatically" checkbox and stamped onto every row in the
-    // whole batch, so scheduling e.g. 5 dates with it checked recorded
-    // all 5 with no way to record just one of them. Whether to record is
-    // now decided per occurrence (occ.record — see
-    // scheduleAnyRecordingEnabled()/renderSchedulePerDateList() and the
-    // DOM.setScheduleBtn click handler, which sets it from the shared
-    // checkbox in "same time for every date" mode, or from each date's
-    // own checkbox in #schedulePerDateList otherwise). Retention (how
-    // long a recording stays in Cloudflare R2) is still one shared value
-    // for the whole batch — there's only ever been a single retention
-    // field in this form — it's just applied only to whichever
-    // occurrences actually end up recorded.
+    // instead of whole group" — auto_record_enabled (the actual column
+    // below) was always stored PER ROW already; what wasn't per-row was
+    // where this value came FROM. It used to be read once from the
+    // shared "Record this session automatically" checkbox and stamped
+    // onto every row in the whole batch, so scheduling e.g. 5 dates with
+    // it checked recorded all 5 with no way to record just one of them.
+    // Whether to record is now decided per occurrence (occ.record — see
+    // renderSchedulePerDateList() and the DOM.setScheduleBtn click
+    // handler, which sets it from the shared checkbox in "same time for
+    // every date" mode, or from each date's own checkbox in
+    // #schedulePerDateList otherwise).
     //
-    // FIX: "instead of days it should be minutes and hours" — retention
-    // used to be a single 1-365 "days" field (recording_retention_days).
-    // The form now takes separate hours/minutes fields and this stores
-    // their sum in recording_retention_minutes instead, so retention can
-    // be as short as 1 minute. recording_retention_days is no longer
-    // written by this app — see the note on the recording_retention_days
-    // column itself (and register-recording, which now reads
-    // recording_retention_minutes with a *1440 fallback to the old
-    // column for any already-scheduled rows that predate this change).
-    const retentionHours = Math.max(0, parseInt(recordingOptions && recordingOptions.retentionHours, 10) || 0);
-    const retentionMinutesPart = Math.max(0, parseInt(recordingOptions && recordingOptions.retentionMinutes, 10) || 0);
-    const recordingRetentionMinutes = Math.max(1, retentionHours * 60 + retentionMinutesPart);
-
+    // REMOVED: this form used to also collect a per-batch retention
+    // value (recording_retention_days, later recording_retention_minutes)
+    // and write it onto every row here. Deletion is now handled uniformly
+    // by an R2 Object Lifecycle Rule on the bucket instead, so there's
+    // nothing for this form to collect or write anymore.
     const rows = [];
     for (const occ of occurrences) {
       if (!occ.start) { alert(`Enter a start time for ${scheduleDateLabel(occ.dateKey)}.`); return false; }
@@ -5536,7 +5493,6 @@
         duration_minutes: duration,
         set_by: state.currentUser.username,
         auto_record_enabled: !!occ.record,
-        recording_retention_minutes: recordingRetentionMinutes,
       });
     }
 
@@ -8806,10 +8762,6 @@
     openGroupAssignmentModal(DOM.editUsername.value);
   });
 
-  if (DOM.scheduleRecordCheckbox && DOM.scheduleRetentionRow) {
-    DOM.scheduleRecordCheckbox.addEventListener('change', updateScheduleRetentionRowVisibility);
-  }
-
   DOM.setScheduleBtn.addEventListener('click', async () => {
     const sameTime = !DOM.scheduleSameTimeCheckbox || DOM.scheduleSameTimeCheckbox.checked;
     const defaultStart = DOM.scheduleStartTimeInput.value;
@@ -8837,10 +8789,6 @@
     const ok = await setClassSchedule(
       DOM.scheduleTeacherInput.value.trim(),
       occurrences,
-      {
-        retentionHours: DOM.scheduleRetentionHoursInput ? DOM.scheduleRetentionHoursInput.value : 0,
-        retentionMinutes: DOM.scheduleRetentionMinutesInput ? DOM.scheduleRetentionMinutesInput.value : 30,
-      },
     );
     if (!ok) return;
     DOM.scheduleTeacherInput.value = '';
@@ -8848,9 +8796,6 @@
     DOM.scheduleDurationInput.value = '45';
     if (DOM.scheduleSameTimeCheckbox) DOM.scheduleSameTimeCheckbox.checked = true;
     if (DOM.scheduleRecordCheckbox) DOM.scheduleRecordCheckbox.checked = false;
-    if (DOM.scheduleRetentionHoursInput) DOM.scheduleRetentionHoursInput.value = '0';
-    if (DOM.scheduleRetentionMinutesInput) DOM.scheduleRetentionMinutesInput.value = '30';
-    if (DOM.scheduleRetentionRow) DOM.scheduleRetentionRow.classList.add('hidden');
     resetScheduleSelection();
     renderScheduleCalendar();
     renderScheduleSelectedDates();
@@ -8887,7 +8832,6 @@
   if (DOM.scheduleSameTimeCheckbox) {
     DOM.scheduleSameTimeCheckbox.addEventListener('change', () => {
       renderSchedulePerDateList();
-      updateScheduleRetentionRowVisibility();
     });
   }
 
