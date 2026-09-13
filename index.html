@@ -900,10 +900,12 @@
                  Set time — so it's always the next thing an admin sees
                  after ticking a Record checkbox, whichever one (shared or
                  per-date) they used. -->
-            <div id="scheduleRetentionRow" class="admin-row hidden" style="display:flex; align-items:center; gap:8px; margin: 4px 0 10px;">
+            <div id="scheduleRetentionRow" class="admin-row hidden" style="display:flex; align-items:center; gap:8px; margin: 4px 0 10px; flex-wrap:wrap;">
               <span class="schedule-field-label" style="white-space:nowrap;">Auto-delete recording from R2 after</span>
-              <input id="scheduleRetentionInput" type="number" min="1" max="365" step="1" value="30" class="field-sm" style="width:70px;">
-              <span class="schedule-field-label">days</span>
+              <input id="scheduleRetentionHoursInput" type="number" min="0" max="8760" step="1" value="0" class="field-sm" style="width:60px;" title="Hours">
+              <span class="schedule-field-label">hrs</span>
+              <input id="scheduleRetentionMinutesInput" type="number" min="0" max="59" step="1" value="30" class="field-sm" style="width:60px;" title="Minutes">
+              <span class="schedule-field-label">min</span>
             </div>
 
             <button id="setScheduleBtn" class="btn-admin-sm" style="width:100%; margin-top:6px;">
