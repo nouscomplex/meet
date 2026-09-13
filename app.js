@@ -320,7 +320,8 @@
     scheduleTeacherInput: $('scheduleTeacherInput'),
     scheduleRecordCheckbox: $('scheduleRecordCheckbox'),
     scheduleRetentionRow: $('scheduleRetentionRow'),
-    scheduleRetentionInput: $('scheduleRetentionInput'),
+    scheduleRetentionHoursInput: $('scheduleRetentionHoursInput'),
+    scheduleRetentionMinutesInput: $('scheduleRetentionMinutesInput'),
     scheduleCalPrevBtn: $('scheduleCalPrevBtn'),
     scheduleCalNextBtn: $('scheduleCalNextBtn'),
     scheduleCalMonthLabel: $('scheduleCalMonthLabel'),
@@ -5493,11 +5494,23 @@
     // DOM.setScheduleBtn click handler, which sets it from the shared
     // checkbox in "same time for every date" mode, or from each date's
     // own checkbox in #schedulePerDateList otherwise). Retention (how
-    // many days a recording stays in Cloudflare R2) is still one shared
-    // value for the whole batch — there's only ever been a single
-    // retention field in this form — it's just applied only to whichever
+    // long a recording stays in Cloudflare R2) is still one shared value
+    // for the whole batch — there's only ever been a single retention
+    // field in this form — it's just applied only to whichever
     // occurrences actually end up recorded.
-    const recordingRetentionDays = Math.max(1, parseInt(recordingOptions && recordingOptions.retentionDays, 10) || 30);
+    //
+    // FIX: "instead of days it should be minutes and hours" — retention
+    // used to be a single 1-365 "days" field (recording_retention_days).
+    // The form now takes separate hours/minutes fields and this stores
+    // their sum in recording_retention_minutes instead, so retention can
+    // be as short as 1 minute. recording_retention_days is no longer
+    // written by this app — see the note on the recording_retention_days
+    // column itself (and register-recording, which now reads
+    // recording_retention_minutes with a *1440 fallback to the old
+    // column for any already-scheduled rows that predate this change).
+    const retentionHours = Math.max(0, parseInt(recordingOptions && recordingOptions.retentionHours, 10) || 0);
+    const retentionMinutesPart = Math.max(0, parseInt(recordingOptions && recordingOptions.retentionMinutes, 10) || 0);
+    const recordingRetentionMinutes = Math.max(1, retentionHours * 60 + retentionMinutesPart);
 
     const rows = [];
     for (const occ of occurrences) {
@@ -5523,7 +5536,7 @@
         duration_minutes: duration,
         set_by: state.currentUser.username,
         auto_record_enabled: !!occ.record,
-        recording_retention_days: recordingRetentionDays,
+        recording_retention_minutes: recordingRetentionMinutes,
       });
     }
 
@@ -8825,7 +8838,8 @@
       DOM.scheduleTeacherInput.value.trim(),
       occurrences,
       {
-        retentionDays: DOM.scheduleRetentionInput ? DOM.scheduleRetentionInput.value : 30,
+        retentionHours: DOM.scheduleRetentionHoursInput ? DOM.scheduleRetentionHoursInput.value : 0,
+        retentionMinutes: DOM.scheduleRetentionMinutesInput ? DOM.scheduleRetentionMinutesInput.value : 30,
       },
     );
     if (!ok) return;
@@ -8834,7 +8848,8 @@
     DOM.scheduleDurationInput.value = '45';
     if (DOM.scheduleSameTimeCheckbox) DOM.scheduleSameTimeCheckbox.checked = true;
     if (DOM.scheduleRecordCheckbox) DOM.scheduleRecordCheckbox.checked = false;
-    if (DOM.scheduleRetentionInput) DOM.scheduleRetentionInput.value = '30';
+    if (DOM.scheduleRetentionHoursInput) DOM.scheduleRetentionHoursInput.value = '0';
+    if (DOM.scheduleRetentionMinutesInput) DOM.scheduleRetentionMinutesInput.value = '30';
     if (DOM.scheduleRetentionRow) DOM.scheduleRetentionRow.classList.add('hidden');
     resetScheduleSelection();
     renderScheduleCalendar();
