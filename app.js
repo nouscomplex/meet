@@ -7647,6 +7647,43 @@
     DOM.attendanceReportResults.classList.remove('hidden');
   }
 
+  // Brand colors, matching CONFIG.THEME.COLORS (config.js) so the PDF
+  // looks consistent with the app itself rather than jsPDF's plain
+  // black-and-white default.
+  const PDF_NAVY = [14, 28, 118];   // CONFIG.THEME.COLORS.PRIMARY_NAVY (#0e1c76)
+  const PDF_SKY = [103, 179, 249];  // CONFIG.THEME.COLORS.SECONDARY_SKY (#67b3f9)
+  const PDF_CARD_BG = [240, 244, 255];
+  const PDF_GRAY = [110, 115, 149];
+  const PDF_ZEBRA = [245, 247, 252];
+
+  function drawStatCards(doc, pageWidth, startY, cards) {
+    const margin = 14;
+    const gap = 4;
+    const cols = Math.min(cards.length, 6) || 1;
+    const cardWidth = (pageWidth - margin * 2 - gap * (cols - 1)) / cols;
+    const cardHeight = 22;
+    let x = margin;
+    let y = startY;
+    cards.forEach((card, i) => {
+      if (i > 0 && i % cols === 0) { x = margin; y += cardHeight + gap; }
+      doc.setFillColor(...(card.accent ? PDF_SKY.map((c) => Math.min(255, c + 40)) : PDF_CARD_BG));
+      doc.setDrawColor(...PDF_SKY);
+      doc.setLineWidth(0.3);
+      doc.roundedRect(x, y, cardWidth, cardHeight, 2, 2, 'FD');
+      doc.setTextColor(...PDF_NAVY);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.text(String(card.value), x + cardWidth / 2, y + 11, { align: 'center' });
+      doc.setTextColor(...PDF_GRAY);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.6);
+      doc.text(card.label.toUpperCase(), x + cardWidth / 2, y + 17, { align: 'center', maxWidth: cardWidth - 3 });
+      x += cardWidth + gap;
+    });
+    const rows = Math.ceil(cards.length / cols);
+    return startY + rows * cardHeight + (rows - 1) * gap + 10;
+  }
+
   function generateAttendancePdf(report) {
     if (!window.jspdf || !window.jspdf.jsPDF) {
       alert('PDF library failed to load — check your connection and try again.');
@@ -7654,47 +7691,79 @@
     }
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
-    const rangeLabel = `${report.fromDate.toLocaleDateString()} – ${report.toDate.toLocaleDateString()}`;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
 
+    const now = new Date();
+    const generatedOn = `${now.getDate()} ${now.toLocaleString('en-US', { month: 'short' })} ${now.getFullYear()} at ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    const rangeLabel = `${toDateInputValue(report.fromDate)} to ${toDateInputValue(report.toDate)}`;
+    const studentLabel = report.mode === 'individual' && report.students[0] ? report.students[0].displayName : 'All Students';
+    const reportTypeLabel = report.mode === 'individual' ? 'Individual Student Detail' : 'Summary By Student';
+
+    // --- Branded header band (page 1 only — continuation pages get a
+    // slimmer repeating version via didDrawPage below) ---
+    doc.setFillColor(...PDF_NAVY);
+    doc.rect(0, 0, pageWidth, 24, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
+    doc.text('Nous Complex', 14, 11);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10.5);
     doc.text('Attendance Report', 14, 18);
-    doc.setFontSize(11);
-    doc.setTextColor(90);
-    doc.text(`Group: ${report.channelName}`, 14, 26);
-    if (report.mode === 'individual' && report.students[0]) {
-      doc.text(`Student: ${report.students[0].displayName}`, 14, 32);
-      doc.text(`Date range: ${rangeLabel}`, 14, 38);
-    } else {
-      doc.text(`Date range: ${rangeLabel}`, 14, 32);
-    }
-    doc.setTextColor(0);
+    doc.setFontSize(8.5);
+    const genLabel = `Generated on: ${generatedOn}`;
+    doc.text(genLabel, pageWidth - 14 - doc.getTextWidth(genLabel), 11);
 
-    let head, body, startY;
+    // --- Meta info bar ---
+    doc.setTextColor(...PDF_GRAY);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text(`Date Range: ${rangeLabel}    Group: ${report.channelName}    Student: ${studentLabel}    Total Students: ${report.students.length}`, 14, 32);
+    doc.text(`Report Type: ${reportTypeLabel}`, 14, 38);
+
+    let cursorY = 46;
+    let cards, head, body, sectionTitle;
+
     if (report.mode === 'individual') {
       const s = report.students[0];
-      startY = 46;
-      doc.setFontSize(10);
-      const summaryLines = s ? [
-        `Scheduled sessions (since joining): ${s.scheduledSessions}    Not held by teacher: ${s.missedSessions}    Attended: ${s.attendedSessions}    Absent: ${s.absentSessions}    Attendance: ${formatPct(s.attendancePct)}`,
-        `Total scheduled duration: ${formatMinutesLabel(s.scheduledMinutes)}    Total stayed: ${formatMinutesLabel(s.attendedMinutes)}    Staying: ${formatPct(s.stayingPct)}`,
-      ] : ['This student is not a member of this group.'];
-      summaryLines.forEach((line, i) => doc.text(line, 14, startY + i * 6));
-      startY += summaryLines.length * 6 + 6;
-      head = [['Date', 'Scheduled', 'Status', 'Stayed']];
-      body = (s ? s.sessions : []).map((sess) => [
-        new Date(sess.date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }),
-        `${sess.scheduledMinutes} min`,
-        !sess.wasHeld ? 'Not held by teacher' : (sess.attended ? 'Present' : 'Absent'),
-        sess.attended ? `${sess.minutesStayed} min` : '—',
-      ]);
+      sectionTitle = 'Session Detail';
+      if (!s) {
+        cards = [];
+        head = [['Notice']];
+        body = [['This student is not a member of this group.']];
+      } else {
+        cards = [
+          { label: 'Scheduled', value: s.scheduledSessions },
+          { label: 'Not Held', value: s.missedSessions },
+          { label: 'Attended', value: s.attendedSessions },
+          { label: 'Absent', value: s.absentSessions },
+          { label: 'Attendance %', value: formatPct(s.attendancePct), accent: true },
+          { label: 'Staying %', value: formatPct(s.stayingPct), accent: true },
+        ];
+        head = [['#', 'Date', 'Scheduled', 'Status', 'Stayed']];
+        body = s.sessions.map((sess, i) => [
+          String(i + 1),
+          new Date(sess.date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }),
+          `${sess.scheduledMinutes} min`,
+          !sess.wasHeld ? 'Not Held' : (sess.attended ? 'Present' : 'Absent'),
+          sess.attended ? `${sess.minutesStayed} min` : '—',
+        ]);
+      }
     } else {
-      startY = 40;
-      doc.setFontSize(10);
-      doc.text(`Calendar days in range: ${report.calendarDaysInRange}    Sessions scheduled: ${report.sessionsScheduledInRange}    Students: ${report.students.length}`, 14, startY);
-      doc.text(`Not held by teacher: ${report.groupTotals.missedSessions}    Group attendance: ${formatPct(report.groupTotals.attendancePct)}    Group staying: ${formatPct(report.groupTotals.stayingPct)}`, 14, startY + 6);
-      startY += 16;
-      head = [['Student', 'Scheduled', 'Not held', 'Attended', 'Absent', 'Attendance %', 'Scheduled', 'Stayed', 'Staying %']];
-      body = report.students.map((s) => [
+      const t = report.groupTotals;
+      sectionTitle = 'Student Summary';
+      cards = [
+        { label: 'Total Students', value: report.students.length },
+        { label: 'Calendar Days', value: report.calendarDaysInRange },
+        { label: 'Sessions Scheduled', value: report.sessionsScheduledInRange },
+        { label: 'Not Held', value: t.missedSessions },
+        { label: 'Group Attendance', value: formatPct(t.attendancePct), accent: true },
+        { label: 'Group Staying', value: formatPct(t.stayingPct), accent: true },
+      ];
+      head = [['#', 'Student', 'Scheduled', 'Not Held', 'Attended', 'Absent', 'Attendance %', 'Scheduled', 'Stayed', 'Staying %']];
+      body = report.students.map((s, i) => [
+        String(i + 1),
         s.displayName + (s.clippedByJoinDate ? ' *' : ''),
         String(s.scheduledSessions),
         String(s.missedSessions),
@@ -7707,11 +7776,61 @@
       ]);
     }
 
-    doc.autoTable({ head, body, startY, styles: { fontSize: 8 }, headStyles: { fillColor: [14, 28, 118] } });
+    if (cards.length) {
+      cursorY = drawStatCards(doc, pageWidth, cursorY, cards);
+    }
+
+    doc.setTextColor(...PDF_NAVY);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text(sectionTitle, 14, cursorY);
+    doc.setDrawColor(...PDF_SKY);
+    doc.setLineWidth(0.6);
+    doc.line(14, cursorY + 2, 14 + doc.getTextWidth(sectionTitle) + 4, cursorY + 2);
+    cursorY += 8;
+
+    doc.autoTable({
+      head,
+      body,
+      startY: cursorY,
+      margin: { top: 20, bottom: 18 },
+      styles: { fontSize: 8, cellPadding: 3, lineColor: [225, 228, 240], lineWidth: 0.2 },
+      headStyles: { fillColor: PDF_NAVY, textColor: 255, fontStyle: 'bold', halign: 'center' },
+      alternateRowStyles: { fillColor: PDF_ZEBRA },
+      columnStyles: head[0].length > 1 ? { 0: { halign: 'center', cellWidth: 8 } } : {},
+      theme: 'grid',
+      didDrawPage: (data) => {
+        // Slim repeating header on continuation pages (page 1 already
+        // has the full branded header drawn above).
+        if (data.pageNumber > 1) {
+          doc.setFillColor(...PDF_NAVY);
+          doc.rect(0, 0, pageWidth, 14, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(10);
+          doc.text('Nous Complex — Attendance Report (continued)', 14, 9.5);
+        }
+        // Footer, every page.
+        const footerY = pageHeight - 12;
+        doc.setDrawColor(220, 222, 232);
+        doc.setLineWidth(0.2);
+        doc.line(14, footerY - 4, pageWidth - 14, footerY - 4);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(...PDF_GRAY);
+        doc.text('Report generated from Nous Complex Attendance Portal', 14, footerY);
+        const copyrightLabel = `© ${now.getFullYear()} Nous Complex • All Rights Reserved`;
+        doc.text(copyrightLabel, pageWidth - 14 - doc.getTextWidth(copyrightLabel), footerY);
+        const pageLabel = `Page ${data.pageNumber}`;
+        doc.text(pageLabel, pageWidth / 2 - doc.getTextWidth(pageLabel) / 2, footerY);
+      },
+    });
+
     if (report.mode === 'group' && report.students.some((s) => s.clippedByJoinDate)) {
-      const finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 8 : startY + 8;
-      doc.setFontSize(8);
-      doc.setTextColor(120);
+      const finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 6 : cursorY + 6;
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...PDF_GRAY);
       doc.text('* Counted from their join date, not the start of the selected range.', 14, finalY);
     }
 
