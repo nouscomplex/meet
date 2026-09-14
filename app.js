@@ -5627,7 +5627,31 @@
     const startLabel = start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
     const endLabel = end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
     const groupName = channelNameById.get(String(row.channel_id)) || 'Unknown group';
-    const isLiveNow = Date.now() >= start.getTime() && Date.now() < end.getTime();
+    // FIX: root cause of "ended meeting still shown as live in the Live
+    // Sessions Calendar" — this used to be a PURE time-window check
+    // (scheduled_time .. scheduled_time+duration_minutes), so it never
+    // looked at the row's own `is_live` column at all. Once a session
+    // has actually been marked not-live (row.is_live === false — this
+    // happens today via endLiveSessionForEveryone()'s admin "End for
+    // Everyone" button, endScheduledSessionNow()'s ban icon here in the
+    // calendar, AND now also automatically via the host-disconnect fix
+    // in closeLiveSession(), see its comment), the calendar should
+    // reflect that immediately rather than keep showing the green dot
+    // and "End" button until the ENTIRE original scheduled window
+    // elapses. `row.is_live !== false` treats a null/undefined value
+    // (a session that was never explicitly started, e.g. still
+    // scheduled) the same as before — only an explicit `false` now
+    // suppresses the "live" state early.
+    const isLiveNow = row.is_live !== false && Date.now() >= start.getTime() && Date.now() < end.getTime();
+    // FIX: root cause of "recording icon for auto-recording-enabled
+    // sessions is not shown" — `auto_record_enabled` is a real column on
+    // class_schedule (set from the per-date schedule editor, see
+    // schedule-per-date-record above) but this function — the one that
+    // actually renders each row in the admin's Live Sessions Calendar —
+    // never read it or rendered anything for it. Added a small red
+    // "recording" dot with a tooltip so admins can tell at a glance
+    // which sessions on this list will auto-record.
+    const isAutoRecording = !!row.auto_record_enabled;
 
     return `
       <div class="calendar-item${isLiveNow ? ' is-live' : ''}">
@@ -5640,7 +5664,7 @@
             <div class="calendar-item-group">${escapeHtml(groupName)}</div>
             <div class="calendar-item-teacher"><i class="fas fa-chalkboard-user"></i> ${escapeHtml(getDisplayName(row.teacher_username))}</div>
           </div>
-          <div class="calendar-item-duration">${isLiveNow ? '<span class="calendar-live-dot" title="Live now"></span>' : ''}${durationMinutes}m</div>
+          <div class="calendar-item-duration">${isLiveNow ? '<span class="calendar-live-dot" title="Live now"></span>' : ''}${isAutoRecording ? '<i class="fas fa-circle calendar-item-record-icon" title="Auto-recording enabled"></i>' : ''}${durationMinutes}m</div>
         </button>
         <div class="calendar-item-admin-actions">
           ${isLiveNow ? `<button type="button" class="icon-btn calendar-item-end" data-id="${row.id}" title="End this live session now for everyone"><i class="fas fa-ban" style="color:var(--danger);"></i></button>` : ''}
@@ -6799,12 +6823,48 @@
 
   function closeLiveSession(message) {
     const wasActive = state.videoActive;
+    const endedScheduleId = state.activeCallScheduleId;
+    const wasHost = state.activeCallIsHost;
     clearLiveSessionAutoCloseTimer();
     DOM.videoContainer.classList.add('hidden');
     DOM.videoIframe.src = '';
     state.videoActive = false;
     state.activeCallScheduleId = null;
+    state.activeCallIsHost = false;
     setVideoMinimized(false);
+    // FIX: root cause of "ended meeting still shown as live in the Live
+    // Sessions Calendar" — this function used to only ever reset LOCAL
+    // UI state; it never touched the class_schedule row's `is_live`
+    // column. That column previously only ever went back to `false`
+    // through the admin-only "End for Everyone" button
+    // (endLiveSessionForEveryone()) or the calendar's own ban icon
+    // (endScheduledSessionNow()) — so when a TEACHER's own class simply
+    // finished and they left (Return to chat, PlugNmeet's own leave
+    // button, or the scheduled auto-close timer above all end up here),
+    // nothing ever told the database the session was over. The Live
+    // Sessions Calendar's "is this live" check (calendarItemHtml) is a
+    // pure scheduled-time-window calculation, so with `is_live` stuck
+    // at `true` it kept showing the session as live — green dot, "End"
+    // button and all — for the ENTIRE original scheduled duration,
+    // regardless of whether the meeting had actually finished. Only the
+    // person who STARTED the call (wasHost — see joinLiveClass()) can
+    // meaningfully declare it over this way; a participant who merely
+    // joined and leaves early must NOT flip this, since the class may
+    // still be going for everyone else. Deliberately NOT touching
+    // duration_minutes here (unlike endLiveSessionForEveryone) so the
+    // host's own scheduled window — and therefore their ability to
+    // rejoin later — is left exactly as it was; getLiveButtonMode()
+    // already lets the scheduled teacher see 'start' regardless of
+    // is_live, so this can't lock them out of their own class.
+    if (wasActive && wasHost && endedScheduleId) {
+      supabase
+        .from('class_schedule')
+        .update({ is_live: false })
+        .eq('id', endedScheduleId)
+        .then(({ error }) => {
+          if (error) console.warn('Could not mark schedule not-live:', error);
+        });
+    }
     if (DOM.endLiveSessionBtn) DOM.endLiveSessionBtn.classList.add('hidden');
     if (DOM.returnToChatBtn) DOM.returnToChatBtn.classList.add('hidden');
     // FIX: root cause of "when the meeting is ended by teacher or admin it
@@ -6986,6 +7046,13 @@
     DOM.videoIframe.src = liveUrl;
     state.videoActive = true;
     state.activeCallScheduleId = state.currentSchedule ? state.currentSchedule.id : null;
+    // FIX: needed so closeLiveSession() can tell whether the person
+    // whose call is ending is the one who STARTED it (the scheduled
+    // teacher, or an admin starting a fresh session) versus someone who
+    // merely joined an already-live session. mode is only 'start' for
+    // the former (see getLiveButtonMode()) — see closeLiveSession() for
+    // why that distinction matters.
+    state.activeCallIsHost = (mode === 'start');
     updateLiveButtonState();
     if (DOM.endLiveSessionBtn) {
       // Admin-only, by design: "End for Everyone" ends the class for the
