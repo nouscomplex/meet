@@ -840,7 +840,32 @@
                renderSchedulePerDateList()/setClassSchedule() in app.js. -->
           <div id="adminProfileSchedule" class="hidden schedule-card">
             <div class="section-label"><i class="fas fa-calendar-clock"></i> Schedule class time</div>
-            <input id="scheduleTeacherInput" placeholder="Teacher username" class="field-sm" list="registeredUsersList" autocomplete="off" style="width:100%; margin-bottom:10px;">
+            <!-- FIX: "auto select teacher when there is one teacher for
+                 scheduling meeting, show option to select teacher when
+                 there are multiple teachers in one group" — this used to
+                 be a single free-text input (with a datalist of EVERY
+                 registered user, teacher or not, in the whole app) that
+                 an admin had to type a username into by hand every time,
+                 regardless of how many teachers were actually in this
+                 group. renderScheduleTeacherField() in app.js now looks
+                 at this group's OWN members (state.currentMembers,
+                 filtered to role 'teacher') and shows exactly one of
+                 these three at a time: with exactly one teacher in the
+                 group, #scheduleTeacherSingleLabel displays their name
+                 read-only and #scheduleTeacherInput (still the single
+                 source of truth read by setClassSchedule()) is
+                 auto-filled with their username behind the scenes; with
+                 two or more, #scheduleTeacherSelect shows a dropdown of
+                 just this group's teachers, syncing its choice into
+                 #scheduleTeacherInput on change; with none yet, the
+                 original manual-entry input is shown as a fallback so
+                 scheduling isn't blocked before a teacher's been added
+                 to the group. -->
+            <div class="schedule-teacher-field" style="margin-bottom:10px;">
+              <div id="scheduleTeacherSingleLabel" class="field-sm schedule-teacher-single hidden"></div>
+              <select id="scheduleTeacherSelect" class="field-sm hidden" style="width:100%;"></select>
+              <input id="scheduleTeacherInput" placeholder="Teacher username" class="field-sm" list="registeredUsersList" autocomplete="off" style="width:100%;">
+            </div>
 
             <label class="schedule-field-label"><span class="schedule-step-num">1</span> Pick date(s)</label>
             <div class="schedule-calendar-wrap">
