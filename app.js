@@ -5121,15 +5121,34 @@
     }
   }
 
+  // FIX: shared by both schedule lists (the per-channel "Scheduled
+  // Classes" list on the Profile page, and the admin's global "Live
+  // Sessions Calendar") so "is this session still relevant to show"
+  // means the same thing in both places. A row is relevant if it
+  // either hasn't started yet, or is still genuinely live right now.
+  // Previously each list used a slightly different, incomplete check:
+  // group-schedule only compared against the scheduled time window
+  // (ignoring `is_live` entirely), and the admin calendar didn't filter
+  // out finished sessions at all — see loadAllSchedules()/
+  // renderCalendarList() and renderGroupScheduleRows() below.
+  function isScheduleRowRelevant(row, now) {
+    const start = new Date(row.scheduled_time).getTime();
+    if (start > now) return true; // scheduled in the future — always relevant
+    const endsAt = start + (row.duration_minutes || 45) * 60000;
+    // Already started: only relevant while still genuinely live — i.e.
+    // within its window AND not explicitly ended early (is_live: false,
+    // set by endLiveSessionForEveryone/endScheduledSessionNow, or
+    // automatically by closeLiveSession() when the host's own call ends
+    // — see its comment).
+    return row.is_live !== false && now < endsAt;
+  }
+
   function renderGroupScheduleRows(channelId, rows) {
     if (!DOM.groupScheduleList) return;
     if (!state.currentChannel || String(state.currentChannel.id) !== String(channelId)) return;
 
     const now = Date.now();
-    const upcoming = (rows || []).filter((row) => {
-      const endsAt = new Date(row.scheduled_time).getTime() + (row.duration_minutes || 45) * 60000;
-      return endsAt > now;
-    });
+    const upcoming = (rows || []).filter((row) => isScheduleRowRelevant(row, now));
 
     if (groupScheduleEditingId && !upcoming.some((row) => String(row.id) === String(groupScheduleEditingId))) {
       groupScheduleEditingId = null;
@@ -5195,9 +5214,19 @@
     const start = new Date(row.scheduled_time);
     const durationMinutes = row.duration_minutes || 45;
     const end = new Date(start.getTime() + durationMinutes * 60000);
-    const isLiveNow = Date.now() >= start.getTime() && Date.now() < end.getTime();
+    // FIX: matches the same is_live check added to calendarItemHtml() —
+    // previously purely time-window based, so an early-ended session
+    // (is_live: false but its original window hadn't fully elapsed yet)
+    // kept showing the green "live" dot and "End now" button here too.
+    const isLiveNow = row.is_live !== false && Date.now() >= start.getTime() && Date.now() < end.getTime();
     const dateLabel = start.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
     const timeLabel = `${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })} – ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+    // FIX: root cause of "recording icon not showing on Profile" — this
+    // is the function that renders each row in the Profile page's
+    // "Scheduled Classes" list (a separate function/template from the
+    // admin's Live Sessions Calendar, which already got this icon).
+    // auto_record_enabled was never read or rendered here at all.
+    const isAutoRecording = !!row.auto_record_enabled;
 
     const adminActions = state.isAdmin ? `
       <div class="group-schedule-item-actions">
@@ -5210,7 +5239,7 @@
     return `
       <div class="group-schedule-item${isLiveNow ? ' is-live' : ''}">
         <div class="group-schedule-item-date">
-          <span class="group-schedule-item-date-label">${escapeHtml(dateLabel)}${isLiveNow ? ' <span class="calendar-live-dot" title="Live now"></span>' : ''}</span>
+          <span class="group-schedule-item-date-label">${escapeHtml(dateLabel)}${isLiveNow ? ' <span class="calendar-live-dot" title="Live now"></span>' : ''}${isAutoRecording ? ' <i class="fas fa-circle calendar-item-record-icon" title="Auto-recording enabled"></i>' : ''}</span>
           <span class="group-schedule-item-time-label">${escapeHtml(timeLabel)}</span>
         </div>
         <div class="group-schedule-item-teacher"><i class="fas fa-chalkboard-user"></i> ${escapeHtml(getDisplayName(row.teacher_username))}</div>
@@ -5564,6 +5593,21 @@
 
   function renderCalendarList(rows) {
     if (!DOM.calendarList) return;
+
+    // FIX: root cause of "ended meeting still shown in Live Sessions
+    // Calendar" — this function used to render every row the query
+    // returned, with no filtering at all, so a session that had
+    // genuinely finished (whether its scheduled window fully elapsed,
+    // or it was explicitly/automatically ended early via is_live:
+    // false) stayed listed — just without the live badge — until the
+    // 1-hour-ago query cutoff eventually excluded it. The per-channel
+    // "Scheduled Classes" list on the Profile page already filtered
+    // this correctly (see renderGroupScheduleRows); this brings the
+    // admin's global calendar in line with the same isScheduleRowRelevant
+    // check, so a finished session disappears from both places at the
+    // same moment instead of only losing its "live" styling here.
+    const now = Date.now();
+    rows = (rows || []).filter((row) => isScheduleRowRelevant(row, now));
 
     if (!rows.length) {
       DOM.calendarList.innerHTML = '<div class="empty-note">No live sessions scheduled in any group yet.</div>';
