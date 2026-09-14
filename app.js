@@ -5126,21 +5126,27 @@
   // Sessions Calendar") so "is this session still relevant to show"
   // means the same thing in both places. A row is relevant if it
   // either hasn't started yet, or is still genuinely live right now.
-  // Previously each list used a slightly different, incomplete check:
-  // group-schedule only compared against the scheduled time window
-  // (ignoring `is_live` entirely), and the admin calendar didn't filter
-  // out finished sessions at all — see loadAllSchedules()/
-  // renderCalendarList() and renderGroupScheduleRows() below.
+  // FIX: root cause of "live meetings are not being shown" — this used
+  // to also require `row.is_live !== false`. A freshly-scheduled
+  // session's `is_live` is never set on insert (see the schedule-
+  // creation insert() above) — it just sits at the database column's
+  // own default, which is `false`, not `null`. That's INDISTINGUISHABLE
+  // from a session that was started and then explicitly ended early
+  // (also `is_live: false`) — so the moment a scheduled-but-not-yet-
+  // manually-started session's time window opened, this treated it as
+  // "already ended" and hid it from both schedule lists, right when it
+  // should have appeared as available to join/start. Dropping the
+  // is_live check entirely and going back to a pure time-window check:
+  // both places that explicitly end a session early
+  // (endLiveSessionForEveryone/endScheduledSessionNow) already shorten
+  // `duration_minutes` to the real elapsed time in that SAME update, so
+  // `endsAt` below already reflects an early end on its own — no need
+  // for is_live to catch that case too.
   function isScheduleRowRelevant(row, now) {
     const start = new Date(row.scheduled_time).getTime();
     if (start > now) return true; // scheduled in the future — always relevant
     const endsAt = start + (row.duration_minutes || 45) * 60000;
-    // Already started: only relevant while still genuinely live — i.e.
-    // within its window AND not explicitly ended early (is_live: false,
-    // set by endLiveSessionForEveryone/endScheduledSessionNow, or
-    // automatically by closeLiveSession() when the host's own call ends
-    // — see its comment).
-    return row.is_live !== false && now < endsAt;
+    return now < endsAt; // already started: only relevant while still within its (possibly shortened) window
   }
 
   function renderGroupScheduleRows(channelId, rows) {
@@ -5214,11 +5220,18 @@
     const start = new Date(row.scheduled_time);
     const durationMinutes = row.duration_minutes || 45;
     const end = new Date(start.getTime() + durationMinutes * 60000);
-    // FIX: matches the same is_live check added to calendarItemHtml() —
-    // previously purely time-window based, so an early-ended session
-    // (is_live: false but its original window hadn't fully elapsed yet)
-    // kept showing the green "live" dot and "End now" button here too.
-    const isLiveNow = row.is_live !== false && Date.now() >= start.getTime() && Date.now() < end.getTime();
+    // FIX: root cause of "live meetings not shown" — dropped the
+    // `row.is_live !== false` check added here previously. It couldn't
+    // tell a not-yet-started scheduled session (is_live sits at the
+    // DB's own default of `false` until someone clicks Start) apart
+    // from one that was started and explicitly ended early (also
+    // is_live: false) — so a session that had simply never been
+    // started yet lost its live badge, and this row is already
+    // filtered to only ever be shown while isScheduleRowRelevant()
+    // (see above) says it's relevant in the first place, so a pure
+    // time-window check here is enough — see that function's comment
+    // for the full reasoning.
+    const isLiveNow = Date.now() >= start.getTime() && Date.now() < end.getTime();
     const dateLabel = start.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
     const timeLabel = `${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })} – ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}`;
     // FIX: root cause of "recording icon not showing on Profile" — this
@@ -5671,22 +5684,18 @@
     const startLabel = start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
     const endLabel = end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
     const groupName = channelNameById.get(String(row.channel_id)) || 'Unknown group';
-    // FIX: root cause of "ended meeting still shown as live in the Live
-    // Sessions Calendar" — this used to be a PURE time-window check
-    // (scheduled_time .. scheduled_time+duration_minutes), so it never
-    // looked at the row's own `is_live` column at all. Once a session
-    // has actually been marked not-live (row.is_live === false — this
-    // happens today via endLiveSessionForEveryone()'s admin "End for
-    // Everyone" button, endScheduledSessionNow()'s ban icon here in the
-    // calendar, AND now also automatically via the host-disconnect fix
-    // in closeLiveSession(), see its comment), the calendar should
-    // reflect that immediately rather than keep showing the green dot
-    // and "End" button until the ENTIRE original scheduled window
-    // elapses. `row.is_live !== false` treats a null/undefined value
-    // (a session that was never explicitly started, e.g. still
-    // scheduled) the same as before — only an explicit `false` now
-    // suppresses the "live" state early.
-    const isLiveNow = row.is_live !== false && Date.now() >= start.getTime() && Date.now() < end.getTime();
+    // FIX: root cause of "live meetings not shown" — the `row.is_live
+    // !== false` check added here previously couldn't tell a
+    // not-yet-started scheduled session (is_live sits at the
+    // database's own default of `false` until someone actually clicks
+    // Start) apart from one that was started and then explicitly ended
+    // early (also is_live: false) — so a session simply waiting to be
+    // started lost its live badge the moment its window opened. This
+    // row is already filtered to only ever render while
+    // isScheduleRowRelevant() (above) says it's relevant, and that
+    // function no longer relies on is_live either — see its comment —
+    // so a plain time-window check here is correct and sufficient.
+    const isLiveNow = Date.now() >= start.getTime() && Date.now() < end.getTime();
     // FIX: root cause of "recording icon for auto-recording-enabled
     // sessions is not shown" — `auto_record_enabled` is a real column on
     // class_schedule (set from the per-date schedule editor, see
