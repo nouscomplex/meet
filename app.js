@@ -6865,10 +6865,8 @@
     if (!pipDrag) DOM.videoContainer.classList.remove('video-panel-no-anim');
   }
 
-  function closeLiveSession(message, confirmedEnded) {
+  function closeLiveSession(message) {
     const wasActive = state.videoActive;
-    const endedScheduleId = state.activeCallScheduleId;
-    const wasHost = state.activeCallIsHost;
     clearLiveSessionAutoCloseTimer();
     DOM.videoContainer.classList.add('hidden');
     DOM.videoIframe.src = '';
@@ -6877,37 +6875,29 @@
     state.activeCallIsHost = false;
     setVideoMinimized(false);
     // FIX: root cause of "instead of disappearing the ended meetings it
-    // disappeared live meetings as well" — the very first version of
-    // this fix flipped is_live:false in the DB on EVERY call to
-    // closeLiveSession(), as long as the caller was the host. But this
-    // function is also the generic "tear down the call overlay for
-    // just this one person" teardown used by paths that do NOT mean
-    // the meeting actually ended — most importantly the back-button
-    // handler (handleBackNavigation: pressing back while the call is
-    // full-screen just closes the overlay) and logout (logout(): a
-    // host logging out doesn't mean their class is over for everyone
-    // still in it). Either of those, done by the host, was enough to
-    // wrongly mark a genuinely-still-live class as over, making it
-    // vanish from both schedule lists (see isScheduleRowRelevant)
-    // instead of merely losing its "live" badge once it actually
-    // finished. Now the DB is only touched when a call site explicitly
-    // passes `confirmedEnded: true` — reserved for signals that
-    // actually mean the meeting is over: PlugNmeet's own session-ended
-    // redirect (handleVideoIframeLoad) and the scheduled-time-is-up
-    // auto-close timer (both below). Back-navigation, "Return to
-    // chat", and logout all still close the overlay exactly as before
-    // — they just no longer touch class_schedule at all, matching
-    // their actual meaning ("I'm stepping away from the call view"),
-    // not "this class is over".
-    if (wasActive && wasHost && endedScheduleId && confirmedEnded) {
-      supabase
-        .from('class_schedule')
-        .update({ is_live: false })
-        .eq('id', endedScheduleId)
-        .then(({ error }) => {
-          if (error) console.warn('Could not mark schedule not-live:', error);
-        });
-    }
+    // disappeared live meetings as well" (twice over) — this function
+    // used to try to infer, from HOW it was called, whether the
+    // meeting had genuinely ended and silently flip is_live:false in
+    // the DB when it guessed yes. Every signal available for that
+    // guess turned out ambiguous: PlugNmeet's own "session ended"
+    // redirect (handleVideoIframeLoad) fires a few seconds after ANY
+    // disconnect — including a host just stepping out via PlugNmeet's
+    // own leave button meaning to rejoin — not only a genuine, final
+    // end (see the long comment on PLUGNMEET_SESSION_ENDED_MARKER
+    // below); and the scheduled-time-elapsed auto-close timer doesn't
+    // need a DB write at all, since isScheduleRowRelevant() already
+    // stops treating a row as live the moment its own time window
+    // passes, DB flag or not. Every attempt to auto-detect "really
+    // ended" from a disconnect ended up misfiring on a still-live
+    // class. So this function no longer touches class_schedule at
+    // all — it purely tears down the LOCAL call view, for whoever
+    // triggered it, exactly as it did before any of this. The actual,
+    // reliable fix for "a finished class keeps showing as live until
+    // its full scheduled window elapses" is the endLiveSessionBtn
+    // change in joinLiveClass() below: the host now gets an explicit,
+    // deliberate "End for Everyone" control (previously admin-only)
+    // to mark their own class over the moment they're actually done —
+    // a real user decision instead of a guess from ambiguous signals.
     if (DOM.endLiveSessionBtn) DOM.endLiveSessionBtn.classList.add('hidden');
     if (DOM.returnToChatBtn) DOM.returnToChatBtn.classList.add('hidden');
     // FIX: root cause of "when the meeting is ended by teacher or admin it
@@ -6995,7 +6985,7 @@
       return; // still cross-origin on the PlugNmeet room itself — normal, call is still going
     }
     if (href && href.includes(PLUGNMEET_SESSION_ENDED_MARKER)) {
-      closeLiveSession('This live session has ended.', true);
+      closeLiveSession('This live session has ended.');
     }
   }
 
@@ -7089,19 +7079,29 @@
     DOM.videoIframe.src = liveUrl;
     state.videoActive = true;
     state.activeCallScheduleId = state.currentSchedule ? state.currentSchedule.id : null;
-    // FIX: needed so closeLiveSession() can tell whether the person
-    // whose call is ending is the one who STARTED it (the scheduled
-    // teacher, or an admin starting a fresh session) versus someone who
-    // merely joined an already-live session. mode is only 'start' for
-    // the former (see getLiveButtonMode()) — see closeLiveSession() for
-    // why that distinction matters.
+    // Needed so closeLiveSession() and the endLiveSessionBtn visibility
+    // check just below can tell whether the person whose call this is
+    // the one who STARTED it (the scheduled teacher, or an admin
+    // starting a fresh session) versus someone who merely joined an
+    // already-live session. mode is only 'start' for the former (see
+    // getLiveButtonMode()).
     state.activeCallIsHost = (mode === 'start');
     updateLiveButtonState();
     if (DOM.endLiveSessionBtn) {
-      // Admin-only, by design: "End for Everyone" ends the class for the
-      // whole group, so only an admin sees/can use it — a teacher who
-      // started the session does not get it. See endLiveSessionForEveryone().
-      DOM.endLiveSessionBtn.classList.toggle('hidden', !(state.isAdmin && state.activeCallScheduleId));
+      // FIX: root cause of "a finished class keeps showing as live in
+      // both schedule lists until its full scheduled window elapses"
+      // — this button (the only reliable, DELIBERATE way to mark a
+      // session over early — see closeLiveSession()'s comment on why
+      // trying to auto-detect this from disconnect signals kept
+      // misfiring on still-live classes) used to be admin-only "by
+      // design", so a teacher who started and then finished their own
+      // class had no way to end it early at all — it could only ever
+      // show as live for its entire originally-scheduled duration.
+      // Now the HOST of this specific call — the scheduled teacher who
+      // started it, same as an admin who started it — gets it too, so
+      // whoever is actually running the class can mark it done the
+      // moment it really is.
+      DOM.endLiveSessionBtn.classList.toggle('hidden', !(state.activeCallIsHost && state.activeCallScheduleId));
     }
     // FIX: root cause of getting stuck on PlugNmeet's own "meeting has
     // ended" screen — unlike #endLiveSessionBtn, this isn't admin-only or
@@ -7115,10 +7115,10 @@
       const endsAt = new Date(state.currentSchedule.scheduled_time).getTime() + (state.currentSchedule.duration_minutes || 45) * 60000;
       const msRemaining = endsAt - Date.now();
       if (msRemaining <= 0) {
-        closeLiveSession('⏰ This session\'s scheduled time is already up.', true);
+        closeLiveSession('⏰ This session\'s scheduled time is already up.');
       } else {
         liveSessionAutoCloseTimer = setTimeout(() => {
-          closeLiveSession('⏰ This session\'s scheduled time is up — the call has been closed.', true);
+          closeLiveSession('⏰ This session\'s scheduled time is up — the call has been closed.');
         }, msRemaining);
       }
     }
