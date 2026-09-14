@@ -160,6 +160,16 @@
     // previous page.
     hasOlderMessages: false,
     oldestLoadedTimestamp: null,
+    // FIX: needed for the attendance report's "staying duration" —
+    // see joinLiveClass()/closeLiveSession(). The id of the attendance
+    // row created when THIS person joined their current call, the
+    // moment they joined it, and the scheduled session's own duration
+    // (captured at join time so it can't drift if state.currentSchedule
+    // changes later from navigating elsewhere while the call is
+    // minimized) — used to cap the recorded duration at closeLiveSession().
+    activeAttendanceRowId: null,
+    activeAttendanceJoinedAt: null,
+    activeAttendanceScheduleDurationMinutes: null,
   };
 
   // ============================================================
@@ -227,11 +237,27 @@
     adminSettingsCard: $('adminSettingsCard'),
     createChannelBtn: $('createChannelBtn'),
     viewCalendarBtn: $('viewCalendarBtn'),
+    viewAttendanceReportBtn: $('viewAttendanceReportBtn'),
     signOutBtn: $('signOutBtn'),
 
     screenCalendar: $('screenCalendar'),
     backFromCalendar: $('backFromCalendar'),
     calendarList: $('calendarList'),
+
+    screenAttendance: $('screenAttendance'),
+    backFromAttendance: $('backFromAttendance'),
+    attendanceReportTypeSelect: $('attendanceReportTypeSelect'),
+    attendanceGroupSelect: $('attendanceGroupSelect'),
+    attendanceStudentFieldWrap: $('attendanceStudentFieldWrap'),
+    attendanceStudentSelect: $('attendanceStudentSelect'),
+    attendanceFromDateInput: $('attendanceFromDateInput'),
+    attendanceToDateInput: $('attendanceToDateInput'),
+    generateAttendanceReportBtn: $('generateAttendanceReportBtn'),
+    attendanceReportEmpty: $('attendanceReportEmpty'),
+    attendanceReportResults: $('attendanceReportResults'),
+    attendanceReportSummary: $('attendanceReportSummary'),
+    attendanceReportTable: $('attendanceReportTable'),
+    downloadAttendancePdfBtn: $('downloadAttendancePdfBtn'),
 
     adminCreateUserCard: $('adminCreateUserCard'),
     adminUserManagementCard: $('adminUserManagementCard'),
@@ -1331,6 +1357,7 @@
     members: DOM.screenMembers,
     profile: DOM.screenProfile,
     calendar: DOM.screenCalendar,
+    attendance: DOM.screenAttendance,
   };
 
   const CHAT_GROUP_SCREENS = ['chats', 'chatDetail', 'members', 'profile'];
@@ -6930,13 +6957,43 @@
 
   function closeLiveSession(message) {
     const wasActive = state.videoActive;
+    // Needed for the attendance report's "staying duration" — see the
+    // write-back at the end of this function.
+    const attendanceRowId = state.activeAttendanceRowId;
+    const attendanceJoinedAt = state.activeAttendanceJoinedAt;
+    const attendanceScheduleDurationMinutes = state.activeAttendanceScheduleDurationMinutes;
     clearLiveSessionAutoCloseTimer();
     DOM.videoContainer.classList.add('hidden');
     DOM.videoIframe.src = '';
     state.videoActive = false;
     state.activeCallScheduleId = null;
     state.activeCallIsHost = false;
+    state.activeAttendanceRowId = null;
+    state.activeAttendanceJoinedAt = null;
+    state.activeAttendanceScheduleDurationMinutes = null;
     setVideoMinimized(false);
+
+    // Attendance duration write-back — see joinLiveClass() where
+    // state.activeAttendanceRowId/activeAttendanceJoinedAt are set at
+    // join time. Capped at the session's own scheduled duration so a
+    // stray reconnect loop (several join/close cycles inside one
+    // session) can't inflate a single session's staying time past
+    // 100% of its own length — see computeAttendanceReport() for how
+    // this feeds into the report.
+    if (attendanceRowId) {
+      const elapsedMinutes = attendanceJoinedAt ? Math.max(0, Math.round((Date.now() - attendanceJoinedAt) / 60000)) : null;
+      const cappedMinutes = elapsedMinutes == null
+        ? null
+        : (attendanceScheduleDurationMinutes ? Math.min(elapsedMinutes, attendanceScheduleDurationMinutes) : elapsedMinutes);
+      supabase
+        .from(CONFIG.SUPABASE.TABLES.ATTENDANCE)
+        .update({ leave_time: new Date().toISOString(), duration_minutes: cappedMinutes })
+        .eq('id', attendanceRowId)
+        .then(({ error }) => {
+          if (error) console.warn('Could not record attendance duration:', error);
+        });
+    }
+
     // FIX: root cause of "instead of disappearing the ended meetings it
     // disappeared live meetings as well" (twice over) — this function
     // used to try to infer, from HOW it was called, whether the
@@ -7090,12 +7147,32 @@
 
     if (CONFIG.FEATURES.ENABLE_ATTENDANCE_LOGGING) {
       try {
-        await supabase.from(CONFIG.SUPABASE.TABLES.ATTENDANCE).insert({
-          student_name: state.currentUser.username,
-          channel_id: state.currentChannel.id,
-          join_time: new Date().toISOString(),
-          status: 'Present',
-        });
+        // FIX: needed for the attendance report (computeAttendanceReport())
+        // to tie an attendance row to a SPECIFIC scheduled session
+        // (schedule_id) instead of just a channel — without it there's no
+        // way to tell "attended session A" from "attended session B" in
+        // the same group, only "joined this channel at some point". The
+        // .select().single() gets the new row's id back so
+        // closeLiveSession() can later fill in leave_time/duration_minutes
+        // on this exact row once we know how long the call lasted.
+        const { data: attendanceRow, error: attendanceError } = await supabase
+          .from(CONFIG.SUPABASE.TABLES.ATTENDANCE)
+          .insert({
+            student_name: state.currentUser.username,
+            channel_id: state.currentChannel.id,
+            schedule_id: state.currentSchedule ? state.currentSchedule.id : null,
+            join_time: new Date().toISOString(),
+            status: 'Present',
+          })
+          .select()
+          .single();
+        if (attendanceError) {
+          console.warn('Attendance log skipped:', attendanceError);
+        } else if (attendanceRow) {
+          state.activeAttendanceRowId = attendanceRow.id;
+          state.activeAttendanceJoinedAt = Date.now();
+          state.activeAttendanceScheduleDurationMinutes = state.currentSchedule ? (state.currentSchedule.duration_minutes || 45) : null;
+        }
       } catch (e) {
         console.warn('Attendance log skipped:', e);
       }
@@ -7205,6 +7282,377 @@
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  }
+
+  // ============================================================
+  // 12b. ATTENDANCE REPORT
+  // "Fetch auto attendance of students in group... with from-date to
+  // to-date individual and group wise summary and detailed report
+  // with pdf download option. Start calculation of days and
+  // attendance from joining date."
+  //
+  // Requires two columns that don't exist on the original schema —
+  // this app has no direct database access of its own, so these need
+  // to be added once, by hand, in the Supabase SQL editor:
+  //
+  //   alter table attendance
+  //     add column if not exists schedule_id bigint references class_schedule(id) on delete set null,
+  //     add column if not exists leave_time timestamptz,
+  //     add column if not exists duration_minutes integer;
+  //   alter table members
+  //     add column if not exists created_at timestamptz not null default now();
+  //
+  // Without schedule_id there's no way to tell WHICH scheduled session
+  // an attendance row belongs to (only which channel); without
+  // duration_minutes there's no "staying duration" to report at all;
+  // without members.created_at there's no join date to start counting
+  // from. See joinLiveClass()/closeLiveSession() above for where
+  // schedule_id/duration_minutes get written now that the columns
+  // exist. If members.created_at already existed with real historical
+  // join dates, this migration is a no-op for it; if it didn't,
+  // existing members backfill to "now" (their true join date isn't
+  // recoverable after the fact) — only going forward is this accurate
+  // for members added before running the migration.
+  // ============================================================
+
+  let lastAttendanceReport = null;
+
+  // dayKey() (above) isn't zero-padded ("2026-9-5"), which
+  // <input type="date"> silently rejects — it requires strict
+  // "YYYY-MM-DD". This is that format, used for both setting the date
+  // inputs' default values and building the PDF filename below.
+  function toDateInputValue(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function populateAttendanceGroupSelect() {
+    if (!DOM.attendanceGroupSelect) return;
+    const previousValue = DOM.attendanceGroupSelect.value;
+    const options = ['<option value="">Select a group…</option>']
+      .concat(allChannels.map((ch) => `<option value="${escapeHtml(String(ch.id))}">${escapeHtml(ch.name)}</option>`));
+    DOM.attendanceGroupSelect.innerHTML = options.join('');
+    if (previousValue && allChannels.some((ch) => String(ch.id) === previousValue)) {
+      DOM.attendanceGroupSelect.value = previousValue;
+    }
+  }
+
+  async function populateAttendanceStudentSelect(channelId) {
+    if (!DOM.attendanceStudentSelect) return;
+    if (!channelId) {
+      DOM.attendanceStudentSelect.innerHTML = '<option value="">Select a group first…</option>';
+      return;
+    }
+    DOM.attendanceStudentSelect.innerHTML = '<option value="">Loading students…</option>';
+    const { data, error } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.MEMBERS)
+      .select('username')
+      .eq('channel_id', channelId)
+      .eq('role', 'student')
+      .order('username');
+    if (error) {
+      DOM.attendanceStudentSelect.innerHTML = '<option value="">Could not load students</option>';
+      return;
+    }
+    if (!data || !data.length) {
+      DOM.attendanceStudentSelect.innerHTML = '<option value="">No students in this group</option>';
+      return;
+    }
+    DOM.attendanceStudentSelect.innerHTML = data
+      .map((m) => `<option value="${escapeHtml(m.username)}">${escapeHtml(getDisplayName(m.username))}</option>`)
+      .join('');
+  }
+
+  function initAttendanceReportScreen() {
+    populateAttendanceGroupSelect();
+    if (DOM.attendanceReportTypeSelect) DOM.attendanceReportTypeSelect.value = 'group';
+    if (DOM.attendanceStudentFieldWrap) DOM.attendanceStudentFieldWrap.classList.add('hidden');
+    // Default range: the current calendar month to date — matches the
+    // "Fetch Month Days from current calendar month" example.
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    if (DOM.attendanceFromDateInput && !DOM.attendanceFromDateInput.value) {
+      DOM.attendanceFromDateInput.value = toDateInputValue(monthStart);
+    }
+    if (DOM.attendanceToDateInput && !DOM.attendanceToDateInput.value) {
+      DOM.attendanceToDateInput.value = toDateInputValue(now);
+    }
+    if (DOM.attendanceReportResults) DOM.attendanceReportResults.classList.add('hidden');
+    if (DOM.attendanceReportEmpty) DOM.attendanceReportEmpty.classList.remove('hidden');
+    lastAttendanceReport = null;
+  }
+
+  function formatMinutesLabel(minutes) {
+    const m = Math.round(minutes || 0);
+    return `${m} min (${(m / 60).toFixed(1)}h)`;
+  }
+
+  function formatPct(pct) {
+    return pct == null ? '—' : `${pct.toFixed(1)}%`;
+  }
+
+  // Computes the report for either the whole group (studentUsername
+  // omitted) or a single student. fromDate/toDate are Date objects at
+  // local midnight for their respective days; toDate is treated as
+  // inclusive of its whole day.
+  async function computeAttendanceReport(channelId, studentUsername, fromDate, toDate) {
+    const channel = allChannels.find((ch) => String(ch.id) === String(channelId));
+    const toDateExclusive = new Date(toDate.getTime() + 24 * 60 * 60 * 1000);
+    const calendarDaysInRange = Math.round((toDateExclusive.getTime() - fromDate.getTime()) / (24 * 60 * 60 * 1000));
+
+    const { data: scheduleRows, error: scheduleError } = await supabase
+      .from('class_schedule')
+      .select('id, scheduled_time, duration_minutes')
+      .eq('channel_id', channelId)
+      .gte('scheduled_time', fromDate.toISOString())
+      .lt('scheduled_time', toDateExclusive.toISOString())
+      .order('scheduled_time', { ascending: true });
+    if (scheduleError) throw scheduleError;
+
+    let membersQuery = supabase
+      .from(CONFIG.SUPABASE.TABLES.MEMBERS)
+      .select('username, role, created_at')
+      .eq('channel_id', channelId)
+      .eq('role', 'student');
+    if (studentUsername) membersQuery = membersQuery.eq('username', studentUsername);
+    const { data: memberRows, error: memberError } = await membersQuery.order('username');
+    if (memberError) throw memberError;
+
+    let attendanceQuery = supabase
+      .from(CONFIG.SUPABASE.TABLES.ATTENDANCE)
+      .select('student_name, schedule_id, join_time, duration_minutes')
+      .eq('channel_id', channelId)
+      .gte('join_time', fromDate.toISOString())
+      .lt('join_time', toDateExclusive.toISOString());
+    if (studentUsername) attendanceQuery = attendanceQuery.eq('student_name', studentUsername);
+    const { data: attendanceRows, error: attendanceError } = await attendanceQuery;
+    if (attendanceError) throw attendanceError;
+
+    // attendanceByKey: "username|scheduleId" -> array of attendance rows
+    // (usually one, but a student who reconnected mid-session leaves
+    // more than one row for the same session).
+    const attendanceByKey = new Map();
+    (attendanceRows || []).forEach((row) => {
+      if (row.schedule_id == null) return; // pre-migration row with no session link — can't be matched to a specific session
+      const key = `${row.student_name}|${row.schedule_id}`;
+      if (!attendanceByKey.has(key)) attendanceByKey.set(key, []);
+      attendanceByKey.get(key).push(row);
+    });
+
+    const students = (memberRows || []).map((member) => {
+      const joinedAt = member.created_at ? new Date(member.created_at) : null;
+      const effectiveFrom = joinedAt && joinedAt.getTime() > fromDate.getTime() ? joinedAt : fromDate;
+      const relevantSessions = (scheduleRows || []).filter((s) => new Date(s.scheduled_time).getTime() >= effectiveFrom.getTime());
+
+      let attendedSessions = 0;
+      let scheduledMinutes = 0;
+      let attendedMinutes = 0;
+      const sessions = relevantSessions.map((s) => {
+        const durationMinutes = s.duration_minutes || 45;
+        scheduledMinutes += durationMinutes;
+        const rows = attendanceByKey.get(`${member.username}|${s.id}`) || [];
+        const attended = rows.length > 0;
+        // Sum durations across any reconnects for this session, capped
+        // at the session's own length (see closeLiveSession()'s own
+        // per-row cap — this is a second, belt-and-suspenders cap
+        // across MULTIPLE rows for the same session).
+        const minutesStayed = attended
+          ? Math.min(durationMinutes, rows.reduce((sum, r) => sum + (r.duration_minutes != null ? r.duration_minutes : durationMinutes), 0))
+          : 0;
+        if (attended) {
+          attendedSessions++;
+          attendedMinutes += minutesStayed;
+        }
+        return { date: s.scheduled_time, scheduledMinutes: durationMinutes, attended, minutesStayed };
+      });
+
+      const scheduledSessions = relevantSessions.length;
+      const absentSessions = scheduledSessions - attendedSessions;
+      return {
+        username: member.username,
+        displayName: getDisplayName(member.username),
+        joinedAt,
+        clippedByJoinDate: !!(joinedAt && joinedAt.getTime() > fromDate.getTime()),
+        scheduledSessions,
+        attendedSessions,
+        absentSessions,
+        attendancePct: scheduledSessions ? (attendedSessions / scheduledSessions) * 100 : null,
+        scheduledMinutes,
+        attendedMinutes,
+        stayingPct: scheduledMinutes ? (attendedMinutes / scheduledMinutes) * 100 : null,
+        sessions,
+      };
+    });
+
+    const groupTotals = students.reduce((acc, s) => {
+      acc.scheduledSessions += s.scheduledSessions;
+      acc.attendedSessions += s.attendedSessions;
+      acc.absentSessions += s.absentSessions;
+      acc.scheduledMinutes += s.scheduledMinutes;
+      acc.attendedMinutes += s.attendedMinutes;
+      return acc;
+    }, { scheduledSessions: 0, attendedSessions: 0, absentSessions: 0, scheduledMinutes: 0, attendedMinutes: 0 });
+    groupTotals.attendancePct = groupTotals.scheduledSessions ? (groupTotals.attendedSessions / groupTotals.scheduledSessions) * 100 : null;
+    groupTotals.stayingPct = groupTotals.scheduledMinutes ? (groupTotals.attendedMinutes / groupTotals.scheduledMinutes) * 100 : null;
+
+    return {
+      mode: studentUsername ? 'individual' : 'group',
+      channelId,
+      channelName: channel ? channel.name : 'Unknown group',
+      fromDate,
+      toDate,
+      calendarDaysInRange,
+      sessionsScheduledInRange: (scheduleRows || []).length,
+      students,
+      groupTotals,
+    };
+  }
+
+  function attendanceStatCardHtml(label, value) {
+    return `<div class="attendance-stat-card"><div class="attendance-stat-label">${escapeHtml(label)}</div><div class="attendance-stat-value">${escapeHtml(value)}</div></div>`;
+  }
+
+  function renderAttendanceReport(report) {
+    lastAttendanceReport = report;
+    if (!DOM.attendanceReportResults || !DOM.attendanceReportSummary || !DOM.attendanceReportTable) return;
+
+    let summaryCards = [
+      attendanceStatCardHtml('Calendar days in range', String(report.calendarDaysInRange)),
+      attendanceStatCardHtml('Sessions scheduled in range', String(report.sessionsScheduledInRange)),
+    ];
+
+    let tableHtml;
+    if (report.mode === 'individual') {
+      const s = report.students[0];
+      if (!s) {
+        tableHtml = '<tbody><tr><td>This student is not a member of this group.</td></tr></tbody>';
+      } else {
+        summaryCards = summaryCards.concat([
+          attendanceStatCardHtml('Scheduled sessions (since joining)', String(s.scheduledSessions)),
+          attendanceStatCardHtml('Attended', String(s.attendedSessions)),
+          attendanceStatCardHtml('Absent', String(s.absentSessions)),
+          attendanceStatCardHtml('Attendance %', formatPct(s.attendancePct)),
+          attendanceStatCardHtml('Total scheduled duration', formatMinutesLabel(s.scheduledMinutes)),
+          attendanceStatCardHtml('Total stayed', formatMinutesLabel(s.attendedMinutes)),
+          attendanceStatCardHtml('Staying %', formatPct(s.stayingPct)),
+        ]);
+        tableHtml = `
+          <thead><tr><th>Date</th><th>Scheduled</th><th>Status</th><th>Stayed</th></tr></thead>
+          <tbody>
+            ${s.sessions.map((sess) => `
+              <tr>
+                <td>${escapeHtml(new Date(sess.date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }))}</td>
+                <td>${sess.scheduledMinutes} min</td>
+                <td>${sess.attended ? '<span style="color:var(--success);font-weight:700;">Present</span>' : '<span style="color:var(--danger);font-weight:700;">Absent</span>'}</td>
+                <td>${sess.attended ? `${sess.minutesStayed} min` : '—'}</td>
+              </tr>
+            `).join('') || '<tr><td colspan="4">No sessions scheduled in this range since this student joined.</td></tr>'}
+          </tbody>
+        `;
+      }
+    } else {
+      const t = report.groupTotals;
+      summaryCards = summaryCards.concat([
+        attendanceStatCardHtml('Students', String(report.students.length)),
+        attendanceStatCardHtml('Group attendance %', formatPct(t.attendancePct)),
+        attendanceStatCardHtml('Group staying %', formatPct(t.stayingPct)),
+      ]);
+      tableHtml = `
+        <thead><tr><th>Student</th><th>Scheduled</th><th>Attended</th><th>Absent</th><th>Attendance %</th><th>Scheduled</th><th>Stayed</th><th>Staying %</th></tr></thead>
+        <tbody>
+          ${report.students.map((s) => `
+            <tr>
+              <td>${escapeHtml(s.displayName)}${s.clippedByJoinDate ? ' <span title="Counted from their join date, not the start of the range" style="color:var(--ink-faint);">*</span>' : ''}</td>
+              <td>${s.scheduledSessions}</td>
+              <td>${s.attendedSessions}</td>
+              <td>${s.absentSessions}</td>
+              <td>${formatPct(s.attendancePct)}</td>
+              <td>${formatMinutesLabel(s.scheduledMinutes)}</td>
+              <td>${formatMinutesLabel(s.attendedMinutes)}</td>
+              <td>${formatPct(s.stayingPct)}</td>
+            </tr>
+          `).join('') || '<tr><td colspan="8">No students in this group.</td></tr>'}
+        </tbody>
+      `;
+    }
+
+    DOM.attendanceReportSummary.innerHTML = summaryCards.join('');
+    DOM.attendanceReportTable.innerHTML = tableHtml;
+    if (DOM.attendanceReportEmpty) DOM.attendanceReportEmpty.classList.add('hidden');
+    DOM.attendanceReportResults.classList.remove('hidden');
+  }
+
+  function generateAttendancePdf(report) {
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+      alert('PDF library failed to load — check your connection and try again.');
+      return;
+    }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const rangeLabel = `${report.fromDate.toLocaleDateString()} – ${report.toDate.toLocaleDateString()}`;
+
+    doc.setFontSize(16);
+    doc.text('Attendance Report', 14, 18);
+    doc.setFontSize(11);
+    doc.setTextColor(90);
+    doc.text(`Group: ${report.channelName}`, 14, 26);
+    if (report.mode === 'individual' && report.students[0]) {
+      doc.text(`Student: ${report.students[0].displayName}`, 14, 32);
+      doc.text(`Date range: ${rangeLabel}`, 14, 38);
+    } else {
+      doc.text(`Date range: ${rangeLabel}`, 14, 32);
+    }
+    doc.setTextColor(0);
+
+    let head, body, startY;
+    if (report.mode === 'individual') {
+      const s = report.students[0];
+      startY = 46;
+      doc.setFontSize(10);
+      const summaryLines = s ? [
+        `Scheduled sessions (since joining): ${s.scheduledSessions}    Attended: ${s.attendedSessions}    Absent: ${s.absentSessions}    Attendance: ${formatPct(s.attendancePct)}`,
+        `Total scheduled duration: ${formatMinutesLabel(s.scheduledMinutes)}    Total stayed: ${formatMinutesLabel(s.attendedMinutes)}    Staying: ${formatPct(s.stayingPct)}`,
+      ] : ['This student is not a member of this group.'];
+      summaryLines.forEach((line, i) => doc.text(line, 14, startY + i * 6));
+      startY += summaryLines.length * 6 + 6;
+      head = [['Date', 'Scheduled', 'Status', 'Stayed']];
+      body = (s ? s.sessions : []).map((sess) => [
+        new Date(sess.date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }),
+        `${sess.scheduledMinutes} min`,
+        sess.attended ? 'Present' : 'Absent',
+        sess.attended ? `${sess.minutesStayed} min` : '—',
+      ]);
+    } else {
+      startY = 40;
+      doc.setFontSize(10);
+      doc.text(`Calendar days in range: ${report.calendarDaysInRange}    Sessions scheduled: ${report.sessionsScheduledInRange}    Students: ${report.students.length}`, 14, startY);
+      doc.text(`Group attendance: ${formatPct(report.groupTotals.attendancePct)}    Group staying: ${formatPct(report.groupTotals.stayingPct)}`, 14, startY + 6);
+      startY += 16;
+      head = [['Student', 'Scheduled', 'Attended', 'Absent', 'Attendance %', 'Scheduled', 'Stayed', 'Staying %']];
+      body = report.students.map((s) => [
+        s.displayName + (s.clippedByJoinDate ? ' *' : ''),
+        String(s.scheduledSessions),
+        String(s.attendedSessions),
+        String(s.absentSessions),
+        formatPct(s.attendancePct),
+        formatMinutesLabel(s.scheduledMinutes),
+        formatMinutesLabel(s.attendedMinutes),
+        formatPct(s.stayingPct),
+      ]);
+    }
+
+    doc.autoTable({ head, body, startY, styles: { fontSize: 8 }, headStyles: { fillColor: [14, 28, 118] } });
+    if (report.mode === 'group' && report.students.some((s) => s.clippedByJoinDate)) {
+      const finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 8 : startY + 8;
+      doc.setFontSize(8);
+      doc.setTextColor(120);
+      doc.text('* Counted from their join date, not the start of the selected range.', 14, finalY);
+    }
+
+    const namePart = report.mode === 'individual' && report.students[0] ? report.students[0].username : report.channelName.replace(/[^a-z0-9]+/gi, '-');
+    doc.save(`attendance-${namePart}-${toDateInputValue(report.fromDate)}-to-${toDateInputValue(report.toDate)}.pdf`);
   }
 
   async function requestMediaPermissions() {
@@ -8056,6 +8504,7 @@
 
     DOM.adminSettingsCard.classList.toggle('hidden', !(state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE));
     if (DOM.viewCalendarBtn) DOM.viewCalendarBtn.classList.toggle('hidden', !state.isAdmin);
+    if (DOM.viewAttendanceReportBtn) DOM.viewAttendanceReportBtn.classList.toggle('hidden', !state.isAdmin);
     DOM.adminProfileSchedule.classList.toggle('hidden', !state.isAdmin);
 
     if (state.isAdmin && CONFIG.FEATURES.ENABLE_ADMIN_CONSOLE) {
@@ -8769,6 +9218,72 @@
     DOM.backFromCalendar.addEventListener('click', () => {
       unsubscribeFromAllSchedules();
       goToScreen('settings');
+    });
+  }
+
+  if (DOM.viewAttendanceReportBtn) {
+    DOM.viewAttendanceReportBtn.addEventListener('click', () => {
+      goToScreen('attendance');
+      initAttendanceReportScreen();
+    });
+  }
+
+  if (DOM.backFromAttendance) {
+    DOM.backFromAttendance.addEventListener('click', () => goToScreen('settings'));
+  }
+
+  if (DOM.attendanceReportTypeSelect) {
+    DOM.attendanceReportTypeSelect.addEventListener('change', () => {
+      const isIndividual = DOM.attendanceReportTypeSelect.value === 'individual';
+      if (DOM.attendanceStudentFieldWrap) DOM.attendanceStudentFieldWrap.classList.toggle('hidden', !isIndividual);
+      if (isIndividual && DOM.attendanceGroupSelect.value) {
+        populateAttendanceStudentSelect(DOM.attendanceGroupSelect.value);
+      }
+    });
+  }
+
+  if (DOM.attendanceGroupSelect) {
+    DOM.attendanceGroupSelect.addEventListener('change', () => {
+      if (DOM.attendanceReportTypeSelect && DOM.attendanceReportTypeSelect.value === 'individual') {
+        populateAttendanceStudentSelect(DOM.attendanceGroupSelect.value);
+      }
+    });
+  }
+
+  if (DOM.generateAttendanceReportBtn) {
+    DOM.generateAttendanceReportBtn.addEventListener('click', async () => {
+      const channelId = DOM.attendanceGroupSelect ? DOM.attendanceGroupSelect.value : '';
+      if (!channelId) { alert('Select a group first.'); return; }
+      const isIndividual = DOM.attendanceReportTypeSelect && DOM.attendanceReportTypeSelect.value === 'individual';
+      const studentUsername = isIndividual && DOM.attendanceStudentSelect ? DOM.attendanceStudentSelect.value : '';
+      if (isIndividual && !studentUsername) { alert('Select a student first.'); return; }
+      const fromVal = DOM.attendanceFromDateInput ? DOM.attendanceFromDateInput.value : '';
+      const toVal = DOM.attendanceToDateInput ? DOM.attendanceToDateInput.value : '';
+      if (!fromVal || !toVal) { alert('Pick a from-date and to-date.'); return; }
+      const fromDate = new Date(`${fromVal}T00:00:00`);
+      const toDate = new Date(`${toVal}T00:00:00`);
+      if (toDate.getTime() < fromDate.getTime()) { alert('The to-date must be on or after the from-date.'); return; }
+
+      DOM.generateAttendanceReportBtn.disabled = true;
+      const originalLabel = DOM.generateAttendanceReportBtn.innerHTML;
+      DOM.generateAttendanceReportBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating…';
+      try {
+        const report = await computeAttendanceReport(channelId, studentUsername || null, fromDate, toDate);
+        renderAttendanceReport(report);
+      } catch (e) {
+        console.error('computeAttendanceReport failed:', e);
+        alert('Could not generate the report: ' + (e.message || e));
+      } finally {
+        DOM.generateAttendanceReportBtn.disabled = false;
+        DOM.generateAttendanceReportBtn.innerHTML = originalLabel;
+      }
+    });
+  }
+
+  if (DOM.downloadAttendancePdfBtn) {
+    DOM.downloadAttendancePdfBtn.addEventListener('click', () => {
+      if (!lastAttendanceReport) { alert('Generate a report first.'); return; }
+      generateAttendancePdf(lastAttendanceReport);
     });
   }
 
