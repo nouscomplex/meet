@@ -56,6 +56,14 @@
        WhatsApp-style "half open" preview in the chat bubble instead of a
        bare file icon. See isPdfFile()/getPdfThumbnail() in app.js. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
+  <!-- FIX: "individual and group wise summary and detailed report with
+       pdf download option" (attendance report) — jsPDF + its autotable
+       plugin generate the downloadable PDF entirely client-side (see
+       generateAttendancePdf() in app.js); this is unrelated to pdf.js
+       just above, which only reads/previews PDFs the user already has,
+       not creates new ones. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" defer></script>
 
   <!-- CONFIGURATION -->
   <script src="config.js" defer></script>
@@ -331,6 +339,14 @@
                  scheduled session across every group, grouped by day. -->
             <button id="viewCalendarBtn" class="hidden settings-action-row">
               <i class="fas fa-calendar-days"></i> Live Sessions Calendar
+            </button>
+            <!-- FIX: "fetch auto attendance of students in group... with
+                 from-date to to-date individual and group wise summary
+                 and detailed report with pdf download option" — opens
+                 #screenAttendance (see app.js renderAttendanceReport()/
+                 computeAttendanceReport()/generateAttendancePdf()). -->
+            <button id="viewAttendanceReportBtn" class="hidden settings-action-row">
+              <i class="fas fa-clipboard-user"></i> Attendance Report
             </button>
 
             <button id="addUserToggleBtn" class="settings-action-row admin-toggle-row" type="button" aria-expanded="false" aria-controls="adminCreateUserCard">
@@ -943,6 +959,81 @@
         <div class="calendar-scroll-container">
           <div id="calendarList" class="calendar-list">
             <div class="empty-note">Loading schedule…</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- FIX: "fetch auto attendance of students in group... with
+           from-date to to-date individual and group wise summary and
+           detailed report with pdf download option. Start calculation
+           of days and attendance from joining date" — new screen, see
+           app.js: renderScheduleTeacherField-style group/student
+           pickers feed computeAttendanceReport(), which:
+             - counts a scheduled session as relevant to a student only
+               from max(fromDate, that student's own MEMBERS.created_at
+               in this group) through toDate — never before they were
+               actually added to the group;
+             - treats each class_schedule row in that window as one
+               "day" a session was scheduled, and looks for an
+               `attendance` row (student_name + schedule_id) to decide
+               attended vs absent;
+             - sums each attended session's duration_minutes (written by
+               closeLiveSession() when that student's own call ends,
+               capped at the session's scheduled length) for the
+               staying-duration/percentage figures.
+           renderAttendanceReport() draws the summary + detailed table;
+           generateAttendancePdf() (jsPDF + autotable, loaded above)
+           builds the same content as a downloadable PDF. -->
+      <section id="screenAttendance" class="screen hidden">
+        <header class="screen-header">
+          <button id="backFromAttendance" class="icon-btn back-btn"><i class="fas fa-arrow-left"></i></button>
+          <span class="screen-title">Attendance Report</span>
+        </header>
+
+        <div class="attendance-report-scroll">
+          <div class="attendance-report-form">
+            <label class="schedule-field-label">Report type</label>
+            <select id="attendanceReportTypeSelect" class="field-sm" style="width:100%; margin-bottom:10px;">
+              <option value="group">Group summary (every student)</option>
+              <option value="individual">Individual student</option>
+            </select>
+
+            <label class="schedule-field-label">Group</label>
+            <select id="attendanceGroupSelect" class="field-sm" style="width:100%; margin-bottom:10px;">
+              <option value="">Select a group…</option>
+            </select>
+
+            <div id="attendanceStudentFieldWrap" class="hidden">
+              <label class="schedule-field-label">Student</label>
+              <select id="attendanceStudentSelect" class="field-sm" style="width:100%; margin-bottom:10px;"></select>
+            </div>
+
+            <div class="admin-row" style="display:flex; gap:8px; margin-bottom:10px;">
+              <div style="flex:1; min-width:0;">
+                <label class="schedule-field-label" for="attendanceFromDateInput">From date</label>
+                <input id="attendanceFromDateInput" type="date" class="field-sm" style="width:100%;">
+              </div>
+              <div style="flex:1; min-width:0;">
+                <label class="schedule-field-label" for="attendanceToDateInput">To date</label>
+                <input id="attendanceToDateInput" type="date" class="field-sm" style="width:100%;">
+              </div>
+            </div>
+
+            <button type="button" id="generateAttendanceReportBtn" class="btn-admin-sm" style="width:100%;">
+              <i class="fas fa-magnifying-glass-chart"></i> Generate report
+            </button>
+          </div>
+
+          <div id="attendanceReportEmpty" class="empty-note" style="margin-top:16px;">Pick a group and date range, then generate a report.</div>
+
+          <div id="attendanceReportResults" class="hidden">
+            <div id="attendanceReportSummary" class="attendance-report-summary"></div>
+            <div class="attendance-report-table-wrap">
+              <table id="attendanceReportTable" class="attendance-report-table"></table>
+            </div>
+            <button type="button" id="downloadAttendancePdfBtn" class="settings-action-row">
+              <i class="fas fa-file-pdf"></i> Download PDF
+            </button>
           </div>
         </div>
       </section>
