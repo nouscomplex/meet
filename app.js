@@ -5156,6 +5156,11 @@
         renderGroupScheduleRows(channelId, groupScheduleCache.get(channelId) || []);
       });
     });
+    DOM.groupScheduleList.querySelectorAll('.gs-edit-record-input').forEach((input) => {
+      input.addEventListener('change', () => {
+        input.closest('.gs-edit-record').classList.toggle('is-active', input.checked);
+      });
+    });
     DOM.groupScheduleList.querySelectorAll('.gs-edit-save').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const row = btn.closest('.group-schedule-item');
@@ -5163,7 +5168,8 @@
           btn.dataset.id,
           row.querySelector('.gs-edit-date').value,
           row.querySelector('.gs-edit-start').value,
-          row.querySelector('.gs-edit-duration').value
+          row.querySelector('.gs-edit-duration').value,
+          row.querySelector('.gs-edit-record-input').checked
         );
         if (!ok) return;
         groupScheduleEditingId = null;
@@ -5225,6 +5231,18 @@
           <input type="date" class="field-sm gs-edit-date" value="${dateVal}">
           <input type="time" class="field-sm gs-edit-start" value="${timeVal}">
           <input type="number" min="5" max="${MAX_SESSION_DURATION_MINUTES}" step="5" class="field-sm gs-edit-duration" value="${row.duration_minutes || 45}" title="Duration (minutes)">
+          <!-- FIX: "can't see the recording on/off option in edit option of
+          scheduled meeting" -- this edit row never had a way to change
+          auto_record_enabled at all; it could only be set once, at
+          creation time, in the Set-class-time form / per-date list
+          (see renderSchedulePerDateList()). Reusing the exact same
+          "schedule-per-date-record" styled checkbox here (already
+          defined in styles.css, no new CSS needed) so admins can flip
+          recording on/off for an existing scheduled session too. -->
+          <label class="schedule-per-date-record gs-edit-record${row.auto_record_enabled ? ' is-active' : ''}" title="Record this session">
+            <input type="checkbox" class="gs-edit-record-input"${row.auto_record_enabled ? ' checked' : ''}>
+            <i class="fas fa-video"></i> Record
+          </label>
         </div>
         <div class="group-schedule-edit-actions">
           <button type="button" class="btn-admin-sm gs-edit-save" data-id="${row.id}"><i class="fas fa-check"></i> Save</button>
@@ -5234,7 +5252,7 @@
     `;
   }
 
-  async function updateScheduledSession(id, dateStr, startTimeStr, durationMinutes) {
+  async function updateScheduledSession(id, dateStr, startTimeStr, durationMinutes, autoRecordEnabled) {
     if (!dateStr || !startTimeStr) { alert('Pick a date and start time.'); return false; }
     const duration = Math.round(Number(durationMinutes));
     if (!Number.isFinite(duration) || duration <= 0) { alert('Enter a valid duration.'); return false; }
@@ -5247,7 +5265,7 @@
 
     const { error } = await supabase
       .from('class_schedule')
-      .update({ scheduled_time: start.toISOString(), duration_minutes: duration, is_live: false })
+      .update({ scheduled_time: start.toISOString(), duration_minutes: duration, is_live: false, auto_record_enabled: !!autoRecordEnabled })
       .eq('id', id);
 
     if (error) { alert('Could not update the session: ' + error.message); return false; }
