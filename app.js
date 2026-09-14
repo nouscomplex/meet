@@ -1916,7 +1916,7 @@
     }
 
     if (!data || !data.length) {
-      DOM.recordingsListContainer.innerHTML = '<div class="empty-note">No recordings yet for this group.</div>';
+      DOM.recordingsListContainer.innerHTML = '<div class="empty-note">No recordings yet for this Orbit.</div>';
       return;
     }
 
