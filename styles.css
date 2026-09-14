@@ -3382,6 +3382,77 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
   padding: 14px 18px 24px;
   -webkit-overflow-scrolling: touch;
 }
+/* Attendance Report screen (see index.html #screenAttendance and
+   app.js computeAttendanceReport()/renderAttendanceReport()/
+   generateAttendancePdf()). Reuses .field-sm/.btn-admin-sm/
+   .schedule-field-label from the schedule form above for visual
+   consistency, so only the report-specific pieces (summary stat
+   cards + the detailed table) need their own rules here. */
+.attendance-report-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 18px 32px;
+  -webkit-overflow-scrolling: touch;
+}
+.attendance-report-form {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  padding: 16px;
+}
+.attendance-report-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 18px 0 14px;
+}
+.attendance-stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+.attendance-stat-card .attendance-stat-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--ink-faint);
+  margin-bottom: 4px;
+}
+.attendance-stat-card .attendance-stat-value {
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.attendance-report-table-wrap {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 14px;
+}
+.attendance-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.attendance-report-table th,
+.attendance-report-table td {
+  padding: 9px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.attendance-report-table th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--ink-faint);
+  background: var(--surface-sunken);
+}
+.attendance-report-table tbody tr:last-child td { border-bottom: none; }
 
 .calendar-day-group + .calendar-day-group { margin-top: 18px; }
 
