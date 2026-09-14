@@ -3467,6 +3467,14 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
   background: var(--success);
   box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.22);
 }
+/* Auto-recording indicator for calendar-item-duration (see calendarItemHtml
+   in app.js) — small solid red dot, same size/spirit as .calendar-live-dot
+   above but colored with --danger so it reads distinctly as "recording"
+   rather than "live", since a session can be both at once. */
+.calendar-item-record-icon {
+  font-size: 7px;
+  color: var(--danger);
+}
 
 /* ============================================================
    BOTTOM NAVIGATION
