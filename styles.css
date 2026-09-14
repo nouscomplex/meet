@@ -620,6 +620,27 @@ button { font-family: inherit; }
   min-width: 0;
 }
 .field-sm:focus { outline: none; border-color: var(--accent); }
+/* Read-only display for the auto-selected single-teacher case in the
+   schedule form (see renderScheduleTeacherField() in app.js and its
+   comment in index.html) — looks like a .field-sm box so it doesn't
+   visually jump when swapped in for the input/select, but isn't
+   editable, so it's shown with a sunken background and a small icon
+   to read as "this is set for you", not "type here". */
+.schedule-teacher-single {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--surface-sunken);
+  color: var(--ink-faint);
+  font-weight: 700;
+}
+.schedule-teacher-single::before {
+  content: "\f19d"; /* fa-chalkboard-user */
+  font-family: "Font Awesome 6 Free";
+  font-weight: 900;
+  color: var(--accent);
+  font-size: 11px;
+}
 
 /* ============================================================
    TEXT FORMATTING TOOLBAR + RICH TEXT EDITOR
