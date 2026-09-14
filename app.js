@@ -7035,8 +7035,29 @@
   }
 
   async function requestMediaPermissions() {
+    // FIX: root cause of "mic/camera permission indicator stays on after
+    // the live meeting ends" — this call only exists to trigger the
+    // browser's permission prompt (and catch a denial) BEFORE joining;
+    // the actual audio/video for the call itself is handled entirely
+    // inside the PlugNmeet iframe, which has its own separate
+    // getUserMedia stream. Previously the stream opened here was never
+    // stopped — it was requested, then the whole MediaStream object was
+    // discarded with no reference kept to it anywhere. A browser/OS only
+    // turns off the camera/mic recording indicator when a stream's
+    // tracks are explicitly stopped (or the page/tab is closed); simply
+    // dropping the JS reference does not do that. So this leaked stream
+    // stayed live on the MAIN app page for the rest of the session,
+    // completely independent of closeLiveSession()'s `videoIframe.src =
+    // ''` teardown (that only tears down PlugNmeet's OWN stream inside
+    // the iframe) — which is exactly why the indicator kept showing
+    // "intact"/active even after the meeting was closed. Stopping every
+    // track right after the permission check resolves keeps the
+    // prompt/denial behavior identical but releases the devices
+    // immediately instead of holding them for the rest of the app
+    // session.
+    let stream;
     try {
-      await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
       console.log('Media permissions granted.');
     } catch (e) {
       const modal = document.createElement('div');
@@ -7049,6 +7070,10 @@
         </div>
       `;
       document.body.appendChild(modal);
+    } finally {
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
     }
   }
 
