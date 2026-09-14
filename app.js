@@ -318,6 +318,8 @@
     sharedVideosGrid: $('sharedVideosGrid'),
     adminProfileSchedule: $('adminProfileSchedule'),
     scheduleTeacherInput: $('scheduleTeacherInput'),
+    scheduleTeacherSelect: $('scheduleTeacherSelect'),
+    scheduleTeacherSingleLabel: $('scheduleTeacherSingleLabel'),
     scheduleRecordCheckbox: $('scheduleRecordCheckbox'),
     scheduleCalPrevBtn: $('scheduleCalPrevBtn'),
     scheduleCalNextBtn: $('scheduleCalNextBtn'),
@@ -4766,6 +4768,57 @@
     renderMembers();
     updateChatDetailSubtitle();
     updateProfileMeta();
+    renderScheduleTeacherField();
+  }
+
+  // FIX: "auto select teacher when there is one teacher for scheduling
+  // meeting, show option to select teacher when there are multiple
+  // teachers in one group" — see the long comment on the markup in
+  // index.html for the full picture. This looks at THIS group's own
+  // members (state.currentMembers, populated by loadMembers() right
+  // above, always for whichever channel is currently selected) rather
+  // than every registered teacher account app-wide, and swaps in
+  // exactly one of three UI states depending on how many of them are
+  // teachers. #scheduleTeacherInput stays the one value setClassSchedule()
+  // and the reset-after-submit code actually read/clear — it's just kept
+  // hidden and auto-filled (single teacher) or synced from the dropdown
+  // (multiple teachers) instead of being typed into directly, so no
+  // other code needs to change to know which of the three states is
+  // currently showing.
+  function renderScheduleTeacherField() {
+    if (!DOM.scheduleTeacherInput) return;
+    const teachers = (state.currentMembers || []).filter((m) => m.role === 'teacher');
+
+    if (teachers.length === 1) {
+      const username = teachers[0].username;
+      DOM.scheduleTeacherInput.value = username;
+      DOM.scheduleTeacherInput.classList.add('hidden');
+      if (DOM.scheduleTeacherSelect) DOM.scheduleTeacherSelect.classList.add('hidden');
+      if (DOM.scheduleTeacherSingleLabel) {
+        DOM.scheduleTeacherSingleLabel.textContent = getDisplayName(username);
+        DOM.scheduleTeacherSingleLabel.classList.remove('hidden');
+      }
+    } else if (teachers.length > 1) {
+      DOM.scheduleTeacherInput.classList.add('hidden');
+      if (DOM.scheduleTeacherSingleLabel) DOM.scheduleTeacherSingleLabel.classList.add('hidden');
+      if (DOM.scheduleTeacherSelect) {
+        const previousValue = DOM.scheduleTeacherInput.value;
+        DOM.scheduleTeacherSelect.innerHTML = teachers
+          .map((t) => `<option value="${escapeHtml(t.username)}">${escapeHtml(getDisplayName(t.username))}</option>`)
+          .join('');
+        const stillValid = teachers.some((t) => t.username === previousValue);
+        DOM.scheduleTeacherSelect.value = stillValid ? previousValue : teachers[0].username;
+        DOM.scheduleTeacherSelect.classList.remove('hidden');
+        DOM.scheduleTeacherInput.value = DOM.scheduleTeacherSelect.value;
+      }
+    } else {
+      // No teacher members in this group yet — fall back to the
+      // original manual-entry input so scheduling isn't blocked before
+      // a teacher's been added to the group.
+      if (DOM.scheduleTeacherSelect) DOM.scheduleTeacherSelect.classList.add('hidden');
+      if (DOM.scheduleTeacherSingleLabel) DOM.scheduleTeacherSingleLabel.classList.add('hidden');
+      DOM.scheduleTeacherInput.classList.remove('hidden');
+    }
   }
 
   let memberLetterAnchors = {};
@@ -8925,6 +8978,12 @@
     openGroupAssignmentModal(DOM.editUsername.value);
   });
 
+  if (DOM.scheduleTeacherSelect) {
+    DOM.scheduleTeacherSelect.addEventListener('change', () => {
+      DOM.scheduleTeacherInput.value = DOM.scheduleTeacherSelect.value;
+    });
+  }
+
   DOM.setScheduleBtn.addEventListener('click', async () => {
     const sameTime = !DOM.scheduleSameTimeCheckbox || DOM.scheduleSameTimeCheckbox.checked;
     const defaultStart = DOM.scheduleStartTimeInput.value;
@@ -8954,7 +9013,17 @@
       occurrences,
     );
     if (!ok) return;
+    // FIX: this used to just blank the input directly. With the teacher
+    // field now possibly showing an auto-selected single teacher or a
+    // dropdown (see renderScheduleTeacherField()), blanking the
+    // underlying #scheduleTeacherInput alone would leave it empty even
+    // though the visible UI still shows a teacher selected — clearing it
+    // first, then re-rendering, restores the correct auto-selected/
+    // dropdown-synced value for the one/multiple-teacher cases, while
+    // still clearing it for the "no teachers in this group yet" manual-
+    // entry fallback, matching the original behavior there.
     DOM.scheduleTeacherInput.value = '';
+    renderScheduleTeacherField();
     DOM.scheduleStartTimeInput.value = '';
     DOM.scheduleDurationInput.value = '45';
     if (DOM.scheduleSameTimeCheckbox) DOM.scheduleSameTimeCheckbox.checked = true;
