@@ -5234,12 +5234,13 @@
     const isLiveNow = Date.now() >= start.getTime() && Date.now() < end.getTime();
     const dateLabel = start.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
     const timeLabel = `${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })} – ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}`;
-    // FIX: root cause of "recording icon not showing on Profile" — this
-    // is the function that renders each row in the Profile page's
-    // "Scheduled Classes" list (a separate function/template from the
-    // admin's Live Sessions Calendar, which already got this icon).
-    // auto_record_enabled was never read or rendered here at all.
-    const isAutoRecording = !!row.auto_record_enabled;
+    // The recording icon is admin-only: teachers/students shouldn't
+    // see which of their sessions will be auto-recorded, only admins
+    // managing the schedule need that visibility (matches the admin-only
+    // gating already on the Live Sessions Calendar screen itself, which
+    // is why calendarItemHtml's copy of this icon didn't need the same
+    // guard — that whole screen is admin-only).
+    const isAutoRecording = state.isAdmin && !!row.auto_record_enabled;
 
     const adminActions = state.isAdmin ? `
       <div class="group-schedule-item-actions">
