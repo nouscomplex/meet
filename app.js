@@ -7430,6 +7430,32 @@
     const { data: attendanceRows, error: attendanceError } = await attendanceQuery;
     if (attendanceError) throw attendanceError;
 
+    // FIX: "when the session was scheduled by admin but the teacher
+    // didn't start the session why it is calculating the student's
+    // absent instead of showing missed session" — a class_schedule row
+    // existing only means a session was PLANNED; nothing before this
+    // point checked whether the teacher/admin ever actually started
+    // it. A student obviously can't attend a class that never
+    // happened, so counting every un-started session as an "absence"
+    // was unfairly counting against them for something entirely
+    // outside their control. This is a SEPARATE, unfiltered-by-student
+    // query (attendanceRows above is filtered to just this student in
+    // individual mode, which can't tell us this) — joinLiveClass()
+    // writes an attendance row for WHOEVER joins, including the host
+    // (teacher/admin) who starts it, so "does any attendance row at
+    // all exist for this schedule_id" is a reliable signal that the
+    // session actually went live, regardless of whether this
+    // particular student showed up.
+    const { data: anyAttendanceRows, error: anyAttendanceError } = await supabase
+      .from(CONFIG.SUPABASE.TABLES.ATTENDANCE)
+      .select('schedule_id')
+      .eq('channel_id', channelId)
+      .gte('join_time', fromDate.toISOString())
+      .lt('join_time', toDateExclusive.toISOString())
+      .not('schedule_id', 'is', null);
+    if (anyAttendanceError) throw anyAttendanceError;
+    const startedScheduleIds = new Set((anyAttendanceRows || []).map((r) => r.schedule_id));
+
     // attendanceByKey: "username|scheduleId" -> array of attendance rows
     // (usually one, but a student who reconnected mid-session leaves
     // more than one row for the same session).
@@ -7447,54 +7473,86 @@
       const relevantSessions = (scheduleRows || []).filter((s) => new Date(s.scheduled_time).getTime() >= effectiveFrom.getTime());
 
       let attendedSessions = 0;
-      let scheduledMinutes = 0;
+      let missedSessions = 0;
+      let heldScheduledMinutes = 0;
       let attendedMinutes = 0;
       const sessions = relevantSessions.map((s) => {
         const durationMinutes = s.duration_minutes || 45;
-        scheduledMinutes += durationMinutes;
+        const wasHeld = startedScheduleIds.has(s.id);
+        if (!wasHeld) {
+          missedSessions++;
+          return { date: s.scheduled_time, scheduledMinutes: durationMinutes, wasHeld: false, attended: false, minutesStayed: 0 };
+        }
+        heldScheduledMinutes += durationMinutes;
         const rows = attendanceByKey.get(`${member.username}|${s.id}`) || [];
         const attended = rows.length > 0;
         // Sum durations across any reconnects for this session, capped
         // at the session's own length (see closeLiveSession()'s own
         // per-row cap — this is a second, belt-and-suspenders cap
         // across MULTIPLE rows for the same session).
+        // FIX: a row reaching this point already has schedule_id set
+        // (rows without it — pre-migration data — are filtered out
+        // above), so a null duration_minutes here can only mean THIS
+        // particular join was never cleanly closed (dropped
+        // connection, crashed tab, killed app — closeLiveSession()
+        // never got to write leave_time/duration_minutes for it), not
+        // old untracked data. Crediting that with the full scheduled
+        // class length (the previous fallback) silently rewarded an
+        // unknown/likely-brief connection with the maximum possible
+        // credit — e.g. two 1-minute joins in a 5-minute class, one of
+        // which dropped without closing, summed to 1 + 5 = 6 (capped
+        // to 5, the whole class) instead of the ~1 actually recorded.
+        // An unknown duration now counts as 0 additional minutes
+        // instead — honest about what we don't know — while the
+        // session still correctly counts as attended, since the row's
+        // existence proves they joined at least once.
         const minutesStayed = attended
-          ? Math.min(durationMinutes, rows.reduce((sum, r) => sum + (r.duration_minutes != null ? r.duration_minutes : durationMinutes), 0))
+          ? Math.min(durationMinutes, rows.reduce((sum, r) => sum + (r.duration_minutes != null ? r.duration_minutes : 0), 0))
           : 0;
         if (attended) {
           attendedSessions++;
           attendedMinutes += minutesStayed;
         }
-        return { date: s.scheduled_time, scheduledMinutes: durationMinutes, attended, minutesStayed };
+        return { date: s.scheduled_time, scheduledMinutes: durationMinutes, wasHeld: true, attended, minutesStayed };
       });
 
       const scheduledSessions = relevantSessions.length;
-      const absentSessions = scheduledSessions - attendedSessions;
+      const heldSessions = scheduledSessions - missedSessions;
+      // Absent now only counts sessions that were ACTUALLY HELD but
+      // this student didn't join — a session the teacher never started
+      // is counted separately as "missed", not held against the
+      // student as an absence, and is excluded from both the
+      // attendance % and staying % denominators below.
+      const absentSessions = heldSessions - attendedSessions;
       return {
         username: member.username,
         displayName: getDisplayName(member.username),
         joinedAt,
         clippedByJoinDate: !!(joinedAt && joinedAt.getTime() > fromDate.getTime()),
         scheduledSessions,
+        missedSessions,
+        heldSessions,
         attendedSessions,
         absentSessions,
-        attendancePct: scheduledSessions ? (attendedSessions / scheduledSessions) * 100 : null,
-        scheduledMinutes,
+        attendancePct: heldSessions ? (attendedSessions / heldSessions) * 100 : null,
+        scheduledMinutes: heldScheduledMinutes,
         attendedMinutes,
-        stayingPct: scheduledMinutes ? (attendedMinutes / scheduledMinutes) * 100 : null,
+        stayingPct: heldScheduledMinutes ? (attendedMinutes / heldScheduledMinutes) * 100 : null,
         sessions,
       };
     });
 
     const groupTotals = students.reduce((acc, s) => {
       acc.scheduledSessions += s.scheduledSessions;
+      acc.missedSessions += s.missedSessions;
+      acc.heldSessions += s.heldSessions;
       acc.attendedSessions += s.attendedSessions;
       acc.absentSessions += s.absentSessions;
       acc.scheduledMinutes += s.scheduledMinutes;
       acc.attendedMinutes += s.attendedMinutes;
       return acc;
-    }, { scheduledSessions: 0, attendedSessions: 0, absentSessions: 0, scheduledMinutes: 0, attendedMinutes: 0 });
-    groupTotals.attendancePct = groupTotals.scheduledSessions ? (groupTotals.attendedSessions / groupTotals.scheduledSessions) * 100 : null;
+    }, { scheduledSessions: 0, missedSessions: 0, heldSessions: 0, attendedSessions: 0, absentSessions: 0, scheduledMinutes: 0, attendedMinutes: 0 });
+    groupTotals.attendancePct = groupTotals.heldSessions ? (groupTotals.attendedSessions / groupTotals.heldSessions) * 100 : null;
     groupTotals.stayingPct = groupTotals.scheduledMinutes ? (groupTotals.attendedMinutes / groupTotals.scheduledMinutes) * 100 : null;
 
     return {
@@ -7531,6 +7589,7 @@
       } else {
         summaryCards = summaryCards.concat([
           attendanceStatCardHtml('Scheduled sessions (since joining)', String(s.scheduledSessions)),
+          attendanceStatCardHtml('Not held by teacher', String(s.missedSessions)),
           attendanceStatCardHtml('Attended', String(s.attendedSessions)),
           attendanceStatCardHtml('Absent', String(s.absentSessions)),
           attendanceStatCardHtml('Attendance %', formatPct(s.attendancePct)),
@@ -7545,7 +7604,9 @@
               <tr>
                 <td>${escapeHtml(new Date(sess.date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }))}</td>
                 <td>${sess.scheduledMinutes} min</td>
-                <td>${sess.attended ? '<span style="color:var(--success);font-weight:700;">Present</span>' : '<span style="color:var(--danger);font-weight:700;">Absent</span>'}</td>
+                <td>${!sess.wasHeld
+                  ? '<span style="color:var(--ink-faint);font-weight:700;">Not held by teacher</span>'
+                  : (sess.attended ? '<span style="color:var(--success);font-weight:700;">Present</span>' : '<span style="color:var(--danger);font-weight:700;">Absent</span>')}</td>
                 <td>${sess.attended ? `${sess.minutesStayed} min` : '—'}</td>
               </tr>
             `).join('') || '<tr><td colspan="4">No sessions scheduled in this range since this student joined.</td></tr>'}
@@ -7556,16 +7617,18 @@
       const t = report.groupTotals;
       summaryCards = summaryCards.concat([
         attendanceStatCardHtml('Students', String(report.students.length)),
+        attendanceStatCardHtml('Sessions not held by teacher', String(t.missedSessions)),
         attendanceStatCardHtml('Group attendance %', formatPct(t.attendancePct)),
         attendanceStatCardHtml('Group staying %', formatPct(t.stayingPct)),
       ]);
       tableHtml = `
-        <thead><tr><th>Student</th><th>Scheduled</th><th>Attended</th><th>Absent</th><th>Attendance %</th><th>Scheduled</th><th>Stayed</th><th>Staying %</th></tr></thead>
+        <thead><tr><th>Student</th><th>Scheduled</th><th>Not held</th><th>Attended</th><th>Absent</th><th>Attendance %</th><th>Scheduled</th><th>Stayed</th><th>Staying %</th></tr></thead>
         <tbody>
           ${report.students.map((s) => `
             <tr>
               <td>${escapeHtml(s.displayName)}${s.clippedByJoinDate ? ' <span title="Counted from their join date, not the start of the range" style="color:var(--ink-faint);">*</span>' : ''}</td>
               <td>${s.scheduledSessions}</td>
+              <td>${s.missedSessions}</td>
               <td>${s.attendedSessions}</td>
               <td>${s.absentSessions}</td>
               <td>${formatPct(s.attendancePct)}</td>
@@ -7573,7 +7636,7 @@
               <td>${formatMinutesLabel(s.attendedMinutes)}</td>
               <td>${formatPct(s.stayingPct)}</td>
             </tr>
-          `).join('') || '<tr><td colspan="8">No students in this group.</td></tr>'}
+          `).join('') || '<tr><td colspan="9">No students in this group.</td></tr>'}
         </tbody>
       `;
     }
@@ -7612,7 +7675,7 @@
       startY = 46;
       doc.setFontSize(10);
       const summaryLines = s ? [
-        `Scheduled sessions (since joining): ${s.scheduledSessions}    Attended: ${s.attendedSessions}    Absent: ${s.absentSessions}    Attendance: ${formatPct(s.attendancePct)}`,
+        `Scheduled sessions (since joining): ${s.scheduledSessions}    Not held by teacher: ${s.missedSessions}    Attended: ${s.attendedSessions}    Absent: ${s.absentSessions}    Attendance: ${formatPct(s.attendancePct)}`,
         `Total scheduled duration: ${formatMinutesLabel(s.scheduledMinutes)}    Total stayed: ${formatMinutesLabel(s.attendedMinutes)}    Staying: ${formatPct(s.stayingPct)}`,
       ] : ['This student is not a member of this group.'];
       summaryLines.forEach((line, i) => doc.text(line, 14, startY + i * 6));
@@ -7621,19 +7684,20 @@
       body = (s ? s.sessions : []).map((sess) => [
         new Date(sess.date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }),
         `${sess.scheduledMinutes} min`,
-        sess.attended ? 'Present' : 'Absent',
+        !sess.wasHeld ? 'Not held by teacher' : (sess.attended ? 'Present' : 'Absent'),
         sess.attended ? `${sess.minutesStayed} min` : '—',
       ]);
     } else {
       startY = 40;
       doc.setFontSize(10);
       doc.text(`Calendar days in range: ${report.calendarDaysInRange}    Sessions scheduled: ${report.sessionsScheduledInRange}    Students: ${report.students.length}`, 14, startY);
-      doc.text(`Group attendance: ${formatPct(report.groupTotals.attendancePct)}    Group staying: ${formatPct(report.groupTotals.stayingPct)}`, 14, startY + 6);
+      doc.text(`Not held by teacher: ${report.groupTotals.missedSessions}    Group attendance: ${formatPct(report.groupTotals.attendancePct)}    Group staying: ${formatPct(report.groupTotals.stayingPct)}`, 14, startY + 6);
       startY += 16;
-      head = [['Student', 'Scheduled', 'Attended', 'Absent', 'Attendance %', 'Scheduled', 'Stayed', 'Staying %']];
+      head = [['Student', 'Scheduled', 'Not held', 'Attended', 'Absent', 'Attendance %', 'Scheduled', 'Stayed', 'Staying %']];
       body = report.students.map((s) => [
         s.displayName + (s.clippedByJoinDate ? ' *' : ''),
         String(s.scheduledSessions),
+        String(s.missedSessions),
         String(s.attendedSessions),
         String(s.absentSessions),
         formatPct(s.attendancePct),
