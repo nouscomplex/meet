@@ -257,6 +257,7 @@
     attendanceReportResults: $('attendanceReportResults'),
     attendanceReportSummary: $('attendanceReportSummary'),
     attendanceReportTable: $('attendanceReportTable'),
+    attendanceReportFootnote: $('attendanceReportFootnote'),
     downloadAttendancePdfBtn: $('downloadAttendancePdfBtn'),
 
     adminCreateUserCard: $('adminCreateUserCard'),
@@ -7563,6 +7564,13 @@
       toDate,
       calendarDaysInRange,
       sessionsScheduledInRange: (scheduleRows || []).length,
+      // Class-wide "Designated Days" — held sessions for the WHOLE
+      // class schedule, not clipped to any one student's join date
+      // (unlike students[].heldSessions, which is clipped). This is
+      // the single canonical number the top summary card shows,
+      // matching the reference template where every student in the
+      // class shares the same Total Days/Designated Days figures.
+      designatedDays: (scheduleRows || []).filter((s) => startedScheduleIds.has(s.id)).length,
       students,
       groupTotals,
     };
@@ -7576,74 +7584,95 @@
     lastAttendanceReport = report;
     if (!DOM.attendanceReportResults || !DOM.attendanceReportSummary || !DOM.attendanceReportTable) return;
 
-    let summaryCards = [
-      attendanceStatCardHtml('Calendar days in range', String(report.calendarDaysInRange)),
-      attendanceStatCardHtml('Sessions scheduled in range', String(report.sessionsScheduledInRange)),
-    ];
-
+    // FIX: "the report should be 100% copy of shared template with our
+    // fields except roll number and holidays" — every stat card and
+    // table column below now matches the reference template's own
+    // field set and order exactly (Total Students, Total Days,
+    // Designated Days, Present, Absent, Leave, Overall Attendance /
+    // Attendance %), with only Roll (no roll-number data exists in
+    // this app) and Holidays (no holiday-calendar feature exists)
+    // dropped, as instructed — no other fields added or renamed.
+    // "Leave" always reads 0 since there's no leave-request feature to
+    // source it from; see the note in the chat reply about that.
+    let summaryCards;
     let tableHtml;
+    // Sessions the teacher never started are still correctly excluded
+    // from Present/Absent/Designated Days (see isScheduleRowRelevant/
+    // computeAttendanceReport's wasHeld handling) rather than counted
+    // as absences — that fix still applies — but since "Not Held"
+    // isn't a field in the template, it's surfaced only as a plain
+    // footnote below the table instead of its own stat card/column.
+    const notHeldCount = report.mode === 'individual'
+      ? (report.students[0] ? report.students[0].missedSessions : 0)
+      : report.groupTotals.missedSessions;
+    const notHeldNote = notHeldCount
+      ? `<p class="attendance-report-footnote">Note: ${notHeldCount} session${notHeldCount === 1 ? ' was' : 's were'} not held by the teacher in this period and ${notHeldCount === 1 ? 'is' : 'are'} excluded from Designated Days.</p>`
+      : '';
+
     if (report.mode === 'individual') {
       const s = report.students[0];
       if (!s) {
+        summaryCards = '';
         tableHtml = '<tbody><tr><td>This student is not a member of this group.</td></tr></tbody>';
       } else {
-        summaryCards = summaryCards.concat([
-          attendanceStatCardHtml('Scheduled sessions (since joining)', String(s.scheduledSessions)),
-          attendanceStatCardHtml('Not held by teacher', String(s.missedSessions)),
-          attendanceStatCardHtml('Attended', String(s.attendedSessions)),
+        summaryCards = [
+          attendanceStatCardHtml('Total Days', String(report.calendarDaysInRange)),
+          attendanceStatCardHtml('Designated Days', String(s.heldSessions)),
+          attendanceStatCardHtml('Present', String(s.attendedSessions)),
           attendanceStatCardHtml('Absent', String(s.absentSessions)),
-          attendanceStatCardHtml('Attendance %', formatPct(s.attendancePct)),
-          attendanceStatCardHtml('Total scheduled duration', formatMinutesLabel(s.scheduledMinutes)),
-          attendanceStatCardHtml('Total stayed', formatMinutesLabel(s.attendedMinutes)),
-          attendanceStatCardHtml('Staying %', formatPct(s.stayingPct)),
-        ]);
+          attendanceStatCardHtml('Leave', '0'),
+          attendanceStatCardHtml('Overall Attendance', formatPct(s.attendancePct)),
+        ].join('');
         tableHtml = `
-          <thead><tr><th>Date</th><th>Scheduled</th><th>Status</th><th>Stayed</th></tr></thead>
+          <thead><tr><th>Date</th><th>Status</th></tr></thead>
           <tbody>
-            ${s.sessions.map((sess) => `
+            ${s.sessions.filter((sess) => sess.wasHeld).map((sess) => `
               <tr>
-                <td>${escapeHtml(new Date(sess.date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }))}</td>
-                <td>${sess.scheduledMinutes} min</td>
-                <td>${!sess.wasHeld
-                  ? '<span style="color:var(--ink-faint);font-weight:700;">Not held by teacher</span>'
-                  : (sess.attended ? '<span style="color:var(--success);font-weight:700;">Present</span>' : '<span style="color:var(--danger);font-weight:700;">Absent</span>')}</td>
-                <td>${sess.attended ? `${sess.minutesStayed} min` : '—'}</td>
+                <td>${escapeHtml(new Date(sess.date).toLocaleDateString())}</td>
+                <td>${sess.attended ? '<span style="color:var(--success);font-weight:700;">Present</span>' : '<span style="color:var(--danger);font-weight:700;">Absent</span>'}</td>
               </tr>
-            `).join('') || '<tr><td colspan="4">No sessions scheduled in this range since this student joined.</td></tr>'}
+            `).join('') || '<tr><td colspan="2">No sessions held in this range since this student joined.</td></tr>'}
           </tbody>
         `;
       }
     } else {
       const t = report.groupTotals;
-      summaryCards = summaryCards.concat([
-        attendanceStatCardHtml('Students', String(report.students.length)),
-        attendanceStatCardHtml('Sessions not held by teacher', String(t.missedSessions)),
-        attendanceStatCardHtml('Group attendance %', formatPct(t.attendancePct)),
-        attendanceStatCardHtml('Group staying %', formatPct(t.stayingPct)),
-      ]);
+      summaryCards = [
+        attendanceStatCardHtml('Total Students', String(report.students.length)),
+        attendanceStatCardHtml('Total Days', String(report.calendarDaysInRange)),
+        attendanceStatCardHtml('Designated Days', String(report.designatedDays)),
+        attendanceStatCardHtml('Present', String(t.attendedSessions)),
+        attendanceStatCardHtml('Absent', String(t.absentSessions)),
+        attendanceStatCardHtml('Leave', '0'),
+        attendanceStatCardHtml('Overall Attendance', formatPct(t.attendancePct)),
+      ].join('');
       tableHtml = `
-        <thead><tr><th>Student</th><th>Class</th><th>Scheduled</th><th>Not held</th><th>Attended</th><th>Absent</th><th>Attendance %</th><th>Scheduled</th><th>Stayed</th><th>Staying %</th></tr></thead>
+        <thead><tr><th>Student</th><th>Class</th><th>Total Days</th><th>Designated Days</th><th>Present</th><th>Absent</th><th>Leave</th><th>Attendance %</th></tr></thead>
         <tbody>
           ${report.students.map((s) => `
             <tr>
               <td>${escapeHtml(s.displayName)}${s.clippedByJoinDate ? ' <span title="Counted from their join date, not the start of the range" style="color:var(--ink-faint);">*</span>' : ''}</td>
               <td>${escapeHtml(report.channelName)}</td>
-              <td>${s.scheduledSessions}</td>
-              <td>${s.missedSessions}</td>
+              <td>${report.calendarDaysInRange}</td>
+              <td>${s.heldSessions}</td>
               <td>${s.attendedSessions}</td>
               <td>${s.absentSessions}</td>
+              <td>0</td>
               <td>${formatPct(s.attendancePct)}</td>
-              <td>${formatMinutesLabel(s.scheduledMinutes)}</td>
-              <td>${formatMinutesLabel(s.attendedMinutes)}</td>
-              <td>${formatPct(s.stayingPct)}</td>
             </tr>
-          `).join('') || '<tr><td colspan="10">No students in this group.</td></tr>'}
+          `).join('') || '<tr><td colspan="8">No students in this group.</td></tr>'}
         </tbody>
       `;
     }
 
-    DOM.attendanceReportSummary.innerHTML = summaryCards.join('');
+    DOM.attendanceReportSummary.innerHTML = summaryCards;
     DOM.attendanceReportTable.innerHTML = tableHtml;
+    if (DOM.attendanceReportFootnote) {
+      const joinDateNote = report.mode === 'group' && report.students.some((s) => s.clippedByJoinDate)
+        ? '<p class="attendance-report-footnote">* Counted from their join date, not the start of the selected range.</p>'
+        : '';
+      DOM.attendanceReportFootnote.innerHTML = notHeldNote + joinDateNote;
+    }
     if (DOM.attendanceReportEmpty) DOM.attendanceReportEmpty.classList.add('hidden');
     DOM.attendanceReportResults.classList.remove('hidden');
   }
@@ -7667,7 +7696,7 @@
   function drawStatCards(doc, pageWidth, startY, cards) {
     const margin = 14;
     const gap = 4;
-    const cols = Math.min(cards.length, 6) || 1;
+    const cols = Math.min(cards.length, 7) || 1;
     const cardWidth = (pageWidth - margin * 2 - gap * (cols - 1)) / cols;
     const cardHeight = 22;
     let x = margin;
@@ -7710,7 +7739,7 @@
     const generatedOn = `${now.getDate()} ${now.toLocaleString('en-US', { month: 'short' })} ${now.getFullYear()} at ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     const rangeLabel = `${toDateInputValue(report.fromDate)} to ${toDateInputValue(report.toDate)}`;
     const studentLabel = report.mode === 'individual' && report.students[0] ? report.students[0].displayName : 'All Students';
-    const reportTypeLabel = report.mode === 'individual' ? 'Individual Student Detail' : 'Summary By Student';
+    const reportTypeLabel = report.mode === 'individual' ? 'Individual Student Detail' : 'Summary By Student Only';
 
     // Companion to pdfTint() for text sitting ON the solid base-color
     // header band: mixes white toward the same base hue (never toward
@@ -7739,7 +7768,7 @@
     doc.setTextColor(...pdfTint(0.35));
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text(`Date Range: ${rangeLabel}    Group: ${report.channelName}    Student: ${studentLabel}    Total Students: ${report.students.length}`, 14, 32);
+    doc.text(`Date Range: ${rangeLabel}    Class: ${report.channelName}    Student: ${studentLabel}    Total Students: ${report.students.length}`, 14, 32);
     doc.text(`Report Type: ${reportTypeLabel}`, 14, 38);
 
     let cursorY = 46;
@@ -7754,19 +7783,17 @@
         body = [['This student is not a member of this group.']];
       } else {
         cards = [
-          { label: 'Scheduled', value: s.scheduledSessions },
-          { label: 'Not Held', value: s.missedSessions },
-          { label: 'Attended', value: s.attendedSessions },
+          { label: 'Total Days', value: report.calendarDaysInRange },
+          { label: 'Designated Days', value: s.heldSessions },
+          { label: 'Present', value: s.attendedSessions },
           { label: 'Absent', value: s.absentSessions },
-          { label: 'Attendance %', value: formatPct(s.attendancePct), accent: true },
-          { label: 'Staying %', value: formatPct(s.stayingPct), accent: true },
+          { label: 'Leave', value: 0 },
+          { label: 'Overall Attendance', value: formatPct(s.attendancePct), accent: true },
         ];
-        head = [['Date', 'Scheduled', 'Status', 'Stayed']];
-        body = s.sessions.map((sess) => [
-          new Date(sess.date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }),
-          `${sess.scheduledMinutes} min`,
-          !sess.wasHeld ? 'Not Held' : (sess.attended ? 'Present' : 'Absent'),
-          sess.attended ? `${sess.minutesStayed} min` : '—',
+        head = [['Date', 'Status']];
+        body = s.sessions.filter((sess) => sess.wasHeld).map((sess) => [
+          new Date(sess.date).toLocaleDateString(),
+          sess.attended ? 'Present' : 'Absent',
         ]);
       }
     } else {
@@ -7774,24 +7801,23 @@
       sectionTitle = 'Student Summary';
       cards = [
         { label: 'Total Students', value: report.students.length },
-        { label: 'Calendar Days', value: report.calendarDaysInRange },
-        { label: 'Sessions Scheduled', value: report.sessionsScheduledInRange },
-        { label: 'Not Held', value: t.missedSessions },
-        { label: 'Group Attendance', value: formatPct(t.attendancePct), accent: true },
-        { label: 'Group Staying', value: formatPct(t.stayingPct), accent: true },
+        { label: 'Total Days', value: report.calendarDaysInRange },
+        { label: 'Designated Days', value: report.designatedDays },
+        { label: 'Present', value: t.attendedSessions },
+        { label: 'Absent', value: t.absentSessions },
+        { label: 'Leave', value: 0 },
+        { label: 'Overall Attendance', value: formatPct(t.attendancePct), accent: true },
       ];
-      head = [['Student', 'Class', 'Scheduled', 'Not Held', 'Attended', 'Absent', 'Attendance %', 'Scheduled', 'Stayed', 'Staying %']];
+      head = [['Student', 'Class', 'Total Days', 'Designated Days', 'Present', 'Absent', 'Leave', 'Attendance %']];
       body = report.students.map((s) => [
         s.displayName + (s.clippedByJoinDate ? ' *' : ''),
         report.channelName,
-        String(s.scheduledSessions),
-        String(s.missedSessions),
+        String(report.calendarDaysInRange),
+        String(s.heldSessions),
         String(s.attendedSessions),
         String(s.absentSessions),
+        '0',
         formatPct(s.attendancePct),
-        formatMinutesLabel(s.scheduledMinutes),
-        formatMinutesLabel(s.attendedMinutes),
-        formatPct(s.stayingPct),
       ]);
     }
 
@@ -7845,12 +7871,22 @@
       },
     });
 
+    const notHeldCount = report.mode === 'individual'
+      ? (report.students[0] ? report.students[0].missedSessions : 0)
+      : report.groupTotals.missedSessions;
+    const footnoteLines = [];
+    if (notHeldCount) {
+      footnoteLines.push(`Note: ${notHeldCount} session${notHeldCount === 1 ? ' was' : 's were'} not held by the teacher in this period and ${notHeldCount === 1 ? 'is' : 'are'} excluded from Designated Days.`);
+    }
     if (report.mode === 'group' && report.students.some((s) => s.clippedByJoinDate)) {
-      const finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 6 : cursorY + 6;
+      footnoteLines.push('* Counted from their join date, not the start of the selected range.');
+    }
+    if (footnoteLines.length) {
+      let finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 6 : cursorY + 6;
       doc.setFontSize(7.5);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(...pdfTint(0.4));
-      doc.text('* Counted from their join date, not the start of the selected range.', 14, finalY);
+      footnoteLines.forEach((line, i) => doc.text(line, 14, finalY + i * 4.5));
     }
 
     const namePart = report.mode === 'individual' && report.students[0] ? report.students[0].username : report.channelName.replace(/[^a-z0-9]+/gi, '-');
