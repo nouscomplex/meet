@@ -7707,7 +7707,7 @@
       doc.setFillColor(255, 255, 255);
       doc.setDrawColor(...PDF_BORDER);
       doc.setLineWidth(0.3);
-      doc.roundedRect(x, y, cardWidth, cardHeight, 1.5, 1.5, 'FD');
+      doc.roundedRect(x, y, cardWidth, cardHeight, 2.5, 2.5, 'FD');
 
       // Label — bold, uppercase, gray, wraps onto a second line if the
       // card is narrow (e.g. "Scheduled sessions (since joining)").
@@ -7912,6 +7912,17 @@
       // Scheduled column, so the PDF table reads exactly like the
       // in-app one instead of a flat gray grid.
       didParseCell: (data) => {
+        // The "#" header cell inherits column 0's styles (including the
+        // light gray textColor meant for the body numbers), which can
+        // pull its alignment/color away from the other bold, centered
+        // header cells. Force it explicitly so "#" always sits centered
+        // and reads with the same weight as the rest of the header row.
+        if (data.section === 'head' && data.column.index === 0) {
+          data.cell.styles.halign = 'center';
+          data.cell.styles.textColor = PDF_INK;
+          data.cell.styles.fontStyle = 'bold';
+          return;
+        }
         if (data.section !== 'body') return;
         if (data.column.index === statusColIndex) {
           const val = data.cell.raw;
