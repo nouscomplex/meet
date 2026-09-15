@@ -7647,14 +7647,21 @@
     DOM.attendanceReportResults.classList.remove('hidden');
   }
 
-  // Brand colors, matching CONFIG.THEME.COLORS (config.js) so the PDF
-  // looks consistent with the app itself rather than jsPDF's plain
-  // black-and-white default.
-  const PDF_NAVY = [14, 28, 118];   // CONFIG.THEME.COLORS.PRIMARY_NAVY (#0e1c76)
-  const PDF_SKY = [103, 179, 249];  // CONFIG.THEME.COLORS.SECONDARY_SKY (#67b3f9)
-  const PDF_CARD_BG = [240, 244, 255];
-  const PDF_GRAY = [110, 115, 149];
-  const PDF_ZEBRA = [245, 247, 252];
+  // Single base hue — CONFIG.THEME.COLORS.PRIMARY_NAVY (#0e1c76) — used
+  // for every colored element in the PDF. Hierarchy comes from tinting
+  // that one color toward white (simulating opacity — jsPDF's real
+  // alpha/GState transparency support isn't reliably present across
+  // every build served from the CDN, so mixing toward white achieves
+  // the identical visual result against this report's white page
+  // background without depending on it) plus font size/weight, rather
+  // than introducing a second or third accent color.
+  const PDF_BASE = [14, 28, 118];
+
+  // amount: 0 = full base color, 1 = white. Interpolates toward white
+  // to simulate that color at roughly (1-amount) opacity on a white page.
+  function pdfTint(amount) {
+    return PDF_BASE.map((c) => Math.round(c + (255 - c) * amount));
+  }
 
   function drawStatCards(doc, pageWidth, startY, cards) {
     const margin = 14;
@@ -7666,15 +7673,19 @@
     let y = startY;
     cards.forEach((card, i) => {
       if (i > 0 && i % cols === 0) { x = margin; y += cardHeight + gap; }
-      doc.setFillColor(...(card.accent ? PDF_SKY.map((c) => Math.min(255, c + 40)) : PDF_CARD_BG));
-      doc.setDrawColor(...PDF_SKY);
+      // Accent cards (the percentage figures) get a stronger wash of
+      // the same hue — a lower tint amount, i.e. closer to full
+      // opacity — so they stand out purely through depth of the same
+      // color, not a different one.
+      doc.setFillColor(...pdfTint(card.accent ? 0.82 : 0.94));
+      doc.setDrawColor(...pdfTint(card.accent ? 0.35 : 0.55));
       doc.setLineWidth(0.3);
       doc.roundedRect(x, y, cardWidth, cardHeight, 2, 2, 'FD');
-      doc.setTextColor(...PDF_NAVY);
+      doc.setTextColor(...PDF_BASE);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(14);
+      doc.setFontSize(card.accent ? 15 : 14);
       doc.text(String(card.value), x + cardWidth / 2, y + 11, { align: 'center' });
-      doc.setTextColor(...PDF_GRAY);
+      doc.setTextColor(...pdfTint(0.35));
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(6.6);
       doc.text(card.label.toUpperCase(), x + cardWidth / 2, y + 17, { align: 'center', maxWidth: cardWidth - 3 });
@@ -7700,14 +7711,22 @@
     const studentLabel = report.mode === 'individual' && report.students[0] ? report.students[0].displayName : 'All Students';
     const reportTypeLabel = report.mode === 'individual' ? 'Individual Student Detail' : 'Summary By Student';
 
+    // Companion to pdfTint() for text sitting ON the solid base-color
+    // header band: mixes white toward the same base hue (never toward
+    // a separate gray) so the title/subtitle/timestamp read as one
+    // hue at different weights, the same principle as pdfTint() below
+    // it on the white page.
+    const pdfWhiteTint = (amount) => [255, 255, 255].map((c, i) => Math.round(c + (PDF_BASE[i] - c) * amount));
+
     // --- Branded header band (page 1 only — continuation pages get a
     // slimmer repeating version via didDrawPage below) ---
-    doc.setFillColor(...PDF_NAVY);
+    doc.setFillColor(...PDF_BASE);
     doc.rect(0, 0, pageWidth, 24, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
     doc.text('Nous Complex', 14, 11);
+    doc.setTextColor(...pdfWhiteTint(0.22));
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10.5);
     doc.text('Attendance Report', 14, 18);
@@ -7716,7 +7735,7 @@
     doc.text(genLabel, pageWidth - 14 - doc.getTextWidth(genLabel), 11);
 
     // --- Meta info bar ---
-    doc.setTextColor(...PDF_GRAY);
+    doc.setTextColor(...pdfTint(0.35));
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.text(`Date Range: ${rangeLabel}    Group: ${report.channelName}    Student: ${studentLabel}    Total Students: ${report.students.length}`, 14, 32);
@@ -7780,11 +7799,11 @@
       cursorY = drawStatCards(doc, pageWidth, cursorY, cards);
     }
 
-    doc.setTextColor(...PDF_NAVY);
+    doc.setTextColor(...PDF_BASE);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
     doc.text(sectionTitle, 14, cursorY);
-    doc.setDrawColor(...PDF_SKY);
+    doc.setDrawColor(...pdfTint(0.45));
     doc.setLineWidth(0.6);
     doc.line(14, cursorY + 2, 14 + doc.getTextWidth(sectionTitle) + 4, cursorY + 2);
     cursorY += 8;
@@ -7794,16 +7813,16 @@
       body,
       startY: cursorY,
       margin: { top: 20, bottom: 18 },
-      styles: { fontSize: 8, cellPadding: 3, lineColor: [225, 228, 240], lineWidth: 0.2 },
-      headStyles: { fillColor: PDF_NAVY, textColor: 255, fontStyle: 'bold', halign: 'center' },
-      alternateRowStyles: { fillColor: PDF_ZEBRA },
+      styles: { fontSize: 8, cellPadding: 3, lineColor: pdfTint(0.82), lineWidth: 0.2 },
+      headStyles: { fillColor: PDF_BASE, textColor: 255, fontStyle: 'bold', halign: 'center' },
+      alternateRowStyles: { fillColor: pdfTint(0.95) },
       columnStyles: head[0].length > 1 ? { 0: { halign: 'center', cellWidth: 8 } } : {},
       theme: 'grid',
       didDrawPage: (data) => {
         // Slim repeating header on continuation pages (page 1 already
         // has the full branded header drawn above).
         if (data.pageNumber > 1) {
-          doc.setFillColor(...PDF_NAVY);
+          doc.setFillColor(...PDF_BASE);
           doc.rect(0, 0, pageWidth, 14, 'F');
           doc.setTextColor(255, 255, 255);
           doc.setFont('helvetica', 'bold');
@@ -7812,12 +7831,12 @@
         }
         // Footer, every page.
         const footerY = pageHeight - 12;
-        doc.setDrawColor(220, 222, 232);
+        doc.setDrawColor(...pdfTint(0.85));
         doc.setLineWidth(0.2);
         doc.line(14, footerY - 4, pageWidth - 14, footerY - 4);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7.5);
-        doc.setTextColor(...PDF_GRAY);
+        doc.setTextColor(...pdfTint(0.4));
         doc.text('Report generated from Nous Complex Attendance Portal', 14, footerY);
         const copyrightLabel = `© ${now.getFullYear()} Nous Complex • All Rights Reserved`;
         doc.text(copyrightLabel, pageWidth - 14 - doc.getTextWidth(copyrightLabel), footerY);
@@ -7830,7 +7849,7 @@
       const finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 6 : cursorY + 6;
       doc.setFontSize(7.5);
       doc.setFont('helvetica', 'normal');
-      doc.setTextColor(...PDF_GRAY);
+      doc.setTextColor(...pdfTint(0.4));
       doc.text('* Counted from their join date, not the start of the selected range.', 14, finalY);
     }
 
