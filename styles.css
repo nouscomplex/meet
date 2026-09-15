@@ -1229,8 +1229,28 @@ body.theme-dark .brand-word { color: #3A3E63; }
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0 0 20px 0;
+  /* Room for the last row (the contact bar) to scroll clear of the
+     fixed Log out footer below (.settings-footer-float) instead of
+     sitting underneath it. */
+  padding: 0 0 92px 0;
   -webkit-overflow-scrolling: touch;
+}
+
+/* Log out, pinned near the bottom of #screenSettings, just above the
+   floating navbar (see index.html comment for why "bottom" here doubles
+   as the gap/breathing-space between the button and the navbar). */
+.settings-footer-float {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 20px;
+  padding: 0 18px;
+  z-index: 6;
+}
+.settings-footer-float .logout-btn {
+  width: 100%;
+  margin: 0;
+  box-shadow: var(--shadow-md);
 }
 
 /* ===== Contact/social bar (Settings) =====
@@ -3710,12 +3730,22 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
   justify-content: space-around;
   margin: 0 14px calc(10px + env(safe-area-inset-bottom));
   padding: 10px 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  /* Glass effect: a translucent WHITE tint plus backdrop-blur, fixed
+     rather than var(--surface), so it reads as frosted glass in both
+     light and dark theme instead of adapting to the dark theme's navy
+     surface color. Falls back to a plain solid white bar (still on
+     brand) in the (now rare) browsers without backdrop-filter support. */
+  background: rgba(255, 255, 255, 0.6);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.65);
   border-radius: var(--radius-pill);
   box-shadow: var(--shadow-md);
   z-index: 5;
   flex-shrink: 0;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .bottom-nav { background: #ffffff; }
 }
 .nav-btn {
   display: flex;
@@ -3769,6 +3799,19 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
 }
 .nav-btn.active { color: var(--ink); }
 .nav-btn.active .nav-icon-wrap { background: var(--navy); color: #fff; }
+/* .bottom-nav's background is now a fixed white glass tint regardless of
+   theme (see .bottom-nav above), so its icon/label color needs to be
+   fixed too — var(--ink-faint)/var(--ink) are tuned per-theme for a
+   theme-adaptive background and would wash out (dark theme's near-white
+   ink-faint) against forced-white glass. Scoped to the floating mobile
+   navbar only (max-width matches the breakpoint below which the desktop
+   sidebar layout takes over) — the desktop sidebar keeps its original
+   theme-adaptive colors against its own solid, theme-adaptive
+   background. */
+@media (max-width: 1023.98px) {
+  .bottom-nav .nav-btn { color: rgba(14, 27, 117, 0.55); }
+  .bottom-nav .nav-btn.active { color: var(--navy); }
+}
 .nav-badge {
   position: absolute; top: -3px; right: -3px;
   background: var(--accent); color: #fff; font-size: 9px; font-weight: 700;

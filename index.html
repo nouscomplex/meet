@@ -485,7 +485,19 @@
               <div class="contact-float-more" id="contactFloatMore" aria-hidden="true"><i class="fas fa-chevron-right"></i></div>
             </div>
           </div>
+        </div>
 
+        <!-- Log out — pinned near the bottom of #screenSettings (.screen
+             has position:relative), which sits directly above the app's
+             bottom-nav in the flex column, so anchoring it to the
+             screen's own bottom edge places it just above the navbar.
+             .settings-footer-float's "bottom" offset IS the breathing
+             space between the button and the navbar below it (see
+             styles.css). .settings-scroll-container gets matching
+             bottom padding so the last scrollable row (the contact bar)
+             can clear this fixed footer instead of sitting underneath
+             it. -->
+        <div class="settings-footer-float">
           <button id="signOutBtn" class="logout-btn">
             <i class="fas fa-arrow-right-from-bracket"></i> Log out
           </button>
