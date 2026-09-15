@@ -7622,11 +7622,12 @@
         attendanceStatCardHtml('Group staying %', formatPct(t.stayingPct)),
       ]);
       tableHtml = `
-        <thead><tr><th>Student</th><th>Scheduled</th><th>Not held</th><th>Attended</th><th>Absent</th><th>Attendance %</th><th>Scheduled</th><th>Stayed</th><th>Staying %</th></tr></thead>
+        <thead><tr><th>Student</th><th>Class</th><th>Scheduled</th><th>Not held</th><th>Attended</th><th>Absent</th><th>Attendance %</th><th>Scheduled</th><th>Stayed</th><th>Staying %</th></tr></thead>
         <tbody>
           ${report.students.map((s) => `
             <tr>
               <td>${escapeHtml(s.displayName)}${s.clippedByJoinDate ? ' <span title="Counted from their join date, not the start of the range" style="color:var(--ink-faint);">*</span>' : ''}</td>
+              <td>${escapeHtml(report.channelName)}</td>
               <td>${s.scheduledSessions}</td>
               <td>${s.missedSessions}</td>
               <td>${s.attendedSessions}</td>
@@ -7636,7 +7637,7 @@
               <td>${formatMinutesLabel(s.attendedMinutes)}</td>
               <td>${formatPct(s.stayingPct)}</td>
             </tr>
-          `).join('') || '<tr><td colspan="9">No students in this group.</td></tr>'}
+          `).join('') || '<tr><td colspan="10">No students in this group.</td></tr>'}
         </tbody>
       `;
     }
@@ -7760,9 +7761,8 @@
           { label: 'Attendance %', value: formatPct(s.attendancePct), accent: true },
           { label: 'Staying %', value: formatPct(s.stayingPct), accent: true },
         ];
-        head = [['#', 'Date', 'Scheduled', 'Status', 'Stayed']];
-        body = s.sessions.map((sess, i) => [
-          String(i + 1),
+        head = [['Date', 'Scheduled', 'Status', 'Stayed']];
+        body = s.sessions.map((sess) => [
           new Date(sess.date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }),
           `${sess.scheduledMinutes} min`,
           !sess.wasHeld ? 'Not Held' : (sess.attended ? 'Present' : 'Absent'),
@@ -7780,10 +7780,10 @@
         { label: 'Group Attendance', value: formatPct(t.attendancePct), accent: true },
         { label: 'Group Staying', value: formatPct(t.stayingPct), accent: true },
       ];
-      head = [['#', 'Student', 'Scheduled', 'Not Held', 'Attended', 'Absent', 'Attendance %', 'Scheduled', 'Stayed', 'Staying %']];
-      body = report.students.map((s, i) => [
-        String(i + 1),
+      head = [['Student', 'Class', 'Scheduled', 'Not Held', 'Attended', 'Absent', 'Attendance %', 'Scheduled', 'Stayed', 'Staying %']];
+      body = report.students.map((s) => [
         s.displayName + (s.clippedByJoinDate ? ' *' : ''),
+        report.channelName,
         String(s.scheduledSessions),
         String(s.missedSessions),
         String(s.attendedSessions),
@@ -7816,7 +7816,7 @@
       styles: { fontSize: 8, cellPadding: 3, lineColor: pdfTint(0.82), lineWidth: 0.2 },
       headStyles: { fillColor: PDF_BASE, textColor: 255, fontStyle: 'bold', halign: 'center' },
       alternateRowStyles: { fillColor: pdfTint(0.95) },
-      columnStyles: head[0].length > 1 ? { 0: { halign: 'center', cellWidth: 8 } } : {},
+      columnStyles: {},
       theme: 'grid',
       didDrawPage: (data) => {
         // Slim repeating header on continuation pages (page 1 already
