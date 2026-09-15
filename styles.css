@@ -231,10 +231,17 @@ button { font-family: inherit; }
     justify-content: flex-start !important;
     width: 92px !important;
     height: 100% !important;
+    margin: 0 !important;
     padding: 28px 8px calc(28px + env(safe-area-inset-bottom)) !important;
     gap: 26px !important;
     border-top: none !important;
     border-right: 1px solid var(--border) !important;
+    border-bottom: none !important;
+    border-left: none !important;
+    /* Undo the mobile floating-pill look (see the base .bottom-nav rule)
+       — desktop keeps the original flush, square-cornered sidebar. */
+    border-radius: 0 !important;
+    box-shadow: none !important;
     order: -1 !important;
     flex-shrink: 0 !important;
     background: var(--surface) !important;
@@ -1228,7 +1235,7 @@ body.theme-dark .brand-word { color: #3A3E63; }
   -webkit-overflow-scrolling: touch;
 }
 
-/* ===== Floating "Complaints and Suggestions" contact bar (Settings) =====
+/* ===== Floating contact/social bar (Settings) =====
    Absolutely positioned against #screenSettings (.screen has
    position:relative), NOT against .settings-scroll-container, so it
    floats fixed in place over the scrolling content instead of scrolling
@@ -1240,49 +1247,68 @@ body.theme-dark .brand-word { color: #3A3E63; }
   right: 0;
   bottom: 14px;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
+  justify-content: center;
   z-index: 6;
   pointer-events: none;
   padding: 0 16px;
 }
-.contact-float-label {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 11px;
-  letter-spacing: 0.03em;
-  color: var(--ink-soft);
-  background: var(--surface);
-  padding: 5px 14px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
-  pointer-events: auto;
-  white-space: nowrap;
-}
 .contact-float-bar {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 9px;
   background: var(--surface);
   padding: 7px;
   border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-md);
   pointer-events: auto;
-  /* 12 icons are wider than the screen, so the bar itself scrolls
-     horizontally (capped to the wrap's width, minus its own side
-     padding) instead of wrapping to a second row or shrinking icons
-     past a tappable size. Scrollbar hidden — a swipeable pill reads
-     as scrollable on its own on touch devices. */
   max-width: 100%;
+  /* Clips the track + gives the fade/chevron hint below rounded corners
+     to match, instead of a hard rectangular edge. */
+  overflow: hidden;
+}
+.contact-float-track {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  /* 12 icons are wider than the screen, so the strip itself scrolls
+     horizontally instead of wrapping to a second row or shrinking icons
+     past a tappable size. Scrollbar hidden — a swipeable pill reads as
+     scrollable on its own on touch devices, and .contact-float-more
+     below reinforces it for a first-time viewer. */
   overflow-x: auto;
   scroll-snap-type: x proximity;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  /* Room for the last icon to peek out from under the fade/chevron
+     rather than stopping flush at the edge — the peek itself is part of
+     the "there's more" cue. */
+  padding-right: 30px;
 }
-.contact-float-bar::-webkit-scrollbar { display: none; }
+.contact-float-track::-webkit-scrollbar { display: none; }
+.contact-float-more {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  bottom: 3px;
+  width: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 7px;
+  border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
+  /* Fades to the bar's own background so the peeking icon underneath
+     visibly fades out rather than getting hard-clipped. */
+  background: linear-gradient(to right, transparent, var(--surface) 60%);
+  color: var(--ink-faint);
+  font-size: 11px;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+/* Hidden once app.js detects the strip has been scrolled to its end —
+   see the inline script near the end of index.html — since there's
+   nothing further to hint at once every icon has been seen. */
+.contact-float-more.at-end { opacity: 0; }
 .contact-float-btn {
   width: 42px;
   height: 42px;
@@ -1293,8 +1319,8 @@ body.theme-dark .brand-word { color: #3A3E63; }
   flex-shrink: 0;
   scroll-snap-align: center;
   /* Fixed white circle (not var(--surface)/var(--accent-wash)) so the
-     black icon glyphs stay visible against it in both light and dark
-     theme, instead of disappearing on the dark theme's navy surfaces. */
+     navy icon glyphs stay legible in both light and dark theme, instead
+     of the icon color blending into the dark theme's navy surfaces. */
   background: #ffffff;
   border: 1px solid var(--border);
   text-decoration: none;
@@ -1303,12 +1329,35 @@ body.theme-dark .brand-word { color: #3A3E63; }
 }
 .contact-float-btn:hover { box-shadow: var(--shadow-sm); transform: translateY(-2px); }
 .contact-float-btn:active { transform: scale(0.94); }
+
+/* Icons are plain black-on-transparent source PNGs, so they're applied
+   as a CSS mask (not <img src>) with a navy background-color showing
+   through the shape — reliably recolors arbitrary icon art to an exact
+   color, which a CSS filter on the raw black pixels can't guarantee. */
 .contact-float-icon {
+  display: block;
   width: 20px;
   height: 20px;
-  object-fit: contain;
-  display: block;
+  background-color: var(--navy);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
 }
+.icon-whatsapp   { -webkit-mask-image: url('whatsapp.png');       mask-image: url('whatsapp.png'); }
+.icon-mail       { -webkit-mask-image: url('mail.png');           mask-image: url('mail.png'); }
+.icon-call       { -webkit-mask-image: url('telephone-call.png'); mask-image: url('telephone-call.png'); }
+.icon-web        { -webkit-mask-image: url('web.png');            mask-image: url('web.png'); }
+.icon-youtube    { -webkit-mask-image: url('youtube.png');        mask-image: url('youtube.png'); }
+.icon-linkedin   { -webkit-mask-image: url('linkedin.png');       mask-image: url('linkedin.png'); }
+.icon-tiktok     { -webkit-mask-image: url('tik-tok.png');        mask-image: url('tik-tok.png'); }
+.icon-bluesky    { -webkit-mask-image: url('bluesky.png');        mask-image: url('bluesky.png'); }
+.icon-threads    { -webkit-mask-image: url('threads.png');        mask-image: url('threads.png'); }
+.icon-facebook   { -webkit-mask-image: url('facebook.png');       mask-image: url('facebook.png'); }
+.icon-instagram  { -webkit-mask-image: url('instagram.png');      mask-image: url('instagram.png'); }
+.icon-x          { -webkit-mask-image: url('twitter.png');        mask-image: url('twitter.png'); }
 
 .settings-profile-card {
   display: flex;
@@ -3655,17 +3704,26 @@ body.theme-dark .schedule-date-chip-remove { background: rgba(0,0,0,0.25); }
 /* ============================================================
    BOTTOM NAVIGATION
    ============================================================ */
+/* FIX: "convert the navbar into a floating round corner navbar" — was a
+   full-bleed bar flush with all three edges with only a top border.
+   Still a normal in-flow flex item (nothing else needs bottom-padding
+   adjustments, no risk of it covering the composer/content above it) —
+   just given side/bottom margins plus a border and radius on every edge
+   instead of only border-top, so it now reads as a detached floating
+   pill rather than a bar stuck to the screen edge. Reset back to the
+   original edge-to-edge look on desktop, where this becomes the static
+   sidebar instead (see the @media (min-width: 1024px) block above). */
 .bottom-nav {
   position: relative;
-  left: 0;
-  right: 0;
-  bottom: 0;
   display: flex;
   align-items: center;
   justify-content: space-around;
-  padding: 10px 8px calc(10px + env(safe-area-inset-bottom));
+  margin: 0 14px calc(10px + env(safe-area-inset-bottom));
+  padding: 10px 8px;
   background: var(--surface);
-  border-top: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-md);
   z-index: 5;
   flex-shrink: 0;
 }
