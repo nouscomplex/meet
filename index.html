@@ -421,15 +421,11 @@
             </div>
           </div>
 
-          <button id="signOutBtn" class="logout-btn">
-            <i class="fas fa-arrow-right-from-bracket"></i> Log out
-          </button>
-
-          <!-- Contact/social bar — placed here, after Log out, so it sits
-               in normal flow under it (with its own top margin for
-               spacing, see .contact-float-wrap in styles.css) and scrolls
-               with the rest of the settings list, instead of floating as
-               a fixed overlay above the content.
+          <!-- Contact/social bar — placed here, above Log out, in normal
+               flow (margin-top gives it space from the list above; see
+               .contact-float-wrap in styles.css) so it scrolls with the
+               rest of the settings list rather than floating as a fixed
+               overlay.
 
                Icons are recolored navy via a CSS mask (see .icon-* rules
                in styles.css) instead of <img>, since these source PNGs
@@ -489,6 +485,10 @@
               <div class="contact-float-more" id="contactFloatMore" aria-hidden="true"><i class="fas fa-chevron-right"></i></div>
             </div>
           </div>
+
+          <button id="signOutBtn" class="logout-btn">
+            <i class="fas fa-arrow-right-from-bracket"></i> Log out
+          </button>
         </div>
       </section>
 
