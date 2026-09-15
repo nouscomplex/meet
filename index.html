@@ -424,70 +424,70 @@
           <button id="signOutBtn" class="logout-btn">
             <i class="fas fa-arrow-right-from-bracket"></i> Log out
           </button>
-        </div>
 
-        <!-- Floating contact/social bar. Sits as a sibling of
-             .settings-scroll-container (not inside it) so it floats fixed
-             over the settings content instead of scrolling away with it,
-             anchored to the bottom of #screenSettings (which is above the
-             app's bottom-nav, so it never covers the nav).
+          <!-- Contact/social bar — placed here, after Log out, so it sits
+               in normal flow under it (with its own top margin for
+               spacing, see .contact-float-wrap in styles.css) and scrolls
+               with the rest of the settings list, instead of floating as
+               a fixed overlay above the content.
 
-             Icons are recolored navy via a CSS mask (see .icon-* rules in
-             styles.css) instead of <img>, since these source PNGs are
-             plain black glyphs and a mask lets a single background-color
-             recolor them reliably (a color filter on arbitrary black art
-             can't target navy precisely).
+               Icons are recolored navy via a CSS mask (see .icon-* rules
+               in styles.css) instead of <img>, since these source PNGs
+               are plain black glyphs and a mask lets a single
+               background-color recolor them reliably (a color filter on
+               arbitrary black art can't target navy precisely).
 
-             .contact-float-track is the actual horizontally-scrolling
-             strip; .contact-float-more is a fixed fade+chevron pinned over
-             its right edge so a first-time viewer can see the row keeps
-             going instead of assuming these 12 are the only icons. The
-             track's trailing padding lets the last icon peek out from
-             under that fade rather than stopping flush at the edge.
-             app.js (bottomNavFloatingInit... see inline script near the
-             end of body) hides this hint once the strip is scrolled to
-             its end, and re-shows it if scrolled back. -->
-        <div class="contact-float-wrap">
-          <div class="contact-float-bar">
-            <div class="contact-float-track" id="contactFloatTrack">
-              <a class="contact-float-btn" href="https://api.whatsapp.com/send/?phone=%2B923000445733&text&type=phone_number&app_absent=0" target="_blank" rel="noopener noreferrer" aria-label="Contact us on WhatsApp">
-                <span class="contact-float-icon icon-whatsapp" aria-hidden="true"></span>
-              </a>
-              <a class="contact-float-btn" href="mailto:info@nouscomplex.com" aria-label="Email us">
-                <span class="contact-float-icon icon-mail" aria-hidden="true"></span>
-              </a>
-              <a class="contact-float-btn" href="tel:+923000445733" aria-label="Call us">
-                <span class="contact-float-icon icon-call" aria-hidden="true"></span>
-              </a>
-              <a class="contact-float-btn" href="https://www.nouscomplex.com" target="_blank" rel="noopener noreferrer" aria-label="Visit our website">
-                <span class="contact-float-icon icon-web" aria-hidden="true"></span>
-              </a>
-              <a class="contact-float-btn" href="https://www.youtube.com/@nouscomplex" target="_blank" rel="noopener noreferrer" aria-label="Visit our YouTube channel">
-                <span class="contact-float-icon icon-youtube" aria-hidden="true"></span>
-              </a>
-              <a class="contact-float-btn" href="https://www.linkedin.com/company/86886369/admin/page-posts/published/" target="_blank" rel="noopener noreferrer" aria-label="Visit our LinkedIn page">
-                <span class="contact-float-icon icon-linkedin" aria-hidden="true"></span>
-              </a>
-              <a class="contact-float-btn" href="https://www.tiktok.com/@nouscomplex" target="_blank" rel="noopener noreferrer" aria-label="Visit our TikTok profile">
-                <span class="contact-float-icon icon-tiktok" aria-hidden="true"></span>
-              </a>
-              <a class="contact-float-btn" href="https://bsky.app/profile/nouscomplex.com" target="_blank" rel="noopener noreferrer" aria-label="Visit our Bluesky profile">
-                <span class="contact-float-icon icon-bluesky" aria-hidden="true"></span>
-              </a>
-              <a class="contact-float-btn" href="https://www.threads.com/@nouscomplex" target="_blank" rel="noopener noreferrer" aria-label="Visit our Threads profile">
-                <span class="contact-float-icon icon-threads" aria-hidden="true"></span>
-              </a>
-              <a class="contact-float-btn" href="https://www.facebook.com/NousComplex/" target="_blank" rel="noopener noreferrer" aria-label="Visit our Facebook page">
-                <span class="contact-float-icon icon-facebook" aria-hidden="true"></span>
-              </a>
-              <a class="contact-float-btn" href="https://www.instagram.com/NousComplex/" target="_blank" rel="noopener noreferrer" aria-label="Visit our Instagram profile">
-                <span class="contact-float-icon icon-instagram" aria-hidden="true"></span>
-              </a>
-              <a class="contact-float-btn" href="https://x.com/NousComplex" target="_blank" rel="noopener noreferrer" aria-label="Visit our X profile">
-                <span class="contact-float-icon icon-x" aria-hidden="true"></span>
-              </a>
+               .contact-float-track is the actual horizontally-scrolling
+               strip; .contact-float-more is a fade+chevron pinned over
+               its right edge so a first-time viewer can see the row keeps
+               going instead of assuming these 12 are the only icons. The
+               track's trailing padding lets the last icon peek out from
+               under that fade rather than stopping flush at the edge.
+               The inline script near the end of body hides this hint
+               once the strip is scrolled to its end, and re-shows it if
+               scrolled back. -->
+          <div class="contact-float-wrap">
+            <div class="contact-float-bar">
+              <div class="contact-float-track" id="contactFloatTrack">
+                <a class="contact-float-btn" href="https://api.whatsapp.com/send/?phone=%2B923000445733&text&type=phone_number&app_absent=0" target="_blank" rel="noopener noreferrer" aria-label="Contact us on WhatsApp">
+                  <span class="contact-float-icon icon-whatsapp" aria-hidden="true"></span>
+                </a>
+                <a class="contact-float-btn" href="mailto:info@nouscomplex.com" aria-label="Email us">
+                  <span class="contact-float-icon icon-mail" aria-hidden="true"></span>
+                </a>
+                <a class="contact-float-btn" href="tel:+923000445733" aria-label="Call us">
+                  <span class="contact-float-icon icon-call" aria-hidden="true"></span>
+                </a>
+                <a class="contact-float-btn" href="https://www.nouscomplex.com" target="_blank" rel="noopener noreferrer" aria-label="Visit our website">
+                  <span class="contact-float-icon icon-web" aria-hidden="true"></span>
+                </a>
+                <a class="contact-float-btn" href="https://www.youtube.com/@nouscomplex" target="_blank" rel="noopener noreferrer" aria-label="Visit our YouTube channel">
+                  <span class="contact-float-icon icon-youtube" aria-hidden="true"></span>
+                </a>
+                <a class="contact-float-btn" href="https://www.linkedin.com/company/86886369/admin/page-posts/published/" target="_blank" rel="noopener noreferrer" aria-label="Visit our LinkedIn page">
+                  <span class="contact-float-icon icon-linkedin" aria-hidden="true"></span>
+                </a>
+                <a class="contact-float-btn" href="https://www.tiktok.com/@nouscomplex" target="_blank" rel="noopener noreferrer" aria-label="Visit our TikTok profile">
+                  <span class="contact-float-icon icon-tiktok" aria-hidden="true"></span>
+                </a>
+                <a class="contact-float-btn" href="https://bsky.app/profile/nouscomplex.com" target="_blank" rel="noopener noreferrer" aria-label="Visit our Bluesky profile">
+                  <span class="contact-float-icon icon-bluesky" aria-hidden="true"></span>
+                </a>
+                <a class="contact-float-btn" href="https://www.threads.com/@nouscomplex" target="_blank" rel="noopener noreferrer" aria-label="Visit our Threads profile">
+                  <span class="contact-float-icon icon-threads" aria-hidden="true"></span>
+                </a>
+                <a class="contact-float-btn" href="https://www.facebook.com/NousComplex/" target="_blank" rel="noopener noreferrer" aria-label="Visit our Facebook page">
+                  <span class="contact-float-icon icon-facebook" aria-hidden="true"></span>
+                </a>
+                <a class="contact-float-btn" href="https://www.instagram.com/NousComplex/" target="_blank" rel="noopener noreferrer" aria-label="Visit our Instagram profile">
+                  <span class="contact-float-icon icon-instagram" aria-hidden="true"></span>
+                </a>
+                <a class="contact-float-btn" href="https://x.com/NousComplex" target="_blank" rel="noopener noreferrer" aria-label="Visit our X profile">
+                  <span class="contact-float-icon icon-x" aria-hidden="true"></span>
+                </a>
+              </div>
+              <div class="contact-float-more" id="contactFloatMore" aria-hidden="true"><i class="fas fa-chevron-right"></i></div>
             </div>
-            <div class="contact-float-more" id="contactFloatMore" aria-hidden="true"><i class="fas fa-chevron-right"></i></div>
           </div>
         </div>
       </section>

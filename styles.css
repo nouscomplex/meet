@@ -1229,28 +1229,19 @@ body.theme-dark .brand-word { color: #3A3E63; }
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  /* Extra bottom padding so the last row (Log out) can scroll clear of
-     the floating contact bar instead of sitting underneath it. */
-  padding: 0 0 96px 0;
+  padding: 0 0 20px 0;
   -webkit-overflow-scrolling: touch;
 }
 
-/* ===== Floating contact/social bar (Settings) =====
-   Absolutely positioned against #screenSettings (.screen has
-   position:relative), NOT against .settings-scroll-container, so it
-   floats fixed in place over the scrolling content instead of scrolling
-   with it — and sits above the app's bottom-nav (a sibling outside this
-   screen entirely), never covering it. */
+/* ===== Contact/social bar (Settings) =====
+   Now a normal in-flow block placed right after the Log out button (see
+   index.html) — not a floating overlay — so it scrolls with the rest of
+   the list; margin-top is what creates the "some space" gap under
+   Log out. */
 .contact-float-wrap {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 14px;
   display: flex;
   justify-content: center;
-  z-index: 6;
-  pointer-events: none;
-  padding: 0 16px;
+  margin: 22px 18px 4px;
 }
 .contact-float-bar {
   position: relative;
@@ -1261,7 +1252,6 @@ body.theme-dark .brand-word { color: #3A3E63; }
   border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-md);
-  pointer-events: auto;
   max-width: 100%;
   /* Clips the track + gives the fade/chevron hint below rounded corners
      to match, instead of a hard rectangular edge. */
