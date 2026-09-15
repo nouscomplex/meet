@@ -1245,6 +1245,7 @@ body.theme-dark .brand-word { color: #3A3E63; }
   gap: 8px;
   z-index: 6;
   pointer-events: none;
+  padding: 0 16px;
 }
 .contact-float-label {
   font-family: var(--font-display);
@@ -1263,22 +1264,34 @@ body.theme-dark .brand-word { color: #3A3E63; }
 .contact-float-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 9px;
   background: var(--surface);
-  padding: 8px;
+  padding: 7px;
   border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-md);
   pointer-events: auto;
+  /* 12 icons are wider than the screen, so the bar itself scrolls
+     horizontally (capped to the wrap's width, minus its own side
+     padding) instead of wrapping to a second row or shrinking icons
+     past a tappable size. Scrollbar hidden — a swipeable pill reads
+     as scrollable on its own on touch devices. */
+  max-width: 100%;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
+.contact-float-bar::-webkit-scrollbar { display: none; }
 .contact-float-btn {
-  width: 46px;
-  height: 46px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  scroll-snap-align: center;
   /* Fixed white circle (not var(--surface)/var(--accent-wash)) so the
      black icon glyphs stay visible against it in both light and dark
      theme, instead of disappearing on the dark theme's navy surfaces. */
@@ -1291,8 +1304,8 @@ body.theme-dark .brand-word { color: #3A3E63; }
 .contact-float-btn:hover { box-shadow: var(--shadow-sm); transform: translateY(-2px); }
 .contact-float-btn:active { transform: scale(0.94); }
 .contact-float-icon {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   object-fit: contain;
   display: block;
 }

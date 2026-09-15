@@ -431,8 +431,10 @@
              floats fixed over the settings content instead of scrolling
              away with it, anchored to the bottom of #screenSettings
              (which is above the app's bottom-nav, so it never covers the
-             nav). Each icon is a real link (WhatsApp/mailto/tel) — the
-             URL itself isn't shown as text, only as the button's href. -->
+             nav). Each icon is a real link — the URL itself isn't shown
+             as text, only as the button's href. 12 icons no longer fit
+             one screen width, so .contact-float-bar scrolls horizontally
+             (see styles.css) instead of wrapping or shrinking further. -->
         <div class="contact-float-wrap">
           <div class="contact-float-label">For Complaints and Suggestions</div>
           <div class="contact-float-bar">
@@ -444,6 +446,33 @@
             </a>
             <a class="contact-float-btn" href="tel:+923000445733" aria-label="Call us">
               <img src="telephone-call.png" alt="Call" class="contact-float-icon">
+            </a>
+            <a class="contact-float-btn" href="https://www.nouscomplex.com" target="_blank" rel="noopener noreferrer" aria-label="Visit our website">
+              <img src="web.png" alt="Website" class="contact-float-icon">
+            </a>
+            <a class="contact-float-btn" href="https://www.youtube.com/@nouscomplex" target="_blank" rel="noopener noreferrer" aria-label="Visit our YouTube channel">
+              <img src="youtube.png" alt="YouTube" class="contact-float-icon">
+            </a>
+            <a class="contact-float-btn" href="https://www.linkedin.com/company/86886369/admin/page-posts/published/" target="_blank" rel="noopener noreferrer" aria-label="Visit our LinkedIn page">
+              <img src="linkedin.png" alt="LinkedIn" class="contact-float-icon">
+            </a>
+            <a class="contact-float-btn" href="https://www.tiktok.com/@nouscomplex" target="_blank" rel="noopener noreferrer" aria-label="Visit our TikTok profile">
+              <img src="tik-tok.png" alt="TikTok" class="contact-float-icon">
+            </a>
+            <a class="contact-float-btn" href="https://bsky.app/profile/nouscomplex.com" target="_blank" rel="noopener noreferrer" aria-label="Visit our Bluesky profile">
+              <img src="bluesky.png" alt="Bluesky" class="contact-float-icon">
+            </a>
+            <a class="contact-float-btn" href="https://www.threads.com/@nouscomplex" target="_blank" rel="noopener noreferrer" aria-label="Visit our Threads profile">
+              <img src="threads.png" alt="Threads" class="contact-float-icon">
+            </a>
+            <a class="contact-float-btn" href="https://www.facebook.com/NousComplex/" target="_blank" rel="noopener noreferrer" aria-label="Visit our Facebook page">
+              <img src="facebook.png" alt="Facebook" class="contact-float-icon">
+            </a>
+            <a class="contact-float-btn" href="https://www.instagram.com/NousComplex/" target="_blank" rel="noopener noreferrer" aria-label="Visit our Instagram profile">
+              <img src="instagram.png" alt="Instagram" class="contact-float-icon">
+            </a>
+            <a class="contact-float-btn" href="https://x.com/NousComplex" target="_blank" rel="noopener noreferrer" aria-label="Visit our X profile">
+              <img src="twitter.png" alt="X" class="contact-float-icon">
             </a>
           </div>
         </div>
