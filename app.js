@@ -7668,9 +7668,35 @@
   function drawStatCards(doc, pageWidth, startY, cards) {
     const margin = 14;
     const gap = 4;
-    const cols = Math.min(cards.length, 6) || 1;
+    // Cards used to hard-cap at 6 per row. Individual reports now carry
+    // up to 10 cards (see generateAttendancePdf), so instead of letting
+    // a 10-card set squeeze into one cramped row, split anything past 6
+    // cards into two even rows — e.g. 10 cards -> 5 + 5 — same spirit
+    // as the on-screen grid, which wraps automatically.
+    const rows = cards.length > 6 ? 2 : 1;
+    const cols = Math.ceil(cards.length / rows) || 1;
     const cardWidth = (pageWidth - margin * 2 - gap * (cols - 1)) / cols;
-    const cardHeight = 20;
+    const cardHeight = 24;
+    // More columns per row = less width per card, so labels/values
+    // shrink a touch to keep everything on one line and inside the
+    // card's border rather than overflowing it.
+    const labelFontSize = cols >= 6 ? 5.8 : cols === 5 ? 6.1 : 6.4;
+    const baseValueFontSize = cols >= 6 ? 12 : cols === 5 ? 12.8 : 13.5;
+
+    // Shrinks fontSize (down to a floor) until `text` fits in maxWidth,
+    // so long values like "16 min (0.3h)" never spill past the card's
+    // right edge even in a narrow 5–6-column row.
+    function fitValueFontSize(text, maxWidth, startSize) {
+      let size = startSize;
+      doc.setFont('helvetica', 'bold');
+      while (size > 8.5) {
+        doc.setFontSize(size);
+        if (doc.getTextWidth(String(text)) <= maxWidth) break;
+        size -= 0.5;
+      }
+      return size;
+    }
+
     let x = margin;
     let y = startY;
     cards.forEach((card, i) => {
@@ -7682,20 +7708,48 @@
       doc.setDrawColor(...PDF_BORDER);
       doc.setLineWidth(0.3);
       doc.roundedRect(x, y, cardWidth, cardHeight, 1.5, 1.5, 'FD');
+
+      // Label — bold, uppercase, gray, wraps onto a second line if the
+      // card is narrow (e.g. "Scheduled sessions (since joining)").
       doc.setTextColor(...PDF_INK_FAINT);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(6.4);
-      if (doc.setCharSpace) doc.setCharSpace(0.25);
-      doc.text(card.label.toUpperCase(), x + 4, y + 7, { maxWidth: cardWidth - 8 });
+      doc.setFontSize(labelFontSize);
+      if (doc.setCharSpace) doc.setCharSpace(0.2);
+      doc.text(card.label.toUpperCase(), x + 4, y + 6, { maxWidth: cardWidth - 8 });
       if (doc.setCharSpace) doc.setCharSpace(0);
+
+      // Value — bold, dark, anchored near the card's bottom edge so it
+      // never collides with a label that wrapped to two lines above it.
+      const valueSize = fitValueFontSize(card.value, cardWidth - 8, baseValueFontSize);
       doc.setTextColor(...PDF_INK);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(13.5);
-      doc.text(String(card.value), x + 4, y + 15.5);
+      doc.setFontSize(valueSize);
+      doc.text(String(card.value), x + 4, y + cardHeight - 5);
       x += cardWidth + gap;
     });
-    const rows = Math.ceil(cards.length / cols);
     return startY + rows * cardHeight + (rows - 1) * gap + 10;
+  }
+
+  // Draws one line of "Label: value    Label: value ..." pairs with the
+  // label bold/dark and the value normal-weight — the same emphasis
+  // pattern as the app's own labelled fields — instead of one flat run
+  // of gray text, so "Date Range", "Class", "Student" etc. stand out.
+  function drawMetaRow(doc, x, y, fontSize, pairs) {
+    let cursorX = x;
+    pairs.forEach((pair, i) => {
+      doc.setFontSize(fontSize);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...PDF_INK);
+      const labelText = `${pair.label}: `;
+      doc.text(labelText, cursorX, y);
+      cursorX += doc.getTextWidth(labelText);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...PDF_INK_SOFT);
+      const valueText = String(pair.value) + (i < pairs.length - 1 ? '     ' : '');
+      doc.text(valueText, cursorX, y);
+      cursorX += doc.getTextWidth(valueText);
+    });
   }
 
   function generateAttendancePdf(report) {
@@ -7715,18 +7769,20 @@
     const reportTypeLabel = report.mode === 'individual' ? 'Individual Student Detail' : 'Summary By Student';
 
     // --- Header: plain white, no filled band. A single bold word in
-    // the brand navy carries all the "branding" this needs; everything
-    // else stays soft gray, and one thin rule separates it from the
-    // page body — the same quiet language as the app's own header. ---
+    // the brand navy carries all the "branding" this needs; "Attendance
+    // Report" is bold too (still soft gray) for more presence, and one
+    // thin rule separates it from the page body — the same quiet
+    // language as the app's own header, just with a bit more weight. ---
     doc.setTextColor(...PDF_ACCENT);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(17);
+    doc.setFontSize(18);
     doc.text('Nous Complex', 14, 15);
     doc.setTextColor(...PDF_INK_SOFT);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
     doc.text('Attendance Report', 14, 21.5);
     doc.setTextColor(...PDF_INK_FAINT);
+    doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     const genLabel = `Generated on ${generatedOn}`;
     doc.text(genLabel, pageWidth - 14 - doc.getTextWidth(genLabel), 12);
@@ -7734,14 +7790,19 @@
     doc.setLineWidth(0.5);
     doc.line(14, 26, pageWidth - 14, 26);
 
-    // --- Meta info line ---
-    doc.setTextColor(...PDF_INK_SOFT);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.text(`Date Range: ${rangeLabel}    Group: ${report.channelName}    Student: ${studentLabel}    Total Students: ${report.students.length}`, 14, 34);
-    doc.text(`Report Type: ${reportTypeLabel}`, 14, 40);
+    // --- Meta info: bold labels, normal-weight values ("Class" instead
+    // of "Group" throughout the report). ---
+    drawMetaRow(doc, 14, 34, 9, [
+      { label: 'Date Range', value: rangeLabel },
+      { label: 'Class', value: report.channelName },
+      { label: 'Student', value: studentLabel },
+      { label: 'Total Students', value: report.students.length },
+    ]);
+    drawMetaRow(doc, 14, 40, 9, [
+      { label: 'Report Type', value: reportTypeLabel },
+    ]);
 
-    let cursorY = 48;
+    let cursorY = 50;
     let cards, head, body, sectionTitle, statusColIndex = -1, scheduledColIndex = -1;
 
     if (report.mode === 'individual') {
@@ -7750,14 +7811,20 @@
       if (!s) {
         cards = [];
         head = [['Notice']];
-        body = [['This student is not a member of this group.']];
+        body = [['This student is not a member of this class.']];
       } else {
+        // Full set of fields from the on-screen individual report —
+        // nothing left out.
         cards = [
-          { label: 'Scheduled', value: s.scheduledSessions },
-          { label: 'Not Held', value: s.missedSessions },
+          { label: 'Calendar days in range', value: report.calendarDaysInRange },
+          { label: 'Sessions scheduled in range', value: report.sessionsScheduledInRange },
+          { label: 'Scheduled sessions (since joining)', value: s.scheduledSessions },
+          { label: 'Not held by teacher', value: s.missedSessions },
           { label: 'Attended', value: s.attendedSessions },
           { label: 'Absent', value: s.absentSessions },
           { label: 'Attendance %', value: formatPct(s.attendancePct) },
+          { label: 'Total scheduled duration', value: formatMinutesLabel(s.scheduledMinutes) },
+          { label: 'Total stayed', value: formatMinutesLabel(s.attendedMinutes) },
           { label: 'Staying %', value: formatPct(s.stayingPct) },
         ];
         head = [['#', 'Date', 'Scheduled', 'Status', 'Stayed']];
@@ -7774,13 +7841,16 @@
     } else {
       const t = report.groupTotals;
       sectionTitle = 'Student Summary';
+      // Full set of fields from the on-screen class summary — nothing
+      // left out, and "Group" renamed to "Class" to match the rest of
+      // the report.
       cards = [
-        { label: 'Total Students', value: report.students.length },
-        { label: 'Calendar Days', value: report.calendarDaysInRange },
-        { label: 'Sessions Scheduled', value: report.sessionsScheduledInRange },
-        { label: 'Not Held', value: t.missedSessions },
-        { label: 'Group Attendance', value: formatPct(t.attendancePct) },
-        { label: 'Group Staying', value: formatPct(t.stayingPct) },
+        { label: 'Calendar days in range', value: report.calendarDaysInRange },
+        { label: 'Sessions scheduled in range', value: report.sessionsScheduledInRange },
+        { label: 'Students', value: report.students.length },
+        { label: 'Sessions not held by teacher', value: t.missedSessions },
+        { label: 'Class attendance %', value: formatPct(t.attendancePct) },
+        { label: 'Class staying %', value: formatPct(t.stayingPct) },
       ];
       head = [['#', 'Student', 'Scheduled', 'Not Held', 'Attended', 'Absent', 'Attendance %', 'Scheduled', 'Stayed', 'Staying %']];
       body = report.students.map((s, i) => [
@@ -7816,11 +7886,26 @@
       startY: cursorY,
       margin: { top: 20, bottom: 18 },
       styles: { fontSize: 8, cellPadding: 3, textColor: PDF_INK, lineColor: PDF_BORDER, lineWidth: 0.2 },
-      headStyles: { fillColor: PDF_SUNKEN, textColor: PDF_INK_FAINT, fontStyle: 'bold', fontSize: 7, halign: 'left' },
+      headStyles: { fillColor: PDF_SUNKEN, textColor: PDF_INK, fontStyle: 'bold', fontSize: 7, halign: 'left' },
       // No zebra shading — flat white rows with a hairline between them,
-      // same as .attendance-report-table on screen.
+      // same as .attendance-report-table on screen. Row text stays bold
+      // for a bit more presence in the body, matching the meta/header.
       alternateRowStyles: { fillColor: [255, 255, 255] },
-      columnStyles: head[0].length > 1 ? { 0: { halign: 'center', cellWidth: 8, textColor: PDF_INK_FAINT } } : {},
+      bodyStyles: { fontStyle: 'bold' },
+      // # column width scales with how many digits the row count
+      // actually needs (1 -> "9", 2 -> "10"-"99", ...) and gets its own
+      // tighter padding, so double/triple-digit rows (10, 11, 12...)
+      // get the same breathing room as single digits instead of being
+      // squeezed/wrapped to fit a width sized for one character.
+      columnStyles: head[0].length > 1 ? {
+        0: {
+          halign: 'center',
+          cellWidth: 6 + String(body.length).length * 3.2,
+          cellPadding: { top: 3, bottom: 3, left: 1, right: 1 },
+          textColor: PDF_INK_FAINT,
+          fontStyle: 'bold',
+        },
+      } : {},
       theme: 'grid',
       // Color-code the same three states the on-screen table uses
       // (Present / Absent / Not held), plus a soft accent tint on the
