@@ -425,6 +425,28 @@
             <i class="fas fa-arrow-right-from-bracket"></i> Log out
           </button>
         </div>
+
+        <!-- Floating "Complaints and Suggestions" contact bar. Sits as a
+             sibling of .settings-scroll-container (not inside it) so it
+             floats fixed over the settings content instead of scrolling
+             away with it, anchored to the bottom of #screenSettings
+             (which is above the app's bottom-nav, so it never covers the
+             nav). Each icon is a real link (WhatsApp/mailto/tel) — the
+             URL itself isn't shown as text, only as the button's href. -->
+        <div class="contact-float-wrap">
+          <div class="contact-float-label">For Complaints and Suggestions</div>
+          <div class="contact-float-bar">
+            <a class="contact-float-btn" href="https://api.whatsapp.com/send/?phone=%2B923000445733&text&type=phone_number&app_absent=0" target="_blank" rel="noopener noreferrer" aria-label="Contact us on WhatsApp">
+              <img src="whatsapp.png" alt="WhatsApp" class="contact-float-icon">
+            </a>
+            <a class="contact-float-btn" href="mailto:info@nouscomplex.com" aria-label="Email us">
+              <img src="mail.png" alt="Email" class="contact-float-icon">
+            </a>
+            <a class="contact-float-btn" href="tel:+923000445733" aria-label="Call us">
+              <img src="telephone-call.png" alt="Call" class="contact-float-icon">
+            </a>
+          </div>
+        </div>
       </section>
 
       <!-- ============================================================
